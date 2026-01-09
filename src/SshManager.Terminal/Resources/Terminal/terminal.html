@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSH Terminal</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #1e1e1e;
+        }
+
+        #terminal-container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        @font-face {
+            font-family: 'Source Code Pro Powerline';
+            src: url('data:font/otf;base64,{{POWERLINE_SCP_REGULAR}}') format('opentype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Source Code Pro Powerline';
+            src: url('data:font/otf;base64,{{POWERLINE_SCP_BOLD}}') format('opentype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Source Code Pro Powerline';
+            src: url('data:font/otf;base64,{{POWERLINE_SCP_ITALIC}}') format('opentype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Source Code Pro Powerline';
+            src: url('data:font/otf;base64,{{POWERLINE_SCP_BOLDITALIC}}') format('opentype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* Hide scrollbars on the terminal viewport */
+        .xterm-viewport::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+        }
+
+        .xterm-viewport {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        /* Ensure terminal fills container */
+        .xterm {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal-container"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+    <script>
+        (function() {
+            'use strict';
+
+            let terminal = null;
+            let fitAddon = null;
+            let resizeTimeout = null;
+            let resizeObserver = null;
+            const RESIZE_DEBOUNCE_MS = 100;
+
+            // Initialize terminal when DOM is ready
+            function init() {
+                const container = document.getElementById('terminal-container');
+                if (!container) {
+                    console.error('Terminal container not found');
+                    return;
+                }
+
+                // Create terminal instance
+                terminal = new Terminal({
+                    cursorBlink: true,
+                    cursorStyle: 'block',
+                    fontSize: 14,
+                    fontFamily: '"Source Code Pro Powerline", "Cascadia Mono", "Cascadia Code", "Consolas", "Courier New", monospace',
+                    letterSpacing: 0,
+                    lineHeight: 1.0,
+                    allowTransparency: true,
+                    scrollback: 10000,
+                    // Disable bracketed paste mode to prevent ^[[200~ sequences on paste
+                    // Some remote shells (especially in containers) don't handle these properly
+                    bracketedPasteMode: false,
+                    theme: {
+                        background: '#1e1e1e',
+                        foreground: '#d4d4d4',
+                        cursor: '#d4d4d4',
+                        selectionBackground: '#264f78',
+                        black: '#000000',
+                        red: '#cd3131',
+                        green: '#0dbc79',
+                        yellow: '#e5e510',
+                        blue: '#2472c8',
+                        magenta: '#bc3fbc',
+                        cyan: '#11a8cd',
+                        white: '#e5e5e5',
+                        brightBlack: '#666666',
+                        brightRed: '#f14c4c',
+                        brightGreen: '#23d18b',
+                        brightYellow: '#f5f543',
+                        brightBlue: '#3b8eea',
+                        brightMagenta: '#d670d6',
+                        brightCyan: '#29b8db',
+                        brightWhite: '#ffffff'
+                    }
+                });
+
+                // Create and load fit addon
+                fitAddon = new FitAddon.FitAddon();
+                terminal.loadAddon(fitAddon);
+
+                // Open terminal in container
+                terminal.open(container);
+
+                // Initial fit
+                fitAddon.fit();
+                scheduleFit();
+
+                // Listen for user input
+                terminal.onData(function(data) {
+                    postMessageToHost({ type: 'input', data: data });
+                });
+
+                // Handle special keys that may not be forwarded properly by WebView2
+                // Use document-level listener to catch keys before any component handling
+                document.addEventListener('keydown', function(event) {
+                    // Delete key sends escape sequence \x1b[3~
+                    if (event.key === 'Delete' || event.keyCode === 46) {
+                        postMessageToHost({ type: 'input', data: '\x1b[3~' });
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                    }
+                    // Insert key sends escape sequence \x1b[2~
+                    if (event.key === 'Insert' || event.keyCode === 45) {
+                        postMessageToHost({ type: 'input', data: '\x1b[2~' });
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                    }
+                }, true); // Use capture phase to get events first
+
+                // Custom paste handler to bypass bracketed paste mode
+                // Remote shells may enable bracketed paste (\e[?2004h) which causes
+                // xterm.js to wrap pasted text in \e[200~...\e[201~ sequences.
+                // Applications like nano don't handle these, showing ^[[200~ literally.
+                // This handler intercepts paste and sends raw text directly.
+                document.addEventListener('paste', function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    var text = (event.clipboardData || window.clipboardData).getData('text');
+                    if (text) {
+                        postMessageToHost({ type: 'input', data: text });
+                    }
+                }, true); // Use capture phase to intercept before xterm.js
+
+                // Listen for terminal resize
+                terminal.onResize(function(size) {
+                    postMessageToHost({ type: 'resized', cols: size.cols, rows: size.rows });
+                });
+
+                // Setup message listener for C# communication
+                setupMessageListener();
+
+                // Handle window resize with debounce
+                window.addEventListener('resize', handleWindowResize);
+
+                // Observe container size changes (e.g., tab switches, pane resizes)
+                if (window.ResizeObserver) {
+                    resizeObserver = new ResizeObserver(function() {
+                        scheduleFit();
+                    });
+                    resizeObserver.observe(container);
+                }
+
+                // Refit after fonts finish loading to avoid stale cell metrics
+                if (document.fonts && document.fonts.ready) {
+                    document.fonts.ready.then(function() {
+                        scheduleFit();
+                    });
+                }
+
+                // Send ready message
+                postMessageToHost({ type: 'ready' });
+
+                // Send initial size
+                postMessageToHost({ type: 'resized', cols: terminal.cols, rows: terminal.rows });
+            }
+
+            // Debounced window resize handler
+            function handleWindowResize() {
+                scheduleFit();
+            }
+
+            function scheduleFit() {
+                if (resizeTimeout) {
+                    clearTimeout(resizeTimeout);
+                }
+                resizeTimeout = setTimeout(function() {
+                    if (fitAddon && terminal) {
+                        fitAddon.fit();
+                    }
+                }, RESIZE_DEBOUNCE_MS);
+            }
+
+            // Setup listener for messages from C#
+            function setupMessageListener() {
+                if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.addEventListener('message', function(event) {
+                        handleMessage(event.data);
+                    });
+                } else {
+                    // Fallback for testing in browser
+                    window.addEventListener('message', function(event) {
+                        handleMessage(event.data);
+                    });
+                }
+            }
+
+            // Handle incoming messages from C#
+            function handleMessage(message) {
+                if (!message || !message.type) {
+                    return;
+                }
+
+                switch (message.type) {
+                    case 'write':
+                        if (terminal && message.data) {
+                            terminal.write(message.data);
+                        }
+                        break;
+
+                    case 'resize':
+                        if (terminal && typeof message.cols === 'number' && typeof message.rows === 'number') {
+                            terminal.resize(message.cols, message.rows);
+                        }
+                        break;
+
+                    case 'fit':
+                        if (fitAddon && terminal) {
+                            scheduleFit();
+                        }
+                        break;
+
+                    case 'setTheme':
+                        if (terminal && message.theme) {
+                            terminal.options.theme = message.theme;
+                        }
+                        break;
+
+                    case 'setFont':
+                        if (terminal) {
+                            if (message.fontFamily) {
+                                terminal.options.fontFamily = message.fontFamily;
+                            }
+                            if (typeof message.fontSize === 'number') {
+                                terminal.options.fontSize = message.fontSize;
+                            }
+                            if (fitAddon) {
+                                fitAddon.fit();
+                            }
+                        }
+                        break;
+
+                    case 'focus':
+                        if (terminal) {
+                            terminal.focus();
+                        }
+                        break;
+
+                    case 'clear':
+                        if (terminal) {
+                            terminal.clear();
+                        }
+                        break;
+
+                    default:
+                        console.warn('Unknown message type:', message.type);
+                }
+            }
+
+            // Send message to C# host
+            function postMessageToHost(message) {
+                if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.postMessage(message);
+                } else {
+                    // Fallback for testing - log to console
+                    console.log('postMessage to host:', message);
+                }
+            }
+
+            // Initialize when DOM is ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+        })();
+    </script>
+</body>
+</html>

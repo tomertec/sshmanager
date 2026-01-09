@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore SshManager.sln
+
+    - name: Build
+      run: dotnet build SshManager.sln --no-restore -c Release
+
+    - name: Test
+      run: dotnet test SshManager.sln --no-build -c Release --verbosity normal
+
+    - name: Publish (Framework-dependent)
+      run: dotnet publish src/SshManager.App/SshManager.App.csproj -c Release -r win-x64 --self-contained false -o publish/framework-dependent
+
+    - name: Publish (Self-contained)
+      run: dotnet publish src/SshManager.App/SshManager.App.csproj -c Release -r win-x64 --self-contained true -o publish/self-contained
+
+    - name: Create ZIP (Framework-dependent)
+      run: Compress-Archive -Path publish/framework-dependent/* -DestinationPath SshManager-${{ github.ref_name }}-win-x64.zip
+
+    - name: Create ZIP (Self-contained)
+      run: Compress-Archive -Path publish/self-contained/* -DestinationPath SshManager-${{ github.ref_name }}-win-x64-self-contained.zip
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          SshManager-${{ github.ref_name }}-win-x64.zip
+          SshManager-${{ github.ref_name }}-win-x64-self-contained.zip
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

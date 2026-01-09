@@ -1,0 +1,162 @@
+<ui:FluentWindow x:Class="SshManager.App.Views.Dialogs.SshConfigExportDialog"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                mc:Ignorable="d"
+                Title="Export to SSH Config"
+                Height="650" Width="850"
+                MinHeight="550" MinWidth="750"
+                WindowStartupLocation="CenterOwner"
+                ExtendsContentIntoTitleBar="True"
+                WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar -->
+        <ui:TitleBar Grid.Row="0"
+                     Title="Export to SSH Config"
+                     ShowMaximize="True"
+                     ShowMinimize="False" />
+
+        <!-- File Selection -->
+        <ui:CardControl Grid.Row="1" Margin="16,8">
+            <ui:CardControl.Header>
+                <StackPanel>
+                    <TextBlock Text="Destination" FontWeight="SemiBold" />
+                    <TextBlock Text="Select where to export the SSH config file"
+                              FontSize="12" Opacity="0.7" />
+                </StackPanel>
+            </ui:CardControl.Header>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:TextBox Grid.Column="0"
+                           Text="{Binding FilePath, UpdateSourceTrigger=PropertyChanged}"
+                           PlaceholderText="Path to SSH config file"
+                           IsReadOnly="True" />
+                <ui:Button Grid.Column="1"
+                          Content="Browse..."
+                          Command="{Binding BrowseCommand}"
+                          Margin="8,0,0,0" />
+            </Grid>
+        </ui:CardControl>
+
+        <!-- Options -->
+        <ui:CardControl Grid.Row="2" Margin="16,8">
+            <ui:CardControl.Header>
+                <StackPanel>
+                    <TextBlock Text="Export Options" FontWeight="SemiBold" />
+                    <TextBlock Text="Configure how the SSH config file should be generated"
+                              FontSize="12" Opacity="0.7" />
+                </StackPanel>
+            </ui:CardControl.Header>
+            <StackPanel>
+                <CheckBox IsChecked="{Binding IncludeGroups, Mode=TwoWay}"
+                         Content="Include group comments"
+                         Margin="0,0,0,8">
+                    <CheckBox.ToolTip>
+                        <TextBlock Text="Add comments to organize hosts by group" />
+                    </CheckBox.ToolTip>
+                </CheckBox>
+
+                <CheckBox IsChecked="{Binding IncludePortForwarding, Mode=TwoWay}"
+                         Content="Include port forwarding rules"
+                         Margin="0,0,0,8">
+                    <CheckBox.ToolTip>
+                        <TextBlock Text="Export LocalForward and RemoteForward directives" />
+                    </CheckBox.ToolTip>
+                </CheckBox>
+
+                <CheckBox IsChecked="{Binding UseProxyJump, Mode=TwoWay}"
+                         Content="Use ProxyJump (vs ProxyCommand)">
+                    <CheckBox.ToolTip>
+                        <TextBlock Text="Use modern ProxyJump syntax instead of legacy ProxyCommand" />
+                    </CheckBox.ToolTip>
+                </CheckBox>
+            </StackPanel>
+        </ui:CardControl>
+
+        <!-- Preview -->
+        <Grid Grid.Row="3" Margin="16,8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                      Text="Preview"
+                      FontWeight="SemiBold"
+                      Margin="0,0,0,8" />
+
+            <Border Grid.Row="1"
+                   BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                   BorderThickness="1"
+                   CornerRadius="4"
+                   Background="{DynamicResource ControlFillColorDefaultBrush}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto">
+                    <TextBox Text="{Binding Preview, Mode=OneWay}"
+                            IsReadOnly="True"
+                            BorderThickness="0"
+                            Background="Transparent"
+                            FontFamily="Consolas,Cascadia Code,Courier New"
+                            FontSize="12"
+                            TextWrapping="NoWrap"
+                            AcceptsReturn="True"
+                            VerticalScrollBarVisibility="Disabled"
+                            HorizontalScrollBarVisibility="Disabled"
+                            MinHeight="250"
+                            Padding="8" />
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="4" Margin="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ui:Button Grid.Column="1"
+                      Content="Cancel"
+                      Command="{Binding CancelCommand}"
+                      MinWidth="80"
+                      Margin="0,0,8,0" />
+
+            <ui:Button Grid.Column="2"
+                      Content="Export"
+                      Appearance="Primary"
+                      Command="{Binding ExportCommand}"
+                      MinWidth="120" />
+        </Grid>
+
+        <!-- Loading Overlay -->
+        <Grid Grid.RowSpan="5"
+             Background="#80000000"
+             Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ui:ProgressRing IsIndeterminate="True" Width="40" Height="40" />
+                <TextBlock Text="Exporting..."
+                          Foreground="White"
+                          Margin="0,8,0,0" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

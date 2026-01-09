@@ -1,0 +1,240 @@
+<ui:FluentWindow x:Class="SshManager.App.Views.Dialogs.SerialQuickConnectDialog"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                mc:Ignorable="d"
+                Title="Serial Port Quick Connect"
+                Height="580" Width="420"
+                MinHeight="500" MinWidth="380"
+                WindowStartupLocation="CenterOwner"
+                ResizeMode="CanResizeWithGrip"
+                ExtendsContentIntoTitleBar="True"
+                WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar -->
+        <ui:TitleBar Grid.Row="0"
+                     Title="Serial Port Quick Connect"
+                     ShowMaximize="False"
+                     ShowMinimize="False" />
+
+        <!-- Form Content -->
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="24,16">
+            <StackPanel>
+                <!-- Info banner -->
+                <Border Background="#1F3F9BF8"
+                        BorderBrush="#3F3F9BF8"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="12"
+                        Margin="0,0,0,16">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Info16"
+                                       FontSize="16"
+                                       Margin="0,0,8,0"
+                                       VerticalAlignment="Top"
+                                       Foreground="#3F9BF8" />
+                        <TextBlock Text="'Connect &amp; Save' adds to your hosts list."
+                                   TextWrapping="Wrap"
+                                   Opacity="0.9"
+                                   FontSize="12" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Display Name (Optional) -->
+                <TextBlock Text="Display Name (Optional)"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,4" />
+                <ui:TextBox Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}"
+                           PlaceholderText="My Serial Device"
+                           Margin="0,0,0,16" />
+
+                <!-- COM Port with refresh button -->
+                <TextBlock Text="COM Port *"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ComboBox Grid.Column="0"
+                             ItemsSource="{Binding AvailablePorts}"
+                             SelectedItem="{Binding SerialPortName, Mode=TwoWay}"
+                             Text="{Binding SerialPortName, Mode=TwoWay}"
+                             IsEditable="True" />
+                    <ui:Button Grid.Column="1"
+                              Icon="{ui:SymbolIcon ArrowSync16}"
+                              Command="{Binding RefreshPortsCommand}"
+                              ToolTip="Refresh available ports"
+                              Width="32" Height="32"
+                              Padding="0"
+                              Margin="8,0,0,0" />
+                </Grid>
+
+                <!-- Baud Rate -->
+                <TextBlock Text="Baud Rate"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,4" />
+                <ComboBox ItemsSource="{Binding BaudRateOptions}"
+                         SelectedItem="{Binding SerialBaudRate, Mode=TwoWay}"
+                         IsEditable="True"
+                         Margin="0,0,0,16" />
+
+                <!-- Data Bits and Stop Bits in a row -->
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Data Bits"
+                                  FontWeight="SemiBold"
+                                  Margin="0,0,0,4" />
+                        <ComboBox ItemsSource="{Binding DataBitsOptions}"
+                                 SelectedItem="{Binding SerialDataBits, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Stop Bits"
+                                  FontWeight="SemiBold"
+                                  Margin="0,0,0,4" />
+                        <ComboBox ItemsSource="{Binding StopBitsOptions}"
+                                 SelectedItem="{Binding SerialStopBits, Mode=TwoWay}" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Parity and Flow Control in a row -->
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Parity"
+                                  FontWeight="SemiBold"
+                                  Margin="0,0,0,4" />
+                        <ComboBox ItemsSource="{Binding ParityOptions}"
+                                 SelectedItem="{Binding SerialParity, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Flow Control"
+                                  FontWeight="SemiBold"
+                                  Margin="0,0,0,4" />
+                        <ComboBox ItemsSource="{Binding HandshakeOptions}"
+                                 SelectedItem="{Binding SerialHandshake, Mode=TwoWay}" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Line Ending -->
+                <TextBlock Text="Line Ending"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,4" />
+                <ComboBox ItemsSource="{Binding LineEndingOptions}"
+                         SelectedItem="{Binding SerialLineEnding, Mode=TwoWay}"
+                         Margin="0,0,0,16">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding}" Value="&#x0D;&#x0A;">
+                                                <Setter Property="Text" Value="CRLF (\r\n) - Windows" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding}" Value="&#x0A;">
+                                                <Setter Property="Text" Value="LF (\n) - Unix/Linux" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding}" Value="&#x0D;">
+                                                <Setter Property="Text" Value="CR (\r) - Classic Mac" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <!-- Hardware Options -->
+                <TextBlock Text="Hardware Options"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,8" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <CheckBox Content="DTR Enable"
+                             IsChecked="{Binding SerialDtrEnable, Mode=TwoWay}"
+                             Margin="0,0,16,0" />
+                    <CheckBox Content="RTS Enable"
+                             IsChecked="{Binding SerialRtsEnable, Mode=TwoWay}" />
+                </StackPanel>
+
+                <!-- Local Echo -->
+                <CheckBox Content="Local Echo"
+                         IsChecked="{Binding SerialLocalEcho, Mode=TwoWay}"
+                         Margin="0,0,0,16" />
+
+                <!-- Validation Error -->
+                <Border Background="#3FFF4444"
+                        BorderBrush="#FF4444"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="12,8"
+                        Margin="0,0,0,8"
+                        Visibility="{Binding ValidationError, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="{Binding ValidationError}"
+                              Foreground="#FF8888"
+                              TextWrapping="Wrap" />
+                </Border>
+
+                <TextBlock Text="Common baud rates: 9600, 19200, 38400, 57600, 115200"
+                          FontSize="11"
+                          Opacity="0.6"
+                          Margin="0,0,0,0" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="2" Margin="24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ui:Button Grid.Column="0"
+                      Content="Cancel"
+                      Command="{Binding CancelCommand}"
+                      MinWidth="80" />
+
+            <ui:Button Grid.Column="2"
+                      Content="Connect &amp; Save"
+                      Command="{Binding ConnectAndSaveCommand}"
+                      ToolTip="Connect and save to hosts list"
+                      Margin="0,0,8,0"
+                      MinWidth="110" />
+
+            <ui:Button Grid.Column="3"
+                      Content="Connect"
+                      Appearance="Primary"
+                      Command="{Binding ConnectCommand}"
+                      ToolTip="Connect without saving"
+                      MinWidth="90" />
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

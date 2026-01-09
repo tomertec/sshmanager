@@ -1,0 +1,112 @@
+<ui:FluentWindow x:Class="SshManager.App.Views.Dialogs.RecordingBrowserDialog"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:converters="clr-namespace:SshManager.App.Converters"
+                 Title="Session Recordings"
+                 Width="900"
+                 Height="600"
+                 WindowStartupLocation="CenterOwner"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <converters:NullToBoolConverter x:Key="NullToBooleanConverter" />
+        <converters:FileSizeConverter x:Key="FileSizeConverter" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar -->
+        <ui:TitleBar Grid.Row="0"
+                     Title="Session Recordings"
+                     ShowMaximize="False"
+                     ShowMinimize="False" />
+
+        <!-- Search Bar -->
+        <Grid Grid.Row="1" Margin="20,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <ui:TextBox Grid.Column="0"
+                        PlaceholderText="Search recordings..."
+                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                        Icon="{ui:SymbolIcon Symbol=Search24}"/>
+
+            <ui:Button Grid.Column="1"
+                       Content="Refresh"
+                       Icon="{ui:SymbolIcon Symbol=ArrowSync24}"
+                       Command="{Binding RefreshCommand}"
+                       Margin="10,0,0,0"/>
+        </Grid>
+
+        <!-- Recordings DataGrid -->
+        <DataGrid Grid.Row="2"
+                  Margin="20,10"
+                  ItemsSource="{Binding FilteredRecordings}"
+                  SelectedItem="{Binding SelectedRecording}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserResizeRows="False"
+                  SelectionMode="Single"
+                  GridLinesVisibility="Horizontal"
+                  HeadersVisibility="Column">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Title"
+                                    Binding="{Binding Title}"
+                                    Width="2*"/>
+                <DataGridTextColumn Header="Host"
+                                    Binding="{Binding Host.DisplayName}"
+                                    Width="*"/>
+                <DataGridTextColumn Header="Duration"
+                                    Binding="{Binding Duration, StringFormat=hh\\:mm\\:ss}"
+                                    Width="100"/>
+                <DataGridTextColumn Header="Date"
+                                    Binding="{Binding StartedAt, StringFormat=yyyy-MM-dd HH:mm}"
+                                    Width="150"/>
+                <DataGridTextColumn Header="Size"
+                                    Binding="{Binding FileSizeBytes, Converter={StaticResource FileSizeConverter}}"
+                                    Width="100"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="20,10,20,20">
+            <ui:Button Content="Play"
+                       Icon="{ui:SymbolIcon Symbol=Play24}"
+                       Appearance="Primary"
+                       Command="{Binding PlayCommand}"
+                       IsEnabled="{Binding SelectedRecording, Converter={StaticResource NullToBooleanConverter}}"
+                       Margin="0,0,10,0"/>
+
+            <ui:Button Content="Export"
+                       Icon="{ui:SymbolIcon Symbol=ArrowExport24}"
+                       Command="{Binding ExportCommand}"
+                       IsEnabled="{Binding SelectedRecording, Converter={StaticResource NullToBooleanConverter}}"
+                       Margin="0,0,10,0"/>
+
+            <ui:Button Content="Delete"
+                       Icon="{ui:SymbolIcon Symbol=Delete24}"
+                       Appearance="Danger"
+                       Command="{Binding DeleteCommand}"
+                       IsEnabled="{Binding SelectedRecording, Converter={StaticResource NullToBooleanConverter}}"
+                       Margin="0,0,10,0"/>
+
+            <ui:Button Content="Close"
+                       Appearance="Secondary"
+                       Click="CloseButton_Click"
+                       Margin="0,0,0,0"/>
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

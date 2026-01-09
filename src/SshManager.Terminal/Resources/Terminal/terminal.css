@@ -1,0 +1,35 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #1e1e1e;
+}
+
+#terminal-container {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Hide scrollbars on the terminal viewport */
+.xterm-viewport::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+
+.xterm-viewport {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+/* Ensure terminal fills container */
+.xterm {
+    width: 100%;
+    height: 100%;
+}

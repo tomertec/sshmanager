@@ -1,0 +1,123 @@
+<ui:FluentWindow x:Class="SshManager.App.Views.Dialogs.KeyboardInteractiveDialog"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                xmlns:vm="clr-namespace:SshManager.App.ViewModels"
+                mc:Ignorable="d"
+                d:DataContext="{d:DesignInstance Type=vm:KeyboardInteractiveViewModel}"
+                Title="{Binding Title}"
+                Height="400" Width="450"
+                MinHeight="300" MinWidth="400"
+                WindowStartupLocation="CenterOwner"
+                ResizeMode="NoResize"
+                ExtendsContentIntoTitleBar="True"
+                WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar -->
+        <ui:TitleBar Grid.Row="0"
+                     Title="{Binding Title}"
+                     ShowMaximize="False"
+                     ShowMinimize="False" />
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="24,16">
+            <StackPanel>
+                <!-- Icon and Title -->
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <ui:SymbolIcon Grid.Column="0"
+                                   Symbol="ShieldKeyhole24"
+                                   FontSize="48"
+                                   Margin="0,0,16,0"
+                                   Foreground="{ui:ThemeResource AccentTextFillColorPrimaryBrush}" />
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Additional Authentication Required"
+                                   FontWeight="SemiBold"
+                                   FontSize="16" />
+                        <TextBlock Text="Please respond to the prompts below to continue."
+                                   Opacity="0.7"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Instruction (if provided) -->
+                <ui:InfoBar IsOpen="{Binding HasInstruction}"
+                            IsClosable="False"
+                            Severity="Informational"
+                            Message="{Binding Instruction}"
+                            Margin="0,0,0,16" />
+
+                <!-- Prompts -->
+                <ItemsControl ItemsSource="{Binding Prompts}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:PromptViewModel}">
+                            <StackPanel Margin="0,0,0,16">
+                                <TextBlock Text="{Binding Prompt}"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,8" />
+
+                                <!-- Password input (masked) -->
+                                <ui:PasswordBox Password="{Binding Response, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                               PlaceholderText="Enter response..."
+                                               Visibility="{Binding IsPassword, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                                <!-- Plain text input -->
+                                <ui:TextBox Text="{Binding Response, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                           PlaceholderText="Enter response..."
+                                           Visibility="{Binding IsPlainText, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Security Notice -->
+                <ui:InfoBar IsOpen="True"
+                           IsClosable="False"
+                           Severity="Caution"
+                           Title="Security Notice"
+                           Message="If you didn't initiate this connection or don't recognize these prompts, click Cancel." />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="2" Margin="24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ui:Button Grid.Column="1"
+                      Content="Cancel"
+                      Command="{Binding CancelCommand}"
+                      Margin="0,0,8,0"
+                      MinWidth="100" />
+
+            <ui:Button Grid.Column="2"
+                      Content="Submit"
+                      Appearance="Primary"
+                      Command="{Binding SubmitCommand}"
+                      MinWidth="100" />
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

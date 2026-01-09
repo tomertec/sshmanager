@@ -1,0 +1,70 @@
+<ui:FluentWindow x:Class="SshManager.App.Views.Dialogs.RenameDialog"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                xmlns:local="clr-namespace:SshManager.App.Converters"
+                mc:Ignorable="d"
+                Title="{Binding DialogTitle}"
+                Height="200" Width="400"
+                MinHeight="180" MinWidth="350"
+                WindowStartupLocation="CenterOwner"
+                ResizeMode="NoResize"
+                ExtendsContentIntoTitleBar="True"
+                WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <local:StringToVisibilityConverter x:Key="StringToVisibilityConverter" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar -->
+        <ui:TitleBar Grid.Row="0"
+                     Title="{Binding DialogTitle}"
+                     ShowMaximize="False"
+                     ShowMinimize="False" />
+
+        <!-- Content -->
+        <StackPanel Grid.Row="1" Margin="24,16">
+            <!-- New Name -->
+            <TextBlock Text="New name" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <ui:TextBox x:Name="NameTextBox"
+                       Text="{Binding NewName, UpdateSourceTrigger=PropertyChanged}"
+                       Margin="0,0,0,8" />
+
+            <!-- Validation Error -->
+            <TextBlock Text="{Binding ValidationError}"
+                      Foreground="IndianRed"
+                      Visibility="{Binding ValidationError, Converter={StaticResource StringToVisibilityConverter}}"
+                      Margin="0,4,0,0" />
+        </StackPanel>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="2" Margin="24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ui:Button Grid.Column="1"
+                      Content="Cancel"
+                      Command="{Binding CancelCommand}"
+                      Margin="0,0,8,0"
+                      MinWidth="80" />
+
+            <ui:Button Grid.Column="2"
+                      Content="Rename"
+                      Appearance="Primary"
+                      Command="{Binding SaveCommand}"
+                      MinWidth="80" />
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

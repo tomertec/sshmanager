@@ -1,0 +1,234 @@
+<ui:FluentWindow x:Class="SshManager.App.Views.Dialogs.CloudSyncSetupDialog"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                mc:Ignorable="d"
+                Title="Cloud Sync"
+                Height="550" Width="500"
+                MinHeight="500" MinWidth="450"
+                WindowStartupLocation="CenterOwner"
+                ExtendsContentIntoTitleBar="True"
+                WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar -->
+        <ui:TitleBar Grid.Row="0"
+                     Title="Cloud Sync"
+                     ShowMaximize="False"
+                     ShowMinimize="False" />
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      Margin="16,8">
+            <StackPanel>
+                <!-- Status Banner -->
+                <Border Background="{DynamicResource SystemFillColorSuccessBackgroundBrush}"
+                        CornerRadius="4"
+                        Padding="12"
+                        Margin="0,0,0,16"
+                        Visibility="{Binding IsSyncEnabled, Converter={StaticResource BoolToVisibility}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ui:SymbolIcon Grid.Column="0"
+                                       Symbol="CloudCheckmark24"
+                                       FontSize="24"
+                                       Margin="0,0,12,0" />
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="Sync Enabled"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding LastSyncText}"
+                                       FontSize="12"
+                                       Opacity="0.8" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- OneDrive Not Available Warning -->
+                <Border Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                        CornerRadius="4"
+                        Padding="12"
+                        Margin="0,0,0,16"
+                        Visibility="{Binding IsOneDriveUnavailable, Converter={StaticResource BoolToVisibility}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ui:SymbolIcon Grid.Column="0"
+                                       Symbol="Warning24"
+                                       FontSize="24"
+                                       Margin="0,0,12,0" />
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="OneDrive Not Available"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="Install OneDrive to enable cloud sync."
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Opacity="0.8" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Sync Folder Info -->
+                <TextBlock Text="Sync Folder"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,4" />
+                <TextBlock Text="{Binding SyncFolderPath}"
+                           FontSize="12"
+                           Opacity="0.7"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding SyncFolderPath}"
+                           Margin="0,0,0,16" />
+
+                <!-- Passphrase Section -->
+                <TextBlock Text="Encryption Passphrase"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,8" />
+                <TextBlock Text="Your data is encrypted using this passphrase. Without it, your data cannot be recovered."
+                           FontSize="12"
+                           Opacity="0.7"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,8" />
+
+                <ui:PasswordBox x:Name="PassphraseBox"
+                                PlaceholderText="Enter passphrase"
+                                Margin="0,0,0,8" />
+
+                <ui:PasswordBox x:Name="ConfirmPassphraseBox"
+                                PlaceholderText="Confirm passphrase"
+                                Margin="0,0,0,8"
+                                Visibility="{Binding ShowConfirmPassphrase, Converter={StaticResource BoolToVisibility}}" />
+
+                <!-- Passphrase Mismatch Warning -->
+                <TextBlock Text="Passphrases do not match"
+                           Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                           FontSize="12"
+                           Margin="0,0,0,8"
+                           Visibility="{Binding PassphraseMismatch, Converter={StaticResource BoolToVisibility}}" />
+
+                <!-- Security Warning -->
+                <Border Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                        CornerRadius="4"
+                        Padding="12"
+                        Margin="0,8,0,16">
+                    <StackPanel>
+                        <TextBlock Text="Important Security Information"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,4" />
+                        <TextBlock TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Opacity="0.9">
+                            <Run Text="&#x2022; Your passphrase is never stored - you must enter it each session"/>
+                            <LineBreak/>
+                            <Run Text="&#x2022; If you forget your passphrase, your synced data cannot be recovered"/>
+                            <LineBreak/>
+                            <Run Text="&#x2022; Passwords stored in hosts will not sync (DPAPI is device-specific)"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Sync Settings (when enabled) -->
+                <StackPanel Visibility="{Binding IsSyncEnabled, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="Sync Settings"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,8" />
+
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="Sync interval (minutes)"
+                                   VerticalAlignment="Center" />
+                        <ui:NumberBox Grid.Column="1"
+                                      Value="{Binding SyncIntervalMinutes, Mode=TwoWay}"
+                                      Minimum="1"
+                                      Maximum="60"
+                                      Width="100" />
+                    </Grid>
+
+                    <TextBlock Text="{Binding DeviceInfo}"
+                               FontSize="12"
+                               Opacity="0.7"
+                               Margin="0,8,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="2" Margin="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Disable Sync Button (when enabled) -->
+            <ui:Button Grid.Column="0"
+                       Content="Disable Sync"
+                       Appearance="Danger"
+                       Command="{Binding DisableSyncCommand}"
+                       Visibility="{Binding IsSyncEnabled, Converter={StaticResource BoolToVisibility}}" />
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <!-- Sync Now Button (when enabled) -->
+                <ui:Button Content="Sync Now"
+                           Icon="{ui:SymbolIcon ArrowSync24}"
+                           Command="{Binding SyncNowCommand}"
+                           Margin="0,0,8,0"
+                           Visibility="{Binding IsSyncEnabled, Converter={StaticResource BoolToVisibility}}" />
+
+                <!-- Setup Button (when not enabled) -->
+                <ui:Button Content="Enable Sync"
+                           Appearance="Primary"
+                           Command="{Binding SetupSyncCommand}"
+                           Margin="0,0,8,0"
+                           Visibility="{Binding IsSyncNotEnabled, Converter={StaticResource BoolToVisibility}}" />
+
+                <!-- Unlock Button (when enabled but not unlocked) -->
+                <ui:Button Content="Unlock"
+                           Appearance="Primary"
+                           Command="{Binding UnlockSyncCommand}"
+                           Margin="0,0,8,0"
+                           Visibility="{Binding NeedsUnlock, Converter={StaticResource BoolToVisibility}}" />
+
+                <ui:Button Content="Close"
+                           Command="{Binding CloseCommand}"
+                           MinWidth="80" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Loading Overlay -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource ApplicationBackgroundBrush}"
+                Opacity="0.8"
+                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                <ui:ProgressRing IsIndeterminate="True"
+                                 Width="48"
+                                 Height="48"
+                                 Margin="0,0,0,16" />
+                <TextBlock Text="{Binding LoadingMessage}"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

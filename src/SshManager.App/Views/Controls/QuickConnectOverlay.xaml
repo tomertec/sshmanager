@@ -1,0 +1,350 @@
+<UserControl x:Class="SshManager.App.Views.Controls.QuickConnectOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:converters="clr-namespace:SshManager.App.Converters"
+             mc:Ignorable="d"
+             Focusable="True"
+             d:DesignHeight="400" d:DesignWidth="500">
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
+        <converters:GroupColorConverter x:Key="GroupColorConverter" />
+        <converters:GroupColorToVisibilityConverter x:Key="GroupColorToVisibilityConverter" />
+        <converters:HighlightTextConverter x:Key="HighlightTextConverter" />
+    </UserControl.Resources>
+
+    <!-- Full-screen overlay with semi-transparent background -->
+    <Grid Visibility="{Binding IsOpen, Converter={StaticResource BoolToVisibilityConverter}}"
+          MouseLeftButtonDown="Overlay_MouseLeftButtonDown">
+
+        <!-- Dark overlay background -->
+        <Border Background="#80000000" />
+
+        <!-- Command palette container -->
+        <Border HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,50,0,0"
+                MinWidth="500"
+                MaxWidth="600"
+                MaxHeight="450"
+                Background="{DynamicResource SystemFillColorSolidNeutralBackgroundBrush}"
+                BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                MouseLeftButtonDown="Palette_MouseLeftButtonDown">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="24"
+                                  ShadowDepth="8"
+                                  Opacity="0.4"
+                                  Color="Black" />
+            </Border.Effect>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Pill-shaped search container -->
+                <Border Grid.Row="0"
+                        Background="{DynamicResource ControlFillColorDefaultBrush}"
+                        BorderBrush="#3B82F6"
+                        BorderThickness="2"
+                        CornerRadius="20"
+                        Margin="12"
+                        Padding="14,8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Search icon -->
+                        <ui:SymbolIcon Grid.Column="0"
+                                       Symbol="Search24"
+                                       FontSize="18"
+                                       Margin="0,0,10,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                        <!-- Search TextBox -->
+                        <TextBox x:Name="SearchTextBox"
+                                 Grid.Column="1"
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 FontSize="16"
+                                 VerticalContentAlignment="Center"
+                                 PreviewKeyDown="SearchTextBox_PreviewKeyDown">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                    <Setter Property="CaretBrush" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+
+                        <!-- Keyboard hint -->
+                        <Border Grid.Column="2"
+                                Background="#1AFFFFFF"
+                                CornerRadius="10"
+                                Padding="10,4"
+                                Margin="12,0,0,0"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="↵ Connect"
+                                       FontSize="11"
+                                       Opacity="0.6"
+                                       VerticalAlignment="Center"
+                                       HorizontalAlignment="Center" />
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Scrollable content area -->
+                <ScrollViewer Grid.Row="1"
+                              Background="Transparent"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              MaxHeight="350">
+                    <StackPanel>
+                        <!-- Recent hosts section (shown when no search text) -->
+                        <StackPanel Visibility="{Binding ShowRecentSection, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <TextBlock Text="RECENT"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Opacity="0.5"
+                                       Margin="16,8,16,4"/>
+                            <ItemsControl ItemsSource="{Binding RecentHosts}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="Transparent"
+                                                CornerRadius="4"
+                                                Padding="10,8"
+                                                Margin="8,2"
+                                                Cursor="Hand"
+                                                MouseLeftButtonUp="RecentHost_MouseLeftButtonUp">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Group color indicator -->
+                                                <Border Grid.Column="0"
+                                                        Width="4"
+                                                        Margin="0,0,10,0"
+                                                        CornerRadius="2"
+                                                        Visibility="{Binding Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                                    <Border.Background>
+                                                        <Binding Path="Group.Color" Converter="{StaticResource GroupColorConverter}" />
+                                                    </Border.Background>
+                                                </Border>
+
+                                                <!-- Host info -->
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DisplayName}"
+                                                               FontSize="14"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                        <TextBlock Text="{Binding Username}"
+                                                                   FontSize="12"
+                                                                   Opacity="0.7"
+                                                                   Margin="0,0,4,0" />
+                                                        <TextBlock Text="@"
+                                                                   FontSize="12"
+                                                                   Opacity="0.5" />
+                                                        <TextBlock Text="{Binding Hostname}"
+                                                                   FontSize="12"
+                                                                   Opacity="0.7"
+                                                                   Margin="4,0,0,0" />
+                                                        <TextBlock Text="{Binding Port, StringFormat=':{}0'}"
+                                                                   FontSize="12"
+                                                                   Opacity="0.5"
+                                                                   Visibility="{Binding Port, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                    </StackPanel>
+                                                </StackPanel>
+
+                                                <!-- Group badge -->
+                                                <Border Grid.Column="2"
+                                                        Background="{DynamicResource ControlFillColorTertiaryBrush}"
+                                                        CornerRadius="4"
+                                                        Padding="8,4"
+                                                        VerticalAlignment="Center"
+                                                        Visibility="{Binding Group, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                    <TextBlock Text="{Binding Group.Name}"
+                                                               FontSize="11"
+                                                               Opacity="0.8" />
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Border Height="1"
+                                    Background="#20FFFFFF"
+                                    Margin="16,8"/>
+                        </StackPanel>
+
+                        <!-- Search results -->
+                        <ListBox x:Name="HostListBox"
+                                 ItemsSource="{Binding FilteredHosts}"
+                                 SelectedItem="{Binding SelectedHost, Mode=TwoWay}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.ScrollUnit="Pixel"
+                                 Padding="4"
+                                 PreviewMouseLeftButtonUp="HostListBox_PreviewMouseLeftButtonUp">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="ItemBorder"
+                                                        Background="Transparent"
+                                                        CornerRadius="4"
+                                                        Padding="10,8"
+                                                        Margin="4,2">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Group color indicator -->
+                                        <Border Grid.Column="0"
+                                                Width="4"
+                                                Margin="0,0,10,0"
+                                                CornerRadius="2"
+                                                Visibility="{Binding Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                            <Border.Background>
+                                                <Binding Path="Group.Color" Converter="{StaticResource GroupColorConverter}" />
+                                            </Border.Background>
+                                        </Border>
+
+                                        <!-- Host info with highlighting -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <!-- Display name with fuzzy match highlighting -->
+                                            <ContentControl FontSize="14"
+                                                            FontWeight="SemiBold">
+                                                <ContentControl.Content>
+                                                    <MultiBinding Converter="{StaticResource HighlightTextConverter}">
+                                                        <Binding Path="DisplayName"/>
+                                                        <Binding Path="DataContext.SearchText" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                    </MultiBinding>
+                                                </ContentControl.Content>
+                                            </ContentControl>
+                                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                <TextBlock Text="{Binding Username}"
+                                                           FontSize="12"
+                                                           Opacity="0.7"
+                                                           Margin="0,0,4,0" />
+                                                <TextBlock Text="@"
+                                                           FontSize="12"
+                                                           Opacity="0.5" />
+                                                <TextBlock Text="{Binding Hostname}"
+                                                           FontSize="12"
+                                                           Opacity="0.7"
+                                                           Margin="4,0,0,0" />
+                                                <TextBlock Text="{Binding Port, StringFormat=':{}0'}"
+                                                           FontSize="12"
+                                                           Opacity="0.5"
+                                                           Visibility="{Binding Port, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- Group badge -->
+                                        <Border Grid.Column="2"
+                                                Background="{DynamicResource ControlFillColorTertiaryBrush}"
+                                                CornerRadius="4"
+                                                Padding="8,4"
+                                                VerticalAlignment="Center"
+                                                Visibility="{Binding Group, Converter={StaticResource BoolToVisibilityConverter}}">
+                                            <TextBlock Text="{Binding Group.Name}"
+                                                       FontSize="11"
+                                                       Opacity="0.8" />
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Empty state message -->
+                <StackPanel Grid.Row="1"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
+                            Visibility="{Binding HasResults, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                    <ui:SymbolIcon Symbol="SearchInfo24"
+                                   FontSize="32"
+                                   Opacity="0.5"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,8" />
+                    <TextBlock Text="No hosts found"
+                               FontSize="14"
+                               Opacity="0.6"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="Try a different search term"
+                               FontSize="12"
+                               Opacity="0.4"
+                               HorizontalAlignment="Center"
+                               Margin="0,4,0,0" />
+                </StackPanel>
+
+                <!-- Keyboard shortcuts hint -->
+                <Border Grid.Row="2"
+                        BorderBrush="#20FFFFFF"
+                        BorderThickness="0,1,0,0"
+                        Padding="0,8,0,8">
+                    <TextBlock Text="↵ Connect  ·  ↑↓ Navigate  ·  Esc Close"
+                               Opacity="0.4"
+                               FontSize="10"
+                               HorizontalAlignment="Center" />
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
