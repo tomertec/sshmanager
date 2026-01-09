@@ -1,0 +1,249 @@
+<ui:FluentWindow x:Class="SshManager.App.Views.Dialogs.SshKeyManagerDialog"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                xmlns:converters="clr-namespace:SshManager.App.Converters"
+                mc:Ignorable="d"
+                Title="SSH Key Manager"
+                Height="600" Width="800"
+                MinHeight="500" MinWidth="700"
+                WindowStartupLocation="CenterOwner"
+                ExtendsContentIntoTitleBar="True"
+                WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar -->
+        <ui:TitleBar Grid.Row="0"
+                     Title="SSH Key Manager"
+                     ShowMaximize="True"
+                     ShowMinimize="False" />
+
+        <!-- Toolbar -->
+        <Grid Grid.Row="1" Margin="16,8,16,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <ui:Button Icon="{ui:SymbolIcon Add24}"
+                          Content="Generate New Key"
+                          Appearance="Primary"
+                          Command="{Binding GenerateNewKeyCommand}"
+                          Margin="0,0,8,0" />
+                <ui:Button Icon="{ui:SymbolIcon ArrowSync24}"
+                          ToolTip="Refresh"
+                          Click="RefreshButton_Click"
+                          Margin="0,0,8,0" />
+            </StackPanel>
+
+            <ui:Button Grid.Column="2"
+                      Icon="{ui:SymbolIcon FolderOpen24}"
+                      Content="Open .ssh Directory"
+                      Command="{Binding OpenSshDirectoryCommand}" />
+        </Grid>
+
+        <!-- Key List -->
+        <Border Grid.Row="2"
+               Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
+               CornerRadius="8"
+               Margin="16,0,16,8">
+            <Grid>
+                <!-- Loading Indicator -->
+                <StackPanel VerticalAlignment="Center"
+                           HorizontalAlignment="Center"
+                           Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <ui:ProgressRing IsIndeterminate="True"
+                                    Width="40" Height="40" />
+                    <TextBlock Text="Loading keys..."
+                              Margin="0,8,0,0"
+                              HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Key List -->
+                <ListBox ItemsSource="{Binding Keys}"
+                        SelectedItem="{Binding SelectedKey}"
+                        Visibility="{Binding IsLoading, Converter={StaticResource InverseBoolToVisibilityConverter}}"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Margin="8">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0,0,0,8" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#1FFFFFFF"
+                                   CornerRadius="6"
+                                   Padding="12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Key Icon -->
+                                    <Border Grid.Column="0"
+                                           Width="40" Height="40"
+                                           CornerRadius="6"
+                                           Margin="0,0,12,0"
+                                           VerticalAlignment="Center">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#444444" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsTracked}" Value="True">
+                                                        <Setter Property="Background" Value="#0078D4" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <ui:SymbolIcon Symbol="Key24"
+                                                      FontSize="20"
+                                                      Foreground="White"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center" />
+                                    </Border>
+
+                                    <!-- Key Info -->
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                  FontWeight="SemiBold"
+                                                  FontSize="14" />
+                                        <TextBlock FontSize="12" Opacity="0.7">
+                                            <Run Text="{Binding KeyTypeDisplay}" />
+                                            <Run Text=" - " />
+                                            <Run Text="{Binding Fingerprint}" />
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding PrivateKeyPath}"
+                                                  FontSize="11"
+                                                  Opacity="0.5"
+                                                  TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+
+                                    <!-- Encrypted Badge -->
+                                    <Border Grid.Column="2"
+                                           Visibility="{Binding IsEncrypted, Converter={StaticResource BoolToVisibilityConverter}}"
+                                           Background="#33FFAA00"
+                                           CornerRadius="4"
+                                           Padding="8,4"
+                                           Margin="8,0"
+                                           VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="LockClosed24"
+                                                          FontSize="12"
+                                                          Margin="0,0,4,0" />
+                                            <TextBlock Text="Encrypted"
+                                                      FontSize="11" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Tracked Badge -->
+                                    <Border Grid.Column="3"
+                                           Visibility="{Binding IsTracked, Converter={StaticResource BoolToVisibilityConverter}}"
+                                           Background="#330078D4"
+                                           CornerRadius="4"
+                                           Padding="8,4"
+                                           VerticalAlignment="Center">
+                                        <TextBlock Text="Tracked"
+                                                  FontSize="11"
+                                                  Foreground="#0078D4" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- Key Actions -->
+        <Border x:Name="ActionPanel"
+               Grid.Row="3"
+               Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
+               CornerRadius="8"
+               Margin="16,0,16,8"
+               Padding="12"
+               Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock x:Name="SelectedKeyName"
+                              FontWeight="SemiBold"
+                              FontSize="14" />
+                    <TextBlock x:Name="SelectedKeyPath"
+                              FontSize="11"
+                              Opacity="0.6"
+                              TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <ui:Button Icon="{ui:SymbolIcon Copy24}"
+                              Content="Copy Public Key"
+                              Command="{Binding CopyPublicKeyCommand}"
+                              Margin="0,0,8,0" />
+                    <ui:Button Icon="{ui:SymbolIcon Eye24}"
+                              Content="View"
+                              Command="{Binding ViewPublicKeyCommand}"
+                              Margin="0,0,8,0" />
+                    <ui:Button x:Name="TrackButton"
+                              Icon="{ui:SymbolIcon Pin24}"
+                              Content="Track"
+                              Click="TrackButton_Click"
+                              Margin="0,0,8,0" />
+                    <ui:Button Icon="{ui:SymbolIcon Delete24}"
+                              Content="Delete"
+                              Appearance="Danger"
+                              Command="{Binding DeleteKeyCommand}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="4"
+               Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
+               Padding="16,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                          Text="{Binding StatusMessage}"
+                          VerticalAlignment="Center"
+                          Opacity="0.7" />
+
+                <ui:Button Grid.Column="1"
+                          Content="Close"
+                          Command="{Binding CloseCommand}"
+                          MinWidth="80" />
+            </Grid>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

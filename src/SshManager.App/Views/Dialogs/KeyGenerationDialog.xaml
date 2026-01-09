@@ -1,0 +1,184 @@
+<ui:FluentWindow x:Class="SshManager.App.Views.Dialogs.KeyGenerationDialog"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                xmlns:security="clr-namespace:SshManager.Security;assembly=SshManager.Security"
+                mc:Ignorable="d"
+                Title="Generate SSH Key"
+                Height="550" Width="500"
+                MinHeight="500" MinWidth="450"
+                WindowStartupLocation="CenterOwner"
+                ResizeMode="NoResize"
+                ExtendsContentIntoTitleBar="True"
+                WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar -->
+        <ui:TitleBar Grid.Row="0"
+                     Title="Generate SSH Key"
+                     ShowMaximize="False"
+                     ShowMinimize="False" />
+
+        <!-- Form Content -->
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="24,16">
+            <StackPanel>
+                <!-- Key Type -->
+                <TextBlock Text="Key Type"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,4" />
+                <ComboBox ItemsSource="{Binding AvailableKeyTypes}"
+                         SelectedItem="{Binding SelectedKeyType}"
+                         Margin="0,0,0,8">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="{Binding}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding}" Value="{x:Static security:SshKeyType.Rsa2048}">
+                                                <Setter Property="Text" Value="RSA 2048-bit" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding}" Value="{x:Static security:SshKeyType.Rsa4096}">
+                                                <Setter Property="Text" Value="RSA 4096-bit" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding}" Value="{x:Static security:SshKeyType.Ed25519}">
+                                                <Setter Property="Text" Value="Ed25519 (Recommended)" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding}" Value="{x:Static security:SshKeyType.Ecdsa256}">
+                                                <Setter Property="Text" Value="ECDSA 256-bit" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding}" Value="{x:Static security:SshKeyType.Ecdsa384}">
+                                                <Setter Property="Text" Value="ECDSA 384-bit" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding}" Value="{x:Static security:SshKeyType.Ecdsa521}">
+                                                <Setter Property="Text" Value="ECDSA 521-bit" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Text="{Binding KeyTypeDescription}"
+                          FontSize="11"
+                          Opacity="0.6"
+                          TextWrapping="Wrap"
+                          Margin="0,0,0,16" />
+
+                <!-- Comment -->
+                <TextBlock Text="Comment (optional)"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,4" />
+                <ui:TextBox Text="{Binding Comment, UpdateSourceTrigger=PropertyChanged}"
+                           PlaceholderText="user@hostname"
+                           Margin="0,0,0,4" />
+                <TextBlock Text="Usually your email or a description of the key's purpose"
+                          FontSize="11"
+                          Opacity="0.6"
+                          Margin="0,0,0,16" />
+
+                <!-- Passphrase -->
+                <TextBlock Text="Passphrase (optional but recommended)"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,4" />
+                <PasswordBox x:Name="PassphraseBox"
+                            PasswordChanged="PassphraseBox_PasswordChanged"
+                            Margin="0,0,0,8" />
+
+                <TextBlock Text="Confirm Passphrase"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,4" />
+                <PasswordBox x:Name="ConfirmPassphraseBox"
+                            PasswordChanged="ConfirmPassphraseBox_PasswordChanged"
+                            Margin="0,0,0,4" />
+                <TextBlock Text="Leave empty for an unencrypted key (less secure)"
+                          FontSize="11"
+                          Opacity="0.6"
+                          Margin="0,0,0,16" />
+
+                <!-- Save Path -->
+                <TextBlock Text="Save Location"
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox Grid.Column="0"
+                               Text="{Binding SavePath, UpdateSourceTrigger=PropertyChanged}"
+                               PlaceholderText="~/.ssh/id_ed25519"
+                               Margin="0,0,8,0" />
+                    <ui:Button Grid.Column="1"
+                              Content="Browse..."
+                              Command="{Binding BrowseSavePathCommand}" />
+                </Grid>
+                <TextBlock Text="Both private and public key files will be saved (.pub for public)"
+                          FontSize="11"
+                          Opacity="0.6"
+                          Margin="0,0,0,16" />
+
+                <!-- Validation Error -->
+                <Border Background="#33FF0000"
+                       CornerRadius="4"
+                       Padding="12,8"
+                       Margin="0,0,0,16"
+                       Visibility="{Binding ValidationError, Converter={StaticResource BoolToVisibilityConverter}, TargetNullValue=Collapsed}">
+                    <TextBlock Text="{Binding ValidationError}"
+                              Foreground="#FFFF6B6B"
+                              TextWrapping="Wrap" />
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="2" Margin="24,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Progress Indicator -->
+            <StackPanel Grid.Column="0"
+                       Orientation="Horizontal"
+                       Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVisibilityConverter}}">
+                <ui:ProgressRing IsIndeterminate="True"
+                                Width="20" Height="20"
+                                Margin="0,0,8,0" />
+                <TextBlock Text="Generating key..."
+                          VerticalAlignment="Center" />
+            </StackPanel>
+
+            <ui:Button Grid.Column="1"
+                      Content="Cancel"
+                      Command="{Binding CancelCommand}"
+                      IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBoolConverter}}"
+                      Margin="0,0,8,0"
+                      MinWidth="80" />
+
+            <ui:Button Grid.Column="2"
+                      Content="Generate"
+                      Appearance="Primary"
+                      Command="{Binding GenerateCommand}"
+                      IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBoolConverter}}"
+                      MinWidth="80" />
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

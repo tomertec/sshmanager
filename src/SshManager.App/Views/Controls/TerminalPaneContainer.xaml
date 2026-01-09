@@ -1,0 +1,42 @@
+<UserControl x:Class="SshManager.App.Views.Controls.TerminalPaneContainer"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             mc:Ignorable="d"
+             d:DesignHeight="400" d:DesignWidth="600">
+
+    <Grid x:Name="RootGrid">
+        <!-- Content is generated dynamically based on the pane tree -->
+        <ContentPresenter x:Name="RootPresenter" />
+
+        <!-- Welcome message when no panes exist -->
+        <StackPanel x:Name="WelcomePanel"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Visibility="Collapsed">
+            <Border Background="#1FFFFFFF"
+                    CornerRadius="50"
+                    Width="100" Height="100"
+                    HorizontalAlignment="Center"
+                    Margin="0,0,0,24">
+                <ui:SymbolIcon Symbol="DesktopSignal24"
+                              FontSize="48"
+                              Opacity="0.7"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center" />
+            </Border>
+            <TextBlock Text="SSH Manager"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       Opacity="0.8"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="Select a host from the list to connect"
+                       FontSize="14"
+                       Opacity="0.5"
+                       Margin="0,8,0,0"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
+    </Grid>
+</UserControl>
