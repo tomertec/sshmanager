@@ -9,7 +9,7 @@ namespace SshManager.App.ViewModels;
 /// <summary>
 /// ViewModel for the PuTTY session import dialog.
 /// </summary>
-public partial class PuttyImportViewModel : ObservableObject
+public partial class PuttyImportViewModel : ObservableObject, IDisposable
 {
     private readonly IPuttySessionImporter _importer;
 
@@ -68,13 +68,7 @@ public partial class PuttyImportViewModel : ObservableObject
             foreach (var session in result.Sessions)
             {
                 var item = new PuttySessionItem(session) { IsSelected = true };
-                item.PropertyChanged += (s, e) =>
-                {
-                    if (e.PropertyName == nameof(PuttySessionItem.IsSelected))
-                    {
-                        UpdateSelectedCount();
-                    }
-                };
+                item.PropertyChanged += OnSessionItemPropertyChanged;
                 Sessions.Add(item);
             }
 
@@ -96,6 +90,14 @@ public partial class PuttyImportViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    private void OnSessionItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PuttySessionItem.IsSelected))
+        {
+            UpdateSelectedCount();
         }
     }
 
@@ -147,6 +149,15 @@ public partial class PuttyImportViewModel : ObservableObject
             .Where(s => s.IsSelected)
             .Select(s => _importer.ConvertToHostEntry(s.Session))
             .ToList();
+    }
+
+    public void Dispose()
+    {
+        foreach (var session in Sessions)
+        {
+            session.PropertyChanged -= OnSessionItemPropertyChanged;
+        }
+        Sessions.Clear();
     }
 }
 

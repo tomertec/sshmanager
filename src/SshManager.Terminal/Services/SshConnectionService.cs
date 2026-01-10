@@ -21,10 +21,14 @@ public sealed class SshConnectionService : ISshConnectionService
     private const int MaxPort = 65535;
 
     private readonly ILogger<SshConnectionService> _logger;
+    private readonly ITerminalResizeService _resizeService;
 
-    public SshConnectionService(ILogger<SshConnectionService>? logger = null)
+    public SshConnectionService(
+        ILogger<SshConnectionService>? logger = null,
+        ITerminalResizeService? resizeService = null)
     {
         _logger = logger ?? NullLogger<SshConnectionService>.Instance;
+        _resizeService = resizeService ?? new TerminalResizeService();
     }
 
     public Task<ISshConnection> ConnectAsync(
@@ -180,7 +184,7 @@ public sealed class SshConnectionService : ISshConnectionService
 
         _logger.LogDebug("Shell stream created with {Columns}x{Rows} terminal", columns, rows);
 
-        var connection = new SshConnection(client, shellStream, _logger);
+        var connection = new SshConnection(client, shellStream, _logger, _resizeService);
 
         // Transfer ownership of disposable resources to the connection
         foreach (var disposable in authResult.Disposables)
@@ -351,7 +355,8 @@ public sealed class SshConnectionService : ISshConnectionService
                 shellStream,
                 intermediateClients,
                 forwardedPorts,
-                _logger);
+                _logger,
+                _resizeService);
 
             // Track auth resources for cleanup
             foreach (var disposable in disposables)
@@ -813,6 +818,7 @@ internal sealed class SshConnection : ISshConnection
 {
     private readonly SshClient _client;
     private readonly ILogger _logger;
+    private readonly ITerminalResizeService _resizeService;
     private readonly List<IDisposable> _disposables = new();
     private bool _disposed;
 
@@ -820,11 +826,16 @@ internal sealed class SshConnection : ISshConnection
     public bool IsConnected => _client.IsConnected && !_disposed;
     public event EventHandler? Disconnected;
 
-    public SshConnection(SshClient client, ShellStream shellStream, ILogger logger)
+    public SshConnection(
+        SshClient client,
+        ShellStream shellStream,
+        ILogger logger,
+        ITerminalResizeService resizeService)
     {
         _client = client;
         ShellStream = shellStream;
         _logger = logger;
+        _resizeService = resizeService;
 
         // Subscribe to error/disconnect events
         _client.ErrorOccurred += OnError;
@@ -842,45 +853,7 @@ internal sealed class SshConnection : ISshConnection
 
     public bool ResizeTerminal(uint columns, uint rows)
     {
-        try
-        {
-            // SSH.NET doesn't expose a public API for window size changes
-            // Use reflection to access the internal channel and send window change request
-            var shellStreamType = ShellStream.GetType();
-            var channelField = shellStreamType.GetField("_channel",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            if (channelField?.GetValue(ShellStream) is { } channel)
-            {
-                // Try to send window size change
-                var sendWindowChangeMethod = channel.GetType().GetMethod("SendWindowChangeRequest",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-                if (sendWindowChangeMethod != null)
-                {
-                    sendWindowChangeMethod.Invoke(channel, [columns, rows, 0u, 0u]);
-                    _logger.LogDebug("Terminal resized to {Columns}x{Rows}", columns, rows);
-                    return true;
-                }
-                else
-                {
-                    _logger.LogWarning("SendWindowChangeRequest method not found - terminal resize not supported. This may occur after SSH.NET library updates change internal API.");
-                    return false;
-                }
-            }
-            else
-            {
-                _logger.LogWarning("Could not access internal channel - terminal resize not available");
-                return false;
-            }
-        }
-        catch (Exception ex)
-        {
-            // Log at warning level since resize failures affect user experience
-            // This may occur after SSH.NET library updates change internal API
-            _logger.LogWarning(ex, "Terminal resize failed - this may occur after SSH.NET library updates or if the server doesn't support window size changes");
-            return false;
-        }
+        return _resizeService.TryResize(ShellStream, columns, rows);
     }
 
     private void OnError(object? sender, Renci.SshNet.Common.ExceptionEventArgs e)
@@ -995,6 +968,7 @@ internal sealed class ProxyChainSshConnection : ISshConnection
     private readonly IReadOnlyList<SshClient> _intermediateClients;
     private readonly IReadOnlyList<ForwardedPortLocal> _forwardedPorts;
     private readonly ILogger _logger;
+    private readonly ITerminalResizeService _resizeService;
     private readonly List<IDisposable> _disposables = new();
     private bool _disposed;
 
@@ -1007,13 +981,15 @@ internal sealed class ProxyChainSshConnection : ISshConnection
         ShellStream shellStream,
         IReadOnlyList<SshClient> intermediateClients,
         IReadOnlyList<ForwardedPortLocal> forwardedPorts,
-        ILogger logger)
+        ILogger logger,
+        ITerminalResizeService resizeService)
     {
         _targetClient = targetClient;
         ShellStream = shellStream;
         _intermediateClients = intermediateClients;
         _forwardedPorts = forwardedPorts;
         _logger = logger;
+        _resizeService = resizeService;
 
         // Subscribe to error/disconnect events
         _targetClient.ErrorOccurred += OnError;
@@ -1036,40 +1012,7 @@ internal sealed class ProxyChainSshConnection : ISshConnection
 
     public bool ResizeTerminal(uint columns, uint rows)
     {
-        try
-        {
-            var shellStreamType = ShellStream.GetType();
-            var channelField = shellStreamType.GetField("_channel",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            if (channelField?.GetValue(ShellStream) is { } channel)
-            {
-                var sendWindowChangeMethod = channel.GetType().GetMethod("SendWindowChangeRequest",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-                if (sendWindowChangeMethod != null)
-                {
-                    sendWindowChangeMethod.Invoke(channel, [columns, rows, 0u, 0u]);
-                    _logger.LogDebug("Proxy chain terminal resized to {Columns}x{Rows}", columns, rows);
-                    return true;
-                }
-                else
-                {
-                    _logger.LogWarning("SendWindowChangeRequest method not found - proxy chain terminal resize not supported");
-                    return false;
-                }
-            }
-            else
-            {
-                _logger.LogWarning("Could not access internal channel - proxy chain terminal resize not available");
-                return false;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Proxy chain terminal resize failed");
-            return false;
-        }
+        return _resizeService.TryResize(ShellStream, columns, rows);
     }
 
     private void OnError(object? sender, Renci.SshNet.Common.ExceptionEventArgs e)

@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
@@ -12,243 +11,128 @@ namespace SshManager.App.ViewModels;
 /// ViewModel for browsing the local filesystem.
 /// Provides navigation, file listing, and drive/folder quick access.
 /// </summary>
-public partial class LocalFileBrowserViewModel : ObservableObject
+public partial class LocalFileBrowserViewModel : FileBrowserViewModelBase<DriveInfoViewModel>
 {
-    private readonly ILogger<LocalFileBrowserViewModel> _logger;
-    private readonly Stack<string> _navigationHistory = new();
+    /// <inheritdoc />
+    public override bool CanGoBack => _navigationHistory.Count > 0;
+
+    /// <inheritdoc />
+    public override bool CanGoUp => !string.IsNullOrEmpty(CurrentPath) && Directory.GetParent(CurrentPath) != null;
+
+    /// <inheritdoc />
+    protected override string BrowserTypeName => "local";
 
     /// <summary>
-    /// Current directory path.
+    /// Available drives for quick access (alias for QuickAccess).
     /// </summary>
-    [ObservableProperty]
-    private string _currentPath = "";
-
-    /// <summary>
-    /// Items in the current directory.
-    /// </summary>
-    [ObservableProperty]
-    private ObservableCollection<FileItemViewModel> _items = [];
-
-    /// <summary>
-    /// Currently selected item.
-    /// </summary>
-    [ObservableProperty]
-    private FileItemViewModel? _selectedItem;
-
-    /// <summary>
-    /// Currently selected items (for multi-select).
-    /// </summary>
-    [ObservableProperty]
-    private ObservableCollection<FileItemViewModel> _selectedItems = [];
-
-    /// <summary>
-    /// Available drives for quick access.
-    /// </summary>
-    [ObservableProperty]
-    private ObservableCollection<DriveInfoViewModel> _drives = [];
-
-    /// <summary>
-    /// Whether the browser is currently loading.
-    /// </summary>
-    [ObservableProperty]
-    private bool _isLoading;
-
-    /// <summary>
-    /// Error message if loading failed.
-    /// </summary>
-    [ObservableProperty]
-    private string? _errorMessage;
-
-    /// <summary>
-    /// Whether navigation back is available.
-    /// </summary>
-    public bool CanGoBack => _navigationHistory.Count > 0;
-
-    /// <summary>
-    /// Whether navigation up is available.
-    /// </summary>
-    public bool CanGoUp => !string.IsNullOrEmpty(CurrentPath) && Directory.GetParent(CurrentPath) != null;
-
-    /// <summary>
-    /// Breadcrumb segments for path navigation.
-    /// </summary>
-    [ObservableProperty]
-    private ObservableCollection<BreadcrumbSegment> _breadcrumbs = [];
+    public ObservableCollection<DriveInfoViewModel> Drives => QuickAccess;
 
     public LocalFileBrowserViewModel(ILogger<LocalFileBrowserViewModel>? logger = null)
+        : base(logger ?? NullLogger<LocalFileBrowserViewModel>.Instance)
     {
-        _logger = logger ?? NullLogger<LocalFileBrowserViewModel>.Instance;
         LoadDrives();
     }
 
-    /// <summary>
-    /// Initializes the browser with the user's home directory.
-    /// </summary>
-    public async Task InitializeAsync()
+    /// <inheritdoc />
+    public override async Task InitializeAsync()
     {
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         await NavigateToAsync(userProfile);
     }
 
-    /// <summary>
-    /// Navigates to the specified directory path.
-    /// </summary>
-    [RelayCommand]
-    public async Task NavigateToAsync(string path)
+    /// <inheritdoc />
+    protected override string NormalizePath(string path) => Path.GetFullPath(path);
+
+    /// <inheritdoc />
+    protected override string GetParentPath(string path)
     {
-        if (string.IsNullOrEmpty(path)) return;
+        var parent = Directory.GetParent(path);
+        return parent?.FullName ?? path;
+    }
 
-        _logger.LogDebug("Navigating to local path: {Path}", path);
-        IsLoading = true;
-        ErrorMessage = null;
+    /// <inheritdoc />
+    protected override string CombinePaths(string basePath, string relativePath)
+        => Path.Combine(basePath, relativePath);
 
-        try
+    /// <inheritdoc />
+    protected override Task<bool> DirectoryExistsAsync(string path, CancellationToken ct = default)
+        => Task.FromResult(Directory.Exists(path));
+
+    /// <inheritdoc />
+    protected override bool IsRootPath(string path)
+        => Directory.GetParent(path) == null;
+
+    /// <inheritdoc />
+    protected override async Task<List<FileItemViewModel>> LoadDirectoryItemsAsync(string path, CancellationToken ct = default)
+    {
+        var items = new List<FileItemViewModel>();
+
+        // Add parent directory if not at root
+        var parentDir = Directory.GetParent(path);
+        if (parentDir != null)
         {
-            // Normalize the path
-            path = Path.GetFullPath(path);
+            items.Add(FileItemViewModel.CreateParentDirectory(parentDir.FullName));
+        }
 
-            if (!Directory.Exists(path))
-            {
-                ErrorMessage = $"Directory not found: {path}";
-                _logger.LogWarning("Directory not found: {Path}", path);
-                return;
-            }
+        // Load directories first, then files (sorted alphabetically)
+        await Task.Run(() =>
+        {
+            var dirInfo = new DirectoryInfo(path);
 
-            // Save current path to history if navigating to a new location
-            if (!string.IsNullOrEmpty(CurrentPath) && CurrentPath != path)
-            {
-                _navigationHistory.Push(CurrentPath);
-            }
-
-            CurrentPath = path;
-            UpdateBreadcrumbs();
-
-            var items = new List<FileItemViewModel>();
-
-            // Add parent directory if not at root
-            var parentDir = Directory.GetParent(path);
-            if (parentDir != null)
-            {
-                items.Add(FileItemViewModel.CreateParentDirectory(parentDir.FullName));
-            }
-
-            // Load directories first, then files (sorted alphabetically)
-            await Task.Run(() =>
+            // Add directories
+            foreach (var dir in dirInfo.EnumerateDirectories().OrderBy(d => d.Name))
             {
                 try
                 {
-                    var dirInfo = new DirectoryInfo(path);
-
-                    // Add directories
-                    foreach (var dir in dirInfo.EnumerateDirectories().OrderBy(d => d.Name))
-                    {
-                        try
-                        {
-                            items.Add(FileItemViewModel.FromFileSystemInfo(dir));
-                        }
-                        catch (UnauthorizedAccessException)
-                        {
-                            // Skip inaccessible directories
-                        }
-                    }
-
-                    // Add files
-                    foreach (var file in dirInfo.EnumerateFiles().OrderBy(f => f.Name))
-                    {
-                        try
-                        {
-                            items.Add(FileItemViewModel.FromFileSystemInfo(file));
-                        }
-                        catch (UnauthorizedAccessException)
-                        {
-                            // Skip inaccessible files
-                        }
-                    }
+                    items.Add(FileItemViewModel.FromFileSystemInfo(dir));
                 }
-                catch (UnauthorizedAccessException ex)
+                catch (UnauthorizedAccessException)
                 {
-                    _logger.LogWarning(ex, "Access denied to directory: {Path}", path);
-                    throw;
+                    // Skip inaccessible directories
                 }
-            });
+            }
 
-            Items = new ObservableCollection<FileItemViewModel>(items);
-            _logger.LogDebug("Loaded {Count} items from local directory", items.Count);
+            // Add files
+            foreach (var file in dirInfo.EnumerateFiles().OrderBy(f => f.Name))
+            {
+                try
+                {
+                    items.Add(FileItemViewModel.FromFileSystemInfo(file));
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Skip inaccessible files
+                }
+            }
+        }, ct);
 
-            OnPropertyChanged(nameof(CanGoBack));
-            OnPropertyChanged(nameof(CanGoUp));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            ErrorMessage = "Access denied to this directory";
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = $"Failed to load directory: {ex.Message}";
-            _logger.LogError(ex, "Failed to navigate to {Path}", path);
-        }
-        finally
-        {
-            IsLoading = false;
-        }
+        return items;
     }
 
-    /// <summary>
-    /// Opens the selected item (navigates if directory, otherwise does nothing).
-    /// </summary>
-    [RelayCommand]
-    public async Task OpenItemAsync(FileItemViewModel? item)
+    /// <inheritdoc />
+    protected override void UpdateBreadcrumbs()
     {
-        if (item == null) return;
+        var segments = new List<BreadcrumbSegment>();
 
-        if (item.IsDirectory)
-        {
-            await NavigateToAsync(item.FullPath);
-        }
-    }
-
-    /// <summary>
-    /// Navigates back to the previous directory.
-    /// </summary>
-    [RelayCommand]
-    public async Task GoBackAsync()
-    {
-        if (_navigationHistory.Count == 0) return;
-
-        var previousPath = _navigationHistory.Pop();
-        CurrentPath = ""; // Clear to avoid re-pushing to history
-        await NavigateToAsync(previousPath);
-        _navigationHistory.Pop(); // Remove the path that was just added
-    }
-
-    /// <summary>
-    /// Navigates up to the parent directory.
-    /// </summary>
-    [RelayCommand]
-    public async Task GoUpAsync()
-    {
         if (string.IsNullOrEmpty(CurrentPath)) return;
 
-        var parent = Directory.GetParent(CurrentPath);
-        if (parent != null)
-        {
-            await NavigateToAsync(parent.FullName);
-        }
-    }
+        var parts = CurrentPath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        var currentFullPath = "";
 
-    /// <summary>
-    /// Refreshes the current directory listing.
-    /// </summary>
-    [RelayCommand]
-    public async Task RefreshAsync()
-    {
-        if (!string.IsNullOrEmpty(CurrentPath))
+        foreach (var part in parts)
         {
-            _logger.LogDebug("Refreshing local directory: {Path}", CurrentPath);
-            var path = CurrentPath;
-            CurrentPath = ""; // Clear to avoid history push
-            await NavigateToAsync(path);
+            currentFullPath = string.IsNullOrEmpty(currentFullPath)
+                ? part + Path.DirectorySeparatorChar
+                : Path.Combine(currentFullPath, part);
+
+            segments.Add(new BreadcrumbSegment
+            {
+                Name = part,
+                FullPath = currentFullPath
+            });
         }
+
+        Breadcrumbs = new ObservableCollection<BreadcrumbSegment>(segments);
     }
 
     /// <summary>
@@ -263,41 +147,8 @@ public partial class LocalFileBrowserViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Navigates to a breadcrumb segment.
-    /// </summary>
-    [RelayCommand]
-    public async Task NavigateToBreadcrumbAsync(BreadcrumbSegment? segment)
-    {
-        if (segment != null)
-        {
-            await NavigateToAsync(segment.FullPath);
-        }
-    }
-
-    /// <summary>
-    /// Copies the full path of the selected item to the clipboard.
-    /// </summary>
-    [RelayCommand]
-    public void CopyPath(FileItemViewModel? item)
-    {
-        if (item == null || item.IsParentDirectory) return;
-
-        try
-        {
-            Clipboard.SetText(item.FullPath);
-            _logger.LogDebug("Copied path to clipboard: {Path}", item.FullPath);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to copy path to clipboard");
-        }
-    }
-
-    /// <summary>
-    /// Renames the specified item.
-    /// </summary>
-    public async Task<bool> RenameAsync(FileItemViewModel item, string newName, CancellationToken ct = default)
+    /// <inheritdoc />
+    public override async Task<bool> RenameAsync(FileItemViewModel item, string newName, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(newName)) return false;
         if (item.IsParentDirectory) return false;
@@ -330,10 +181,8 @@ public partial class LocalFileBrowserViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Deletes the specified item.
-    /// </summary>
-    public async Task<bool> DeleteAsync(FileItemViewModel item, bool recursive = false, CancellationToken ct = default)
+    /// <inheritdoc />
+    public override async Task<bool> DeleteAsync(FileItemViewModel item, bool recursive = false, CancellationToken ct = default)
     {
         if (item.IsParentDirectory) return false;
 
@@ -377,38 +226,13 @@ public partial class LocalFileBrowserViewModel : ObservableObject
                 })
                 .ToList();
 
-            Drives = new ObservableCollection<DriveInfoViewModel>(drives);
+            QuickAccess = new ObservableCollection<DriveInfoViewModel>(drives);
             _logger.LogDebug("Loaded {Count} drives", drives.Count);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to load drives");
         }
-    }
-
-    private void UpdateBreadcrumbs()
-    {
-        var segments = new List<BreadcrumbSegment>();
-
-        if (string.IsNullOrEmpty(CurrentPath)) return;
-
-        var parts = CurrentPath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-        var currentFullPath = "";
-
-        foreach (var part in parts)
-        {
-            currentFullPath = string.IsNullOrEmpty(currentFullPath)
-                ? part + Path.DirectorySeparatorChar
-                : Path.Combine(currentFullPath, part);
-
-            segments.Add(new BreadcrumbSegment
-            {
-                Name = part,
-                FullPath = currentFullPath
-            });
-        }
-
-        Breadcrumbs = new ObservableCollection<BreadcrumbSegment>(segments);
     }
 }
 

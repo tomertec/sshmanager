@@ -8,7 +8,9 @@
              d:DesignHeight="450" d:DesignWidth="800"
              Background="#1E1E1E"
              Loaded="UserControl_Loaded"
-             Unloaded="UserControl_Unloaded">
+             Unloaded="UserControl_Unloaded"
+             SizeChanged="UserControl_SizeChanged"
+             PreviewMouseWheel="UserControl_PreviewMouseWheel">
     <Grid>
         <!-- WebView2 Terminal Control -->
         <wv2:WebView2 x:Name="WebViewControl"

@@ -254,7 +254,7 @@ public class TerminalOutputBufferTests
     }
 
     [Fact]
-    public void AppendOutput_IsThreadSafe()
+    public async Task AppendOutput_IsThreadSafe()
     {
         var buffer = new TerminalOutputBuffer(1000);
         var tasks = new List<Task>();
@@ -271,7 +271,7 @@ public class TerminalOutputBufferTests
             }));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
 
         buffer.LineCount.Should().Be(500, "10 threads * 50 lines = 500 lines");
     }

@@ -37,8 +37,8 @@ public partial class BackupRestoreViewModel : ObservableObject
         IsLoading = true;
         try
         {
-            BackupDirectory = await _backupService.GetBackupDirectoryAsync().ConfigureAwait(false);
-            var backups = await _backupService.GetBackupsAsync().ConfigureAwait(false);
+            BackupDirectory = await _backupService.GetBackupDirectoryAsync();
+            var backups = await _backupService.GetBackupsAsync();
 
             Backups.Clear();
             foreach (var backup in backups)

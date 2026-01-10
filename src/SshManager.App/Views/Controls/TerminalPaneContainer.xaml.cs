@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using SshManager.App.Models;
 using SshManager.App.Services;
+using SshManager.Terminal;
 
 namespace SshManager.App.Views.Controls;
 
@@ -23,6 +24,11 @@ public partial class TerminalPaneContainer : UserControl
     /// Event raised when a pane requests to be closed.
     /// </summary>
     public event EventHandler<PaneLeafNode>? PaneCloseRequested;
+
+    /// <summary>
+    /// Event raised when a session is disconnected (remote disconnect, error, etc.).
+    /// </summary>
+    public event EventHandler<TerminalSession>? SessionDisconnected;
 
     public TerminalPaneContainer()
     {
@@ -122,10 +128,34 @@ public partial class TerminalPaneContainer : UserControl
         }
         else if (_layoutManager.RootNode != null)
         {
-            // Fallback to tree-based layout for non-tabbed mode
-            _paneControls.Clear();
+            // Tree-based layout for non-tabbed/split mode
+            // Track which panes we need to keep
+            var neededPaneIds = new HashSet<Guid>();
+            CollectLeafIds(_layoutManager.RootNode, neededPaneIds);
+
+            // Remove panes that are no longer in the tree
+            var toRemove = _paneControls.Keys.Except(neededPaneIds).ToList();
+            foreach (var id in toRemove)
+            {
+                _paneControls.Remove(id);
+            }
+
             _tabbedPanesGrid = null;
             RootPresenter.Content = BuildNodeUI(_layoutManager.RootNode);
+        }
+    }
+
+    private static void CollectLeafIds(PaneNode node, HashSet<Guid> ids)
+    {
+        switch (node)
+        {
+            case PaneLeafNode leaf:
+                ids.Add(leaf.Id);
+                break;
+            case PaneContainerNode container:
+                CollectLeafIds(container.First, ids);
+                CollectLeafIds(container.Second, ids);
+                break;
         }
     }
 
@@ -141,6 +171,20 @@ public partial class TerminalPaneContainer : UserControl
 
     private TerminalPane BuildLeafUI(PaneLeafNode leaf)
     {
+        // Reuse existing pane control if available (preserves WebView2 state)
+        if (_paneControls.TryGetValue(leaf.Id, out var existingPane))
+        {
+            // Remove from old parent if necessary
+            if (existingPane.Parent is Panel oldParent)
+            {
+                oldParent.Children.Remove(existingPane);
+            }
+            // Update DataContext in case it changed
+            existingPane.DataContext = leaf;
+            return existingPane;
+        }
+
+        // Create new pane control only for new panes
         var pane = new TerminalPane
         {
             DataContext = leaf
@@ -154,6 +198,11 @@ public partial class TerminalPaneContainer : UserControl
         pane.CloseRequested += (s, e) =>
         {
             PaneCloseRequested?.Invoke(this, leaf);
+        };
+
+        pane.SessionDisconnected += (s, session) =>
+        {
+            SessionDisconnected?.Invoke(this, session);
         };
 
         _paneControls[leaf.Id] = pane;

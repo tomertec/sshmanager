@@ -52,13 +52,46 @@ public sealed class PaneLayoutManager : IPaneLayoutManager
     /// <inheritdoc />
     public PaneLeafNode SplitPane(PaneLeafNode pane, SplitOrientation orientation, TerminalSession? session)
     {
+        // Check if pane is tabbed - we need to exit tabbed mode and switch to tree mode
+        bool wasTabbed = pane.IsTabbed;
+
+        if (wasTabbed)
+        {
+            _logger.LogDebug("Converting tabbed pane to tree mode for split");
+
+            // Remove from tabbed list
+            _tabbedPanes.Remove(pane);
+            pane.IsTabbed = false;
+            pane.IsVisible = true;
+
+            // Clear all other tabbed panes - they need to be converted to tree or closed
+            // Move remaining tabbed panes to tree structure as hidden
+            foreach (var tabbedPane in _tabbedPanes.ToList())
+            {
+                tabbedPane.IsTabbed = false;
+                tabbedPane.IsVisible = false;
+            }
+            _tabbedPanes.Clear();
+            _activeTabbedSession = null;
+        }
+
+        // Remember the parent before creating the container (which will change pane.Parent)
+        var originalParent = pane.Parent;
+
         var newLeaf = new PaneLeafNode
         {
             Session = session,
             IsPrimaryForSession = session != null && !IsSessionAlreadyPrimary(session),
-            IsFocused = false
+            IsFocused = false,
+            IsTabbed = false,  // Not a tabbed pane - it's part of a split
+            IsVisible = true
         };
 
+        // Ensure the original pane is also marked as non-tabbed
+        pane.IsTabbed = false;
+        pane.IsVisible = true;
+
+        // Create container - NOTE: This will set pane.Parent and newLeaf.Parent to container
         var container = new PaneContainerNode
         {
             Orientation = orientation,
@@ -67,7 +100,26 @@ public sealed class PaneLayoutManager : IPaneLayoutManager
             SplitRatio = 0.5
         };
 
-        ReplacePaneInTree(pane, container);
+        // Now replace in tree using the ORIGINAL parent reference
+        if (originalParent == null || wasTabbed)
+        {
+            // Pane was root (or tabbed which is treated as root) - container becomes new root
+            _rootNode = container;
+            container.Parent = null;
+        }
+        else
+        {
+            // Replace pane with container in the original parent
+            if (originalParent.First == pane || originalParent.First?.Id == pane.Id)
+            {
+                originalParent.First = container;
+            }
+            else
+            {
+                originalParent.Second = container;
+            }
+            container.Parent = originalParent;
+        }
 
         _logger.LogDebug("Split pane {Orientation} with new session: {Session}",
             orientation, session?.Title ?? "Empty");
@@ -89,13 +141,45 @@ public sealed class PaneLayoutManager : IPaneLayoutManager
             return pane;
         }
 
+        // Check if pane is tabbed - we need to exit tabbed mode and switch to tree mode
+        bool wasTabbed = pane.IsTabbed;
+
+        if (wasTabbed)
+        {
+            _logger.LogDebug("Converting tabbed pane to tree mode for mirror");
+
+            // Remove from tabbed list
+            _tabbedPanes.Remove(pane);
+            pane.IsTabbed = false;
+            pane.IsVisible = true;
+
+            // Clear all other tabbed panes
+            foreach (var tabbedPane in _tabbedPanes.ToList())
+            {
+                tabbedPane.IsTabbed = false;
+                tabbedPane.IsVisible = false;
+            }
+            _tabbedPanes.Clear();
+            _activeTabbedSession = null;
+        }
+
+        // Remember the parent before creating the container (which will change pane.Parent)
+        var originalParent = pane.Parent;
+
         var newLeaf = new PaneLeafNode
         {
             Session = pane.Session,
             IsPrimaryForSession = false, // Original pane remains primary
-            IsFocused = false
+            IsFocused = false,
+            IsTabbed = false,  // Not a tabbed pane - it's part of a split
+            IsVisible = true
         };
 
+        // Ensure the original pane is also marked as non-tabbed
+        pane.IsTabbed = false;
+        pane.IsVisible = true;
+
+        // Create container - NOTE: This will set pane.Parent and newLeaf.Parent to container
         var container = new PaneContainerNode
         {
             Orientation = orientation,
@@ -104,7 +188,26 @@ public sealed class PaneLayoutManager : IPaneLayoutManager
             SplitRatio = 0.5
         };
 
-        ReplacePaneInTree(pane, container);
+        // Now replace in tree using the ORIGINAL parent reference
+        if (originalParent == null || wasTabbed)
+        {
+            // Pane was root (or tabbed which is treated as root) - container becomes new root
+            _rootNode = container;
+            container.Parent = null;
+        }
+        else
+        {
+            // Replace pane with container in the original parent
+            if (originalParent.First == pane || originalParent.First?.Id == pane.Id)
+            {
+                originalParent.First = container;
+            }
+            else
+            {
+                originalParent.Second = container;
+            }
+            container.Parent = originalParent;
+        }
 
         _logger.LogDebug("Mirrored pane for session: {Session}", pane.Session.Title);
 

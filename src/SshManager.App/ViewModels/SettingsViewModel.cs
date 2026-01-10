@@ -142,6 +142,7 @@ public partial class SettingsViewModel : ObservableObject
         "Courier New",
         "Lucida Console",
         "Source Code Pro",
+        "Source Code Pro Powerline",
         "Fira Code",
         "JetBrains Mono"
     };

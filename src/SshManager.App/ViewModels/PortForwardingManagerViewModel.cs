@@ -11,7 +11,7 @@ namespace SshManager.App.ViewModels;
 /// <summary>
 /// ViewModel for managing active port forwardings and port forwarding profiles.
 /// </summary>
-public partial class PortForwardingManagerViewModel : ObservableObject
+public partial class PortForwardingManagerViewModel : ObservableObject, IDisposable
 {
     private readonly IPortForwardingProfileRepository _repository;
     private readonly ILogger<PortForwardingManagerViewModel> _logger;
@@ -88,14 +88,16 @@ public partial class PortForwardingManagerViewModel : ObservableObject
         _repository = repository;
         _logger = logger ?? NullLogger<PortForwardingManagerViewModel>.Instance;
 
-        ActiveForwardings.CollectionChanged += (s, e) =>
-        {
-            OnPropertyChanged(nameof(ActiveCount));
-            OnPropertyChanged(nameof(HasActiveForwardings));
-            OnPropertyChanged(nameof(ActiveSummary));
-        };
+        ActiveForwardings.CollectionChanged += OnActiveForwardingsCollectionChanged;
 
         _logger.LogDebug("PortForwardingManagerViewModel initialized");
+    }
+
+    private void OnActiveForwardingsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(ActiveCount));
+        OnPropertyChanged(nameof(HasActiveForwardings));
+        OnPropertyChanged(nameof(ActiveSummary));
     }
 
     /// <summary>
@@ -262,6 +264,11 @@ public partial class PortForwardingManagerViewModel : ObservableObject
     partial void OnSelectedForwardingChanged(ActivePortForwardingViewModel? value)
     {
         StopForwardingCommand.NotifyCanExecuteChanged();
+    }
+
+    public void Dispose()
+    {
+        ActiveForwardings.CollectionChanged -= OnActiveForwardingsCollectionChanged;
     }
 }
 

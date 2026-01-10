@@ -4,14 +4,20 @@
                 xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                xmlns:converters="clr-namespace:SshManager.App.Converters"
                 mc:Ignorable="d"
                 Title="{Binding Title}"
-                Height="340" Width="400"
-                MinHeight="320" MinWidth="350"
+                Height="440" Width="400"
+                MinHeight="420" MinWidth="350"
                 WindowStartupLocation="CenterOwner"
                 ResizeMode="NoResize"
                 ExtendsContentIntoTitleBar="True"
                 WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <converters:GroupColorConverter x:Key="GroupColorConverter" />
+        <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+    </ui:FluentWindow.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
@@ -52,6 +58,53 @@
                     </DataTemplate>
                 </ComboBox.ItemTemplate>
             </ComboBox>
+
+            <!-- Color Selection -->
+            <TextBlock Text="Group Color"
+                      FontWeight="SemiBold"
+                      Margin="0,0,0,4" />
+            <ComboBox ItemsSource="{Binding AvailableColors}"
+                     SelectedItem="{Binding SelectedColor}"
+                     Margin="0,0,0,8">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Color Preview Circle -->
+                            <Border Grid.Column="0"
+                                   Width="24" Height="24"
+                                   CornerRadius="12"
+                                   BorderThickness="2"
+                                   BorderBrush="#3FFFFFFF"
+                                   Margin="0,0,10,0">
+                                <Border.Background>
+                                    <Binding Path="HexValue" Converter="{StaticResource GroupColorConverter}" />
+                                </Border.Background>
+                                <!-- Show "No Color" icon when color is null -->
+                                <ui:SymbolIcon Symbol="Prohibited24"
+                                             FontSize="14"
+                                             Opacity="0.5"
+                                             Visibility="{Binding HexValue, Converter={StaticResource NullToVisibilityConverter}}"
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center" />
+                            </Border>
+
+                            <!-- Color Name -->
+                            <TextBlock Grid.Column="1"
+                                      Text="{Binding DisplayName}"
+                                      VerticalAlignment="Center" />
+                        </Grid>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBlock Text="Optional color for visual distinction in the host list."
+                      FontSize="11"
+                      Opacity="0.6"
+                      Margin="0,0,0,16" />
 
             <!-- Status Check Interval -->
             <TextBlock Text="Status Check Interval (seconds)"

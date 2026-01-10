@@ -21,6 +21,7 @@ public sealed class HostRepository : IHostRepository
         return await db.Hosts
             .Include(h => h.Group)
             .OrderBy(h => h.Group != null ? h.Group.SortOrder : int.MaxValue)
+            .ThenBy(h => h.SortOrder)
             .ThenBy(h => h.DisplayName)
             .ToListAsync(ct);
     }
@@ -30,7 +31,8 @@ public sealed class HostRepository : IHostRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Hosts
             .Where(h => h.GroupId == groupId)
-            .OrderBy(h => h.DisplayName)
+            .OrderBy(h => h.SortOrder)
+            .ThenBy(h => h.DisplayName)
             .ToListAsync(ct);
     }
 
@@ -68,6 +70,12 @@ public sealed class HostRepository : IHostRepository
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
+        // Set sort order to be last in the group
+        var maxOrder = await db.Hosts
+            .Where(h => h.GroupId == host.GroupId)
+            .MaxAsync(h => (int?)h.SortOrder, ct) ?? -1;
+        host.SortOrder = maxOrder + 1;
+
         // Clear navigation property to prevent EF from trying to insert existing groups
         // The GroupId foreign key is sufficient for the relationship
         host.Group = null;
@@ -98,5 +106,34 @@ public sealed class HostRepository : IHostRepository
             db.Hosts.Remove(host);
             await db.SaveChangesAsync(ct);
         }
+    }
+
+    public async Task UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var host = await db.Hosts.FindAsync([id], ct);
+        if (host != null)
+        {
+            host.SortOrder = sortOrder;
+            host.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
+    public async Task ReorderHostsAsync(List<(Guid Id, int SortOrder)> hostOrders, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+
+        foreach (var (id, sortOrder) in hostOrders)
+        {
+            var host = await db.Hosts.FindAsync([id], ct);
+            if (host != null)
+            {
+                host.SortOrder = sortOrder;
+                host.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 }

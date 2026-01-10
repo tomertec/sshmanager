@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -22,6 +23,7 @@ public partial class SshTerminalControl : UserControl
 {
     private TerminalSession? _session;
     private SshTerminalBridge? _bridge;
+    private bool _ownsBridge; // True if this control created the bridge, false if sharing
     private ILogger<SshTerminalControl> _logger = NullLogger<SshTerminalControl>.Instance;
 
     // Services
@@ -49,6 +51,22 @@ public partial class SshTerminalControl : UserControl
     // Resize tracking
     private int _lastColumns = 80;
     private int _lastRows = 24;
+
+    // Disconnect tracking to prevent duplicate events
+    private bool _disconnectedRaised;
+
+    private static readonly string[] FontFallbacks =
+    [
+        "Cascadia Mono",
+        "Cascadia Code",
+        "Consolas",
+        "Source Code Pro",
+        "Source Code Pro Powerline",
+        "Fira Code",
+        "JetBrains Mono",
+        "Courier New",
+        "monospace"
+    ];
 
     public SshTerminalControl()
     {
@@ -123,6 +141,11 @@ public partial class SshTerminalControl : UserControl
         {
             ApplyTheme(_currentTheme);
         }
+
+        ApplyFontSettings();
+
+        // Auto-focus the terminal when it becomes ready
+        TerminalHost.Focus();
     }
 
     private void OnTerminalInputReceived(string input)
@@ -180,11 +203,8 @@ public partial class SshTerminalControl : UserControl
         // Buffer automatically trims old data when it exceeds MaxLines to prevent unbounded growth
         _outputBuffer.AppendOutput(text);
 
-        // Write to WebTerminal
-        Dispatcher.InvokeAsync(() =>
-        {
-            TerminalHost.WriteData(text);
-        }, DispatcherPriority.Send);
+        // Write to WebTerminal - the bridge handles batching and UI thread dispatch
+        TerminalHost.WriteData(text);
     }
 
     #region Keyboard Handling
@@ -358,6 +378,9 @@ public partial class SshTerminalControl : UserControl
             throw new ArgumentNullException(nameof(connectionInfo));
         }
 
+        // Reset disconnect tracking for new connection
+        _disconnectedRaised = false;
+
         var newSession = DataContext as TerminalSession;
         _session = newSession;
 
@@ -384,10 +407,17 @@ public partial class SshTerminalControl : UserControl
                 _session.Connection = sshConnection;
             }
 
-            // Create SSH bridge
+            // Create SSH bridge and store in session for sharing with mirror panes
             _bridge = new SshTerminalBridge(sshConnection.ShellStream);
             _bridge.DataReceived += OnSshDataReceived;
             _bridge.Disconnected += OnBridgeDisconnected;
+            _ownsBridge = true; // This control owns the bridge
+
+            // Store bridge in session for mirrored panes to reuse
+            if (_session != null)
+            {
+                _session.Bridge = _bridge;
+            }
 
             // Start reading SSH data
             _bridge.StartReading();
@@ -425,6 +455,9 @@ public partial class SshTerminalControl : UserControl
             throw new ArgumentException("Connection chain cannot be empty", nameof(connectionChain));
         }
 
+        // Reset disconnect tracking for new connection
+        _disconnectedRaised = false;
+
         var newSession = DataContext as TerminalSession;
         _session = newSession;
 
@@ -453,10 +486,17 @@ public partial class SshTerminalControl : UserControl
                 _session.Connection = sshConnection;
             }
 
-            // Create SSH bridge
+            // Create SSH bridge and store in session for sharing with mirror panes
             _bridge = new SshTerminalBridge(sshConnection.ShellStream);
             _bridge.DataReceived += OnSshDataReceived;
             _bridge.Disconnected += OnBridgeDisconnected;
+            _ownsBridge = true; // This control owns the bridge
+
+            // Store bridge in session for mirrored panes to reuse
+            if (_session != null)
+            {
+                _session.Bridge = _bridge;
+            }
 
             // Start reading SSH data
             _bridge.StartReading();
@@ -483,20 +523,37 @@ public partial class SshTerminalControl : UserControl
 
     /// <summary>
     /// Attaches to an existing session that is already connected.
+    /// Used when mirroring a session into a split pane.
     /// </summary>
-    public void AttachToSession(TerminalSession session)
+    public async Task AttachToSessionAsync(TerminalSession session)
     {
         _session = session;
 
         if (_session.IsConnected)
         {
-            // Create new bridge for the existing connection
-            if (_session.Connection?.ShellStream != null)
+            // Initialize WebTerminalControl first
+            await TerminalHost.InitializeAsync();
+
+            // Reuse existing bridge from session if available (for mirroring)
+            // This prevents multiple readers from competing on the same ShellStream
+            if (_session.Bridge != null)
             {
+                _bridge = _session.Bridge;
+                _bridge.DataReceived += OnSshDataReceived;
+                _ownsBridge = false; // This control is sharing the bridge
+                // Don't call StartReading - the bridge is already reading
+                _logger.LogDebug("Attached to existing bridge for mirrored session: {Title}", session.Title);
+            }
+            else if (_session.Connection?.ShellStream != null)
+            {
+                // Fallback: create new bridge if session doesn't have one
                 _bridge = new SshTerminalBridge(_session.Connection.ShellStream);
                 _bridge.DataReceived += OnSshDataReceived;
                 _bridge.Disconnected += OnBridgeDisconnected;
+                _session.Bridge = _bridge;
+                _ownsBridge = true; // This control owns the bridge
                 _bridge.StartReading();
+                _logger.LogDebug("Created new bridge for session: {Title}", session.Title);
             }
 
             HideStatus();
@@ -512,6 +569,15 @@ public partial class SshTerminalControl : UserControl
     }
 
     /// <summary>
+    /// Attaches to an existing session that is already connected (synchronous wrapper).
+    /// </summary>
+    [Obsolete("Use AttachToSessionAsync instead for proper WebView2 initialization")]
+    public void AttachToSession(TerminalSession session)
+    {
+        _ = AttachToSessionAsync(session);
+    }
+
+    /// <summary>
     /// Disconnects from the SSH server.
     /// </summary>
     public void Disconnect()
@@ -522,7 +588,13 @@ public partial class SshTerminalControl : UserControl
         {
             _bridge.DataReceived -= OnSshDataReceived;
             _bridge.Disconnected -= OnBridgeDisconnected;
-            _bridge.Dispose();
+
+            // Only dispose the bridge if this control owns it
+            // Shared bridges are disposed when the session closes
+            if (_ownsBridge)
+            {
+                _bridge.Dispose();
+            }
             _bridge = null;
         }
 
@@ -550,6 +622,14 @@ public partial class SshTerminalControl : UserControl
         {
             _statsTimer.Stop();
             ShowStatus("Disconnected");
+            _logger.LogInformation("SSH connection disconnected for session: {Title}", _session?.Title);
+
+            // Raise the Disconnected event to notify parent controls (only once)
+            if (!_disconnectedRaised)
+            {
+                _disconnectedRaised = true;
+                Disconnected?.Invoke(this, EventArgs.Empty);
+            }
         });
     }
 
@@ -642,10 +722,7 @@ public partial class SshTerminalControl : UserControl
         set
         {
             _fontFamily = value;
-            if (_currentTheme != null)
-            {
-                ApplyTheme(_currentTheme);
-            }
+            ApplyFontSettings();
         }
     }
 
@@ -658,10 +735,7 @@ public partial class SshTerminalControl : UserControl
         set
         {
             _fontSize = value;
-            if (_currentTheme != null)
-            {
-                ApplyTheme(_currentTheme);
-            }
+            ApplyFontSettings();
         }
     }
 
@@ -682,7 +756,14 @@ public partial class SshTerminalControl : UserControl
     /// <summary>
     /// Event raised when the terminal title changes.
     /// </summary>
+#pragma warning disable CS0067 // Event is never used - public API for future use
     public event EventHandler<string>? TitleChanged;
+#pragma warning restore CS0067
+
+    /// <summary>
+    /// Event raised when the SSH connection is disconnected (either by remote or error).
+    /// </summary>
+    public event EventHandler? Disconnected;
 
     /// <summary>
     /// Focuses the terminal input.
@@ -752,6 +833,59 @@ public partial class SshTerminalControl : UserControl
         {
             _logger.LogError(ex, "Failed to apply theme: {ThemeName}", theme.Name);
         }
+    }
+
+    private void ApplyFontSettings()
+    {
+        var fontFamily = string.IsNullOrWhiteSpace(_fontFamily)
+            ? "Cascadia Mono"
+            : _fontFamily;
+        var fontSize = _fontSize > 0 ? _fontSize : 14;
+
+        var fontStack = BuildFontStack(fontFamily);
+        TerminalHost.SetFont(fontStack, fontSize);
+    }
+
+    private static string BuildFontStack(string preferredFont)
+    {
+        var fonts = new List<string>(FontFallbacks.Length + 1)
+        {
+            QuoteIfNeeded(preferredFont)
+        };
+
+        foreach (var fallback in FontFallbacks)
+        {
+            if (fonts.Any(font => font.Equals(fallback, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            fonts.Add(QuoteIfNeeded(fallback));
+        }
+
+        return string.Join(", ", fonts);
+    }
+
+    private static string QuoteIfNeeded(string font)
+    {
+        var trimmed = font.Trim();
+        if (trimmed.Length == 0)
+        {
+            return trimmed;
+        }
+
+        if ((trimmed.StartsWith('"') && trimmed.EndsWith('"')) ||
+            (trimmed.StartsWith('\'') && trimmed.EndsWith('\'')))
+        {
+            return trimmed;
+        }
+
+        if (trimmed.Any(char.IsWhiteSpace) || trimmed.Contains(','))
+        {
+            return $"\"{trimmed.Replace("\"", "\\\"")}\"";
+        }
+
+        return trimmed;
     }
 
     /// <summary>

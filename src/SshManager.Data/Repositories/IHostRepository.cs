@@ -14,4 +14,6 @@ public interface IHostRepository
     Task AddAsync(HostEntry host, CancellationToken ct = default);
     Task UpdateAsync(HostEntry host, CancellationToken ct = default);
     Task DeleteAsync(Guid id, CancellationToken ct = default);
+    Task UpdateSortOrderAsync(Guid id, int sortOrder, CancellationToken ct = default);
+    Task ReorderHostsAsync(List<(Guid Id, int SortOrder)> hostOrders, CancellationToken ct = default);
 }

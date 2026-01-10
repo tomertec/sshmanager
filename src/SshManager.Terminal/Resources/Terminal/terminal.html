@@ -25,6 +25,38 @@
             overflow: hidden;
         }
 
+        @font-face {
+            font-family: 'Source Code Pro Powerline';
+            src: url('data:font/otf;base64,{{POWERLINE_SCP_REGULAR}}') format('opentype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Source Code Pro Powerline';
+            src: url('data:font/otf;base64,{{POWERLINE_SCP_BOLD}}') format('opentype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Source Code Pro Powerline';
+            src: url('data:font/otf;base64,{{POWERLINE_SCP_ITALIC}}') format('opentype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Source Code Pro Powerline';
+            src: url('data:font/otf;base64,{{POWERLINE_SCP_BOLDITALIC}}') format('opentype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
         /* Hide scrollbars on the terminal viewport */
         .xterm-viewport::-webkit-scrollbar {
             width: 0;
@@ -54,6 +86,7 @@
             let terminal = null;
             let fitAddon = null;
             let resizeTimeout = null;
+            let resizeObserver = null;
             const RESIZE_DEBOUNCE_MS = 100;
 
             // Initialize terminal when DOM is ready
@@ -69,7 +102,9 @@
                     cursorBlink: true,
                     cursorStyle: 'block',
                     fontSize: 14,
-                    fontFamily: 'Cascadia Code, Consolas, monospace',
+                    fontFamily: '"Source Code Pro Powerline", "Cascadia Mono", "Cascadia Code", "Consolas", "Courier New", monospace',
+                    letterSpacing: 0,
+                    lineHeight: 1.0,
                     allowTransparency: true,
                     scrollback: 10000,
                     theme: {
@@ -105,6 +140,7 @@
 
                 // Initial fit
                 fitAddon.fit();
+                scheduleFit();
 
                 // Listen for user input
                 terminal.onData(function(data) {
@@ -122,6 +158,21 @@
                 // Handle window resize with debounce
                 window.addEventListener('resize', handleWindowResize);
 
+                // Observe container size changes (e.g., tab switches, pane resizes)
+                if (window.ResizeObserver) {
+                    resizeObserver = new ResizeObserver(function() {
+                        scheduleFit();
+                    });
+                    resizeObserver.observe(container);
+                }
+
+                // Refit after fonts finish loading to avoid stale cell metrics
+                if (document.fonts && document.fonts.ready) {
+                    document.fonts.ready.then(function() {
+                        scheduleFit();
+                    });
+                }
+
                 // Send ready message
                 postMessageToHost({ type: 'ready' });
 
@@ -131,6 +182,10 @@
 
             // Debounced window resize handler
             function handleWindowResize() {
+                scheduleFit();
+            }
+
+            function scheduleFit() {
                 if (resizeTimeout) {
                     clearTimeout(resizeTimeout);
                 }
@@ -174,9 +229,29 @@
                         }
                         break;
 
+                    case 'fit':
+                        if (fitAddon && terminal) {
+                            scheduleFit();
+                        }
+                        break;
+
                     case 'setTheme':
                         if (terminal && message.theme) {
                             terminal.options.theme = message.theme;
+                        }
+                        break;
+
+                    case 'setFont':
+                        if (terminal) {
+                            if (message.fontFamily) {
+                                terminal.options.fontFamily = message.fontFamily;
+                            }
+                            if (typeof message.fontSize === 'number') {
+                                terminal.options.fontSize = message.fontSize;
+                            }
+                            if (fitAddon) {
+                                fitAddon.fit();
+                            }
                         }
                         break;
 

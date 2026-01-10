@@ -28,6 +28,12 @@ public sealed class HostGroup
     public int StatusCheckIntervalSeconds { get; set; } = 30;
 
     /// <summary>
+    /// Optional color for the group in hex format (e.g., "#FF5733").
+    /// Null or empty string means no color (default).
+    /// </summary>
+    public string? Color { get; set; }
+
+    /// <summary>
     /// Hosts belonging to this group.
     /// </summary>
     public List<HostEntry> Hosts { get; set; } = [];

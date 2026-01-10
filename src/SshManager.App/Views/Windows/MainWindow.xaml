@@ -8,8 +8,10 @@
                 xmlns:converters="clr-namespace:SshManager.App.Converters"
                 xmlns:controls="clr-namespace:SshManager.App.Views.Controls"
                 xmlns:terminalServices="clr-namespace:SshManager.Terminal.Services;assembly=SshManager.Terminal"
+                xmlns:behaviors="clr-namespace:SshManager.App.Behaviors"
                 mc:Ignorable="d"
                 Title="SSH Manager"
+                Icon="pack://application:,,,/Resources/app-icon.ico"
                 Height="700" Width="1100"
                 MinHeight="500" MinWidth="800"
                 WindowStartupLocation="CenterScreen"
@@ -22,6 +24,9 @@
         <converters:NullToPrimaryAppearanceConverter x:Key="NullToPrimaryAppearanceConverter" />
         <converters:HostStatusToColorConverter x:Key="HostStatusToColorConverter" />
         <converters:HostStatusToTooltipConverter x:Key="HostStatusToTooltipConverter" />
+        <converters:HostActiveSessionBorderConverter x:Key="HostActiveSessionBorderConverter" />
+        <converters:GroupColorConverter x:Key="GroupColorConverter" />
+        <converters:GroupColorToVisibilityConverter x:Key="GroupColorToVisibilityConverter" />
     </ui:FluentWindow.Resources>
 
     <!-- Keyboard Shortcuts -->
@@ -103,6 +108,15 @@
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
+                                    <!-- Color indicator circle (for groups with colors) -->
+                                    <Ellipse Width="10" Height="10"
+                                            Margin="0,0,6,0"
+                                            VerticalAlignment="Center"
+                                            Visibility="{Binding Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                        <Ellipse.Fill>
+                                            <Binding Path="Color" Converter="{StaticResource GroupColorConverter}" />
+                                        </Ellipse.Fill>
+                                    </Ellipse>
                                     <ui:SymbolIcon Symbol="{Binding Icon}" Margin="0,0,8,0" FontSize="14" />
                                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
                                     <TextBlock Text="{Binding Count, StringFormat=' ({0})'}"
@@ -132,7 +146,9 @@
                          BorderThickness="0"
                          ScrollViewer.VerticalScrollBarVisibility="Hidden"
                          ScrollViewer.CanContentScroll="False"
-                         VirtualizingPanel.ScrollUnit="Pixel">
+                         VirtualizingPanel.ScrollUnit="Pixel"
+                         behaviors:ListBoxDragDropBehavior.IsEnabled="True"
+                         behaviors:ListBoxDragDropBehavior.ReorderCommand="{Binding ReorderHostsCommand}">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="0" />
@@ -150,6 +166,26 @@
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
+                            <!-- Outer border for active session indicator -->
+                            <Border CornerRadius="8"
+                                   BorderThickness="2"
+                                   Padding="0">
+                                <Border.BorderBrush>
+                                    <MultiBinding Converter="{StaticResource HostActiveSessionBorderConverter}">
+                                        <Binding Path="Id" />
+                                        <Binding Path="DataContext.Sessions" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                    </MultiBinding>
+                                </Border.BorderBrush>
+                            <Grid>
+                                <!-- Colored left stripe for group color -->
+                                <Border Width="4"
+                                       HorizontalAlignment="Left"
+                                       CornerRadius="6,0,0,6"
+                                       Visibility="{Binding Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                    <Border.Background>
+                                        <Binding Path="Group.Color" Converter="{StaticResource GroupColorConverter}" />
+                                    </Border.Background>
+                                </Border>
                             <Border x:Name="CardBorder"
                                    CornerRadius="6"
                                    Background="#1FFFFFFF"
@@ -311,25 +347,36 @@
                                                   Padding="0" />
                                     </StackPanel>
 
-                                    <!-- Row 2: Hostname and Group -->
+                                    <!-- Row 2: Group and Hostname -->
                                     <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
                                                Orientation="Horizontal"
                                                Margin="0,2,0,0">
-                                        <TextBlock Text="{Binding Hostname}"
-                                                  Opacity="0.7"
-                                                  FontSize="11"
-                                                  TextTrimming="CharacterEllipsis"
-                                                  MaxWidth="160" />
-                                        <TextBlock Text=" · "
-                                                  Opacity="0.4"
-                                                  FontSize="11" />
+                                        <!-- Small color dot for group color -->
+                                        <Ellipse Width="6" Height="6"
+                                                Margin="0,0,4,0"
+                                                VerticalAlignment="Center"
+                                                Visibility="{Binding Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                            <Ellipse.Fill>
+                                                <Binding Path="Group.Color" Converter="{StaticResource GroupColorConverter}" />
+                                            </Ellipse.Fill>
+                                        </Ellipse>
                                         <TextBlock Text="{Binding Group.Name, FallbackValue='Ungrouped'}"
                                                   Opacity="0.5"
                                                   FontSize="11"
                                                   FontStyle="Italic"
                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text=" · "
+                                                  Opacity="0.4"
+                                                  FontSize="11" />
+                                        <TextBlock Text="{Binding Hostname}"
+                                                  Opacity="0.7"
+                                                  FontSize="11"
+                                                  TextTrimming="CharacterEllipsis"
+                                                  MaxWidth="160" />
                                     </StackPanel>
                                 </Grid>
+                            </Border>
+                            </Grid>
                             </Border>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -365,15 +412,13 @@
                     </StackPanel>
 
                     <!-- Center: Add Host button -->
-                    <StackPanel Grid.Column="1"
-                               Orientation="Horizontal"
-                               HorizontalAlignment="Center">
-                        <ui:Button Icon="{ui:SymbolIcon Add24}"
-                                  Content="Add Host"
-                                  Command="{Binding AddHostCommand}"
-                                  ToolTip="Ctrl+N"
-                                  Margin="4" />
-                    </StackPanel>
+                    <ui:Button Grid.Column="1"
+                               Icon="{ui:SymbolIcon Add24}"
+                               Appearance="Primary"
+                               Command="{Binding AddHostCommand}"
+                               ToolTip="Add Host (Ctrl+N)"
+                               HorizontalAlignment="Center"
+                               Margin="4" />
 
                 </Grid>
             </Grid>
@@ -409,7 +454,8 @@
                                 SelectionChanged="SessionTabs_SelectionChanged"
                                 Background="Transparent"
                                 BorderThickness="0"
-                                Padding="16,4,4,0">
+                                Padding="0,4,4,0"
+                                Margin="8,0,0,0">
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <StackPanel Orientation="Horizontal" />
@@ -419,6 +465,16 @@
                                 <Style TargetType="ListBoxItem">
                                     <Setter Property="Padding" Value="0" />
                                     <Setter Property="Margin" Value="0,0,2,0" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="BorderThickness" Value="0" />
+                                    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <ContentPresenter />
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
                                 </Style>
                             </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
@@ -428,7 +484,13 @@
                                         <Border.Style>
                                             <Style TargetType="Border">
                                                 <Setter Property="Background" Value="{ui:ThemeResource ControlFillColorDefaultBrush}" />
+                                                <Setter Property="BorderBrush" Value="Transparent" />
+                                                <Setter Property="BorderThickness" Value="2" />
                                                 <Style.Triggers>
+                                                    <!-- Blue border when tab is selected (active) -->
+                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#0078D4" />
+                                                    </DataTrigger>
                                                     <!-- Highlight when selected for broadcast -->
                                                     <DataTrigger Binding="{Binding IsSelectedForBroadcast}" Value="True">
                                                         <Setter Property="Background" Value="#40FF5500" />
@@ -445,6 +507,15 @@
                                                      VerticalAlignment="Center"
                                                      Margin="0,0,6,0"
                                                      ToolTip="Include in broadcast" />
+                                            <!-- Group color indicator -->
+                                            <Ellipse Width="8" Height="8"
+                                                    Margin="0,0,6,0"
+                                                    VerticalAlignment="Center"
+                                                    Visibility="{Binding Host.Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                                <Ellipse.Fill>
+                                                    <Binding Path="Host.Group.Color" Converter="{StaticResource GroupColorConverter}" />
+                                                </Ellipse.Fill>
+                                            </Ellipse>
                                             <TextBlock Text="{Binding Title}" Margin="0,0,8,0" VerticalAlignment="Center" />
                                             <ui:Button Icon="{ui:SymbolIcon Dismiss12}"
                                                       Padding="2"
@@ -648,7 +719,8 @@
                         </Border.Style>
                         <controls:TerminalPaneContainer x:Name="PaneContainer"
                                                         PaneSplitRequested="PaneContainer_PaneSplitRequested"
-                                                        PaneCloseRequested="PaneContainer_PaneCloseRequested" />
+                                                        PaneCloseRequested="PaneContainer_PaneCloseRequested"
+                                                        SessionDisconnected="PaneContainer_SessionDisconnected" />
                     </Border>
                 </Grid>
 

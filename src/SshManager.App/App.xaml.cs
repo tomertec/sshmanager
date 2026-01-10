@@ -110,6 +110,7 @@ public partial class App : Application
         // Repositories
         services.AddSingleton<IHostRepository, HostRepository>();
         services.AddSingleton<IGroupRepository, GroupRepository>();
+        services.AddSingleton<IHostProfileRepository, HostProfileRepository>();
         services.AddSingleton<IConnectionHistoryRepository, ConnectionHistoryRepository>();
         services.AddSingleton<ISettingsRepository, SettingsRepository>();
         services.AddSingleton<ISnippetRepository, SnippetRepository>();
@@ -164,6 +165,12 @@ public partial class App : Application
         services.AddHostedService<HostStatusHostedService>();
 
         // ViewModels
+        services.AddSingleton<HostManagementViewModel>();
+        services.AddSingleton<SessionViewModel>();
+        services.AddSingleton<SessionLoggingViewModel>();
+        services.AddSingleton<BroadcastInputViewModel>();
+        services.AddSingleton<SftpLauncherViewModel>();
+        services.AddSingleton<ImportExportViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<PortForwardingManagerViewModel>();
         services.AddTransient<ProxyJumpProfileDialogViewModel>();
@@ -533,6 +540,13 @@ public partial class App : Application
                 "ALTER TABLE Groups ADD COLUMN StatusCheckIntervalSeconds INTEGER NOT NULL DEFAULT 30");
             logger.Information("Added missing column StatusCheckIntervalSeconds to Groups table");
         }
+
+        if (!groupColumns.Contains("Color"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Groups ADD COLUMN Color TEXT DEFAULT NULL");
+            logger.Information("Added missing column Color to Groups table");
+        }
     }
 
     /// <summary>
@@ -719,6 +733,43 @@ public partial class App : Application
             await db.Database.ExecuteSqlRawAsync(
                 "ALTER TABLE Hosts ADD COLUMN ProxyJumpProfileId TEXT REFERENCES ProxyJumpProfiles(Id) ON DELETE SET NULL");
             logger.Information("Added missing column ProxyJumpProfileId to Hosts table");
+        }
+
+        if (!hostsColumns.Contains("HostProfileId"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Hosts ADD COLUMN HostProfileId TEXT REFERENCES HostProfiles(Id) ON DELETE SET NULL");
+            logger.Information("Added missing column HostProfileId to Hosts table");
+        }
+
+        if (!hostsColumns.Contains("SortOrder"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Hosts ADD COLUMN SortOrder INTEGER NOT NULL DEFAULT 0");
+            logger.Information("Added missing column SortOrder to Hosts table");
+        }
+
+        // Create HostProfiles table if it doesn't exist
+        if (!existingTables.Contains("HostProfiles"))
+        {
+            var sql = @"
+                CREATE TABLE HostProfiles (
+                    Id TEXT NOT NULL PRIMARY KEY,
+                    DisplayName TEXT NOT NULL,
+                    Description TEXT,
+                    DefaultPort INTEGER NOT NULL DEFAULT 22,
+                    DefaultUsername TEXT,
+                    AuthType INTEGER NOT NULL DEFAULT 0,
+                    PrivateKeyPath TEXT,
+                    ProxyJumpProfileId TEXT,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    FOREIGN KEY (ProxyJumpProfileId) REFERENCES ProxyJumpProfiles(Id) ON DELETE SET NULL
+                );
+                CREATE INDEX IX_HostProfiles_DisplayName ON HostProfiles(DisplayName);
+            ";
+            await db.Database.ExecuteSqlRawAsync(sql);
+            logger.Information("Created missing table HostProfiles");
         }
     }
 

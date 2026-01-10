@@ -11,6 +11,7 @@ namespace SshManager.App.Views.Dialogs;
 public partial class HostEditDialog : FluentWindow
 {
     private readonly HostDialogViewModel _viewModel;
+    private readonly IHostProfileRepository? _hostProfileRepo;
     private readonly IProxyJumpProfileRepository? _proxyJumpRepo;
     private readonly IPortForwardingProfileRepository? _portForwardingRepo;
     private readonly IHostRepository? _hostRepo;
@@ -35,12 +36,14 @@ public partial class HostEditDialog : FluentWindow
     /// </summary>
     public HostEditDialog(
         HostDialogViewModel viewModel,
+        IHostProfileRepository? hostProfileRepo,
         IProxyJumpProfileRepository? proxyJumpRepo,
         IPortForwardingProfileRepository? portForwardingRepo,
         IHostRepository? hostRepo,
         IReadOnlyList<HostEntry>? availableHosts = null)
         : this(viewModel)
     {
+        _hostProfileRepo = hostProfileRepo;
         _proxyJumpRepo = proxyJumpRepo;
         _portForwardingRepo = portForwardingRepo;
         _hostRepo = hostRepo;
@@ -55,7 +58,8 @@ public partial class HostEditDialog : FluentWindow
             PasswordBox.Password = _viewModel.Password;
         }
 
-        // Load ProxyJump profiles and port forwarding count
+        // Load host profiles, ProxyJump profiles and port forwarding count
+        await _viewModel.LoadHostProfilesAsync();
         await _viewModel.LoadProxyJumpProfilesAsync();
         await _viewModel.LoadPortForwardingCountAsync();
     }
@@ -159,5 +163,34 @@ public partial class HostEditDialog : FluentWindow
 
         // Reload count after management
         await _viewModel.LoadPortForwardingCountAsync();
+    }
+
+    private async void ManageHostProfiles_Click(object sender, RoutedEventArgs e)
+    {
+        if (_hostProfileRepo == null || _proxyJumpRepo == null)
+        {
+            System.Windows.MessageBox.Show(
+                "Host profile management is not available.\n\nPlease ensure repositories are properly configured.",
+                "Feature Not Available",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var logger = App.GetService<Microsoft.Extensions.Logging.ILogger<HostProfileManagerViewModel>>();
+        var managerVm = new HostProfileManagerViewModel(_hostProfileRepo, _proxyJumpRepo, logger);
+        var dialog = new HostProfileManagerDialog
+        {
+            DataContext = managerVm,
+            Owner = this
+        };
+
+        managerVm.RequestClose += () => dialog.Close();
+        await managerVm.LoadProfilesAsync();
+
+        dialog.ShowDialog();
+
+        // Reload profiles after management
+        await _viewModel.LoadHostProfilesAsync();
     }
 }

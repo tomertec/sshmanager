@@ -11,7 +11,7 @@ namespace SshManager.App.ViewModels;
 /// <summary>
 /// ViewModel for creating or editing a ProxyJump profile.
 /// </summary>
-public partial class ProxyJumpProfileDialogViewModel : ObservableObject
+public partial class ProxyJumpProfileDialogViewModel : ObservableObject, IDisposable
 {
     private readonly IProxyJumpProfileRepository _repository;
     private readonly IHostRepository _hostRepository;
@@ -97,10 +97,15 @@ public partial class ProxyJumpProfileDialogViewModel : ObservableObject
             }
         }
 
-        JumpHops.CollectionChanged += (s, e) => OnPropertyChanged(nameof(ChainPreview));
+        JumpHops.CollectionChanged += OnJumpHopsCollectionChanged;
 
         _logger.LogDebug("ProxyJumpProfileDialogViewModel initialized for {Mode} profile",
             IsNewProfile ? "new" : "editing");
+    }
+
+    private void OnJumpHopsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(ChainPreview));
     }
 
     /// <summary>
@@ -337,5 +342,10 @@ public partial class ProxyJumpProfileDialogViewModel : ObservableObject
     public ProxyJumpProfile? GetProfile()
     {
         return _existingProfile;
+    }
+
+    public void Dispose()
+    {
+        JumpHops.CollectionChanged -= OnJumpHopsCollectionChanged;
     }
 }

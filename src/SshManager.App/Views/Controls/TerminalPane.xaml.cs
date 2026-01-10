@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using SshManager.App.Models;
@@ -28,10 +29,27 @@ public partial class TerminalPane : UserControl
     /// </summary>
     public event EventHandler? CloseRequested;
 
+    /// <summary>
+    /// Event raised when the SSH session is disconnected (remote disconnect, error, etc.).
+    /// </summary>
+    public event EventHandler<TerminalSession>? SessionDisconnected;
+
     public TerminalPane()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+
+        // Subscribe to terminal disconnect event
+        Terminal.Disconnected += Terminal_Disconnected;
+    }
+
+    private void Terminal_Disconnected(object? sender, EventArgs e)
+    {
+        // Propagate the disconnect event with the session info
+        if (_paneNode?.Session != null)
+        {
+            SessionDisconnected?.Invoke(this, _paneNode.Session);
+        }
     }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -60,7 +78,7 @@ public partial class TerminalPane : UserControl
         }
     }
 
-    private void PaneNode_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    private async void PaneNode_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (_paneNode == null)
             return;
@@ -73,7 +91,7 @@ public partial class TerminalPane : UserControl
             // If terminal is already loaded and we got a new session, attach to it
             if (Terminal.IsLoaded && _paneNode.Session != null)
             {
-                AttachToSession(_paneNode.Session);
+                await AttachToSessionAsync(_paneNode.Session);
             }
         }
         else if (e.PropertyName == nameof(PaneLeafNode.IsPrimaryForSession))
@@ -83,15 +101,15 @@ public partial class TerminalPane : UserControl
         }
     }
 
-    private void Terminal_Loaded(object sender, RoutedEventArgs e)
+    private async void Terminal_Loaded(object sender, RoutedEventArgs e)
     {
         if (_paneNode?.Session != null && !_terminalAttached)
         {
-            AttachToSession(_paneNode.Session);
+            await AttachToSessionAsync(_paneNode.Session);
         }
     }
 
-    private void AttachToSession(TerminalSession session)
+    private async Task AttachToSessionAsync(TerminalSession session)
     {
         if (_terminalAttached)
             return;
@@ -111,7 +129,7 @@ public partial class TerminalPane : UserControl
         // If session is already connected, just attach to it
         if (session.IsConnected)
         {
-            Terminal.AttachToSession(session);
+            await Terminal.AttachToSessionAsync(session);
             _terminalAttached = true;
             return;
         }
@@ -139,6 +157,9 @@ public partial class TerminalPane : UserControl
             {
                 Terminal.ApplyTheme(theme);
             }
+
+            Terminal.TerminalFontFamily = settings.TerminalFontFamily;
+            Terminal.TerminalFontSize = settings.TerminalFontSize;
         }
         catch
         {
@@ -175,11 +196,13 @@ public partial class TerminalPane : UserControl
 
     private void SplitVertical_Click(object sender, RoutedEventArgs e)
     {
+        SetPaneFocus();
         SplitRequested?.Invoke(this, new SplitRequestedEventArgs(SplitOrientation.Vertical));
     }
 
     private void SplitHorizontal_Click(object sender, RoutedEventArgs e)
     {
+        SetPaneFocus();
         SplitRequested?.Invoke(this, new SplitRequestedEventArgs(SplitOrientation.Horizontal));
     }
 

@@ -26,6 +26,7 @@ public partial class MainWindow : FluentWindow
     private readonly IPaneLayoutManager _paneLayoutManager;
     private readonly IProxyJumpService _proxyJumpService;
     private readonly IPortForwardingService _portForwardingService;
+    private readonly ITerminalSessionManager _sessionManager;
     private bool _minimizeToTray;
     private bool _isUpdatingGroupFilter;
 
@@ -35,7 +36,8 @@ public partial class MainWindow : FluentWindow
         ISettingsRepository settingsRepo,
         IPaneLayoutManager paneLayoutManager,
         IProxyJumpService proxyJumpService,
-        IPortForwardingService portForwardingService)
+        IPortForwardingService portForwardingService,
+        ITerminalSessionManager sessionManager)
     {
         _viewModel = viewModel;
         _trayService = trayService;
@@ -43,6 +45,7 @@ public partial class MainWindow : FluentWindow
         _paneLayoutManager = paneLayoutManager;
         _proxyJumpService = proxyJumpService;
         _portForwardingService = portForwardingService;
+        _sessionManager = sessionManager;
         DataContext = viewModel;
 
         InitializeComponent();
@@ -60,6 +63,9 @@ public partial class MainWindow : FluentWindow
 
         // Subscribe to session creation for pane management
         _viewModel.SessionCreated += OnSessionCreated;
+
+        // Subscribe to session close to remove panes when sessions are closed
+        _sessionManager.SessionClosed += OnSessionClosed;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -69,6 +75,36 @@ public partial class MainWindow : FluentWindow
         // Load settings and update tray
         var settings = await _settingsRepo.GetAsync();
         _minimizeToTray = settings.MinimizeToTray;
+
+        // Restore window position if enabled and values are saved
+        if (settings.RememberWindowPosition &&
+            settings.WindowX.HasValue &&
+            settings.WindowY.HasValue &&
+            settings.WindowWidth.HasValue &&
+            settings.WindowHeight.HasValue)
+        {
+            // Validate the position is within screen bounds
+            var screenWidth = SystemParameters.VirtualScreenWidth;
+            var screenHeight = SystemParameters.VirtualScreenHeight;
+            var screenLeft = SystemParameters.VirtualScreenLeft;
+            var screenTop = SystemParameters.VirtualScreenTop;
+
+            var x = settings.WindowX.Value;
+            var y = settings.WindowY.Value;
+            var width = settings.WindowWidth.Value;
+            var height = settings.WindowHeight.Value;
+
+            // Ensure window is at least partially visible
+            if (x + width > screenLeft && x < screenLeft + screenWidth &&
+                y + height > screenTop && y < screenTop + screenHeight)
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Left = x;
+                Top = y;
+                Width = width;
+                Height = height;
+            }
+        }
 
         // Update tray menu with current hosts
         _trayService.UpdateContextMenu(_viewModel.Hosts, _viewModel.Groups);
@@ -157,7 +193,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         // Show confirmation dialog
         var result = System.Windows.MessageBox.Show(
@@ -170,6 +206,24 @@ public partial class MainWindow : FluentWindow
         {
             e.Cancel = true;
             return;
+        }
+
+        // Save window position if enabled
+        try
+        {
+            var settings = await _settingsRepo.GetAsync();
+            if (settings.RememberWindowPosition && WindowState == WindowState.Normal)
+            {
+                settings.WindowX = (int)Left;
+                settings.WindowY = (int)Top;
+                settings.WindowWidth = (int)Width;
+                settings.WindowHeight = (int)Height;
+                await _settingsRepo.UpdateAsync(settings);
+            }
+        }
+        catch
+        {
+            // Ignore errors during shutdown
         }
 
         // Unsubscribe from tray events
@@ -305,9 +359,11 @@ public partial class MainWindow : FluentWindow
     }
 
     // Split pane methods
-    private void ShowSessionPickerForSplit(SplitOrientation orientation)
+    private void ShowSessionPickerForSplit(SplitOrientation orientation, PaneLeafNode? requestingPane = null)
     {
-        if (_paneLayoutManager.FocusedPane == null)
+        // Use the requesting pane if provided, otherwise fall back to focused pane
+        var paneToSplit = requestingPane ?? _paneLayoutManager.FocusedPane;
+        if (paneToSplit == null)
             return;
 
         var viewModel = new SessionPickerViewModel();
@@ -320,14 +376,13 @@ public partial class MainWindow : FluentWindow
 
         if (dialog.ShowDialog() == true && dialog.Result != null)
         {
-            HandleSessionPickerResult(dialog.Result, orientation);
+            HandleSessionPickerResult(dialog.Result, orientation, paneToSplit);
         }
     }
 
-    private async void HandleSessionPickerResult(SessionPickerResultData result, SplitOrientation orientation)
+    private async void HandleSessionPickerResult(SessionPickerResultData result, SplitOrientation orientation, PaneLeafNode paneToSplit)
     {
-        var focusedPane = _paneLayoutManager.FocusedPane;
-        if (focusedPane == null)
+        if (paneToSplit == null)
             return;
 
         switch (result.Result)
@@ -339,8 +394,9 @@ public partial class MainWindow : FluentWindow
                     var newSession = await _viewModel.CreateSessionForHostAsync(result.SelectedHost);
                     if (newSession != null)
                     {
-                        var newPane = _paneLayoutManager.SplitPane(focusedPane, orientation, newSession);
-                        // Connection will be handled by TerminalPane.Terminal_Loaded
+                        var newPane = _paneLayoutManager.SplitPane(paneToSplit, orientation, newSession);
+                        // Connect the new pane to SSH
+                        ConnectPaneToSession(newPane, newSession);
                     }
                 }
                 break;
@@ -349,12 +405,12 @@ public partial class MainWindow : FluentWindow
                 if (result.SelectedSession != null)
                 {
                     // Mirror the existing session
-                    var newPane = _paneLayoutManager.SplitPane(focusedPane, orientation, result.SelectedSession);
+                    _paneLayoutManager.SplitPane(paneToSplit, orientation, result.SelectedSession);
                 }
                 break;
 
             case SessionPickerResult.EmptyPane:
-                _paneLayoutManager.SplitPane(focusedPane, orientation, null);
+                _paneLayoutManager.SplitPane(paneToSplit, orientation, null);
                 break;
         }
     }
@@ -385,6 +441,20 @@ public partial class MainWindow : FluentWindow
             // Create a tabbed pane for the session (stacked with visibility switching)
             var pane = _paneLayoutManager.CreateTabbedPane(session);
             ConnectPaneToSession(pane, session);
+        });
+    }
+
+    private void OnSessionClosed(object? sender, TerminalSession session)
+    {
+        // When a session is closed, remove all panes that were displaying it
+        Dispatcher.BeginInvoke(() =>
+        {
+            // Find all panes for this session and close them
+            var panes = _paneLayoutManager.FindPanesForSession(session).ToList();
+            foreach (var pane in panes)
+            {
+                _paneLayoutManager.ClosePane(pane);
+            }
         });
     }
 
@@ -454,6 +524,9 @@ public partial class MainWindow : FluentWindow
 
             session.Status = "Connected";
             await _viewModel.RecordConnectionResultAsync(session.Host, true, null, connectionStartedAt);
+
+            // Focus the terminal after connection
+            _ = Dispatcher.BeginInvoke(() => paneControl.TerminalControl.FocusInput());
 
             // Start auto-start port forwardings after successful connection
             await StartAutoStartPortForwardingsAsync(session);
@@ -540,12 +613,39 @@ public partial class MainWindow : FluentWindow
     // Pane container event handlers
     private void PaneContainer_PaneSplitRequested(object? sender, PaneSplitRequestedEventArgs e)
     {
-        ShowSessionPickerForSplit(e.Orientation);
+        ShowSessionPickerForSplit(e.Orientation, e.Pane);
     }
 
     private void PaneContainer_PaneCloseRequested(object? sender, PaneLeafNode e)
     {
+        var session = e.Session;
         _paneLayoutManager.ClosePane(e);
+
+        // If no other panes are using this session, close the session
+        if (session != null)
+        {
+            var remainingPanes = _paneLayoutManager.FindPanesForSession(session);
+            if (!remainingPanes.Any())
+            {
+                _sessionManager.CloseSession(session.Id);
+            }
+        }
+    }
+
+    private void PaneContainer_SessionDisconnected(object? sender, TerminalSession session)
+    {
+        // When a session disconnects (e.g., VM reboots), close it and remove all associated panes
+        if (session == null) return;
+
+        // Find and close all panes for this session
+        var panes = _paneLayoutManager.FindPanesForSession(session).ToList();
+        foreach (var pane in panes)
+        {
+            _paneLayoutManager.ClosePane(pane);
+        }
+
+        // Close the session itself
+        _sessionManager.CloseSession(session.Id);
     }
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)

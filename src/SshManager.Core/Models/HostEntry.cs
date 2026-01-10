@@ -75,6 +75,16 @@ public sealed partial class HostEntry : IValidatableObject
     public HostGroup? Group { get; set; }
 
     /// <summary>
+    /// Optional host profile that provides default settings for this host.
+    /// </summary>
+    public Guid? HostProfileId { get; set; }
+
+    /// <summary>
+    /// Navigation property to the host profile.
+    /// </summary>
+    public HostProfile? HostProfile { get; set; }
+
+    /// <summary>
     /// Optional ProxyJump profile for connecting through jump hosts.
     /// </summary>
     public Guid? ProxyJumpProfileId { get; set; }
@@ -89,6 +99,11 @@ public sealed partial class HostEntry : IValidatableObject
     /// </summary>
     public ICollection<PortForwardingProfile> PortForwardingProfiles { get; set; }
         = new List<PortForwardingProfile>();
+
+    /// <summary>
+    /// Sort order for display within a group (lower numbers appear first).
+    /// </summary>
+    public int SortOrder { get; set; }
 
     /// <summary>
     /// When this host entry was created.

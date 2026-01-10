@@ -130,6 +130,20 @@
                 }
                 break;
 
+            case 'setFont':
+                if (terminal) {
+                    if (message.fontFamily) {
+                        terminal.options.fontFamily = message.fontFamily;
+                    }
+                    if (typeof message.fontSize === 'number') {
+                        terminal.options.fontSize = message.fontSize;
+                    }
+                    if (fitAddon) {
+                        fitAddon.fit();
+                    }
+                }
+                break;
+
             case 'focus':
                 if (terminal) {
                     terminal.focus();
@@ -139,6 +153,12 @@
             case 'clear':
                 if (terminal) {
                     terminal.clear();
+                }
+                break;
+
+            case 'fit':
+                if (fitAddon && terminal) {
+                    fitAddon.fit();
                 }
                 break;
 

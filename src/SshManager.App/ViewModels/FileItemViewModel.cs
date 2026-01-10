@@ -67,6 +67,18 @@ public partial class FileItemViewModel : ObservableObject
     private bool _isParentDirectory;
 
     /// <summary>
+    /// Owner username on the remote system (null for local items).
+    /// </summary>
+    [ObservableProperty]
+    private string? _owner;
+
+    /// <summary>
+    /// Group name on the remote system (null for local items).
+    /// </summary>
+    [ObservableProperty]
+    private string? _group;
+
+    /// <summary>
     /// File extension (for icon mapping).
     /// </summary>
     public string Extension => IsDirectory ? "" : Path.GetExtension(Name).ToLowerInvariant();
@@ -87,13 +99,36 @@ public partial class FileItemViewModel : ObservableObject
         // Programming languages
         ".cs", ".py", ".rb", ".php", ".java", ".go", ".rs", ".c", ".cpp", ".h", ".hpp",
         // Other
-        ".sql", ".dockerfile", ".makefile", ".gitignore", ".editorconfig", ".csv"
+        ".sql", ".csv"
     };
 
     /// <summary>
-    /// True if this file can be opened in the text editor (based on extension).
+    /// Extensionless file names that can be opened in the text editor.
     /// </summary>
-    public bool IsEditable => !IsDirectory && !IsParentDirectory && EditableExtensions.Contains(Extension);
+    private static readonly HashSet<string> EditableFileNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Docker
+        "Dockerfile", "docker-compose", ".dockerignore",
+        // Build files
+        "Makefile", "CMakeLists.txt", "Rakefile", "Gemfile", "Vagrantfile",
+        // Git
+        ".gitignore", ".gitattributes", ".gitmodules",
+        // Editor configs
+        ".editorconfig", ".prettierrc", ".eslintrc", ".stylelintrc",
+        // Shell profiles
+        ".bashrc", ".bash_profile", ".bash_aliases", ".profile", ".zshrc", ".zprofile", ".zshenv",
+        ".vimrc", ".tmux.conf", ".screenrc",
+        // Other configs
+        ".htaccess", ".npmrc", ".yarnrc", ".nvmrc", ".ruby-version", ".python-version",
+        "LICENSE", "CHANGELOG", "AUTHORS", "CONTRIBUTORS", "CODEOWNERS",
+        "requirements.txt", "Procfile", "Brewfile"
+    };
+
+    /// <summary>
+    /// True if this file can be opened in the text editor (based on extension or filename).
+    /// </summary>
+    public bool IsEditable => !IsDirectory && !IsParentDirectory &&
+        (EditableExtensions.Contains(Extension) || EditableFileNames.Contains(Name));
 
     /// <summary>
     /// Display text for the file size.
@@ -151,7 +186,9 @@ public partial class FileItemViewModel : ObservableObject
             ModifiedDate = item.ModifiedDate,
             IsDirectory = item.IsDirectory,
             IsSymbolicLink = item.IsSymbolicLink,
-            Permissions = item.Permissions
+            Permissions = item.Permissions,
+            Owner = item.Owner,
+            Group = item.Group
         };
     }
 

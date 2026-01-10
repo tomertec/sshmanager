@@ -32,4 +32,11 @@
     <EmbeddedResource Include="Resources\Terminal\*.css" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Fonts\SourceCodePro\*.otf" />
+    <Content Include="Resources\Fonts\SourceCodePro\LICENSE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

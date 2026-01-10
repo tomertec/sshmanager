@@ -2,6 +2,8 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Web.WebView2.Core;
@@ -21,6 +23,9 @@ public partial class WebTerminalControl : UserControl, IDisposable
     private WebTerminalBridge? _bridge;
     private bool _disposed;
     private bool _isInitialized;
+    private const int FitDebounceMs = 100;
+    private readonly DispatcherTimer _fitDebounceTimer;
+    private TaskCompletionSource<bool>? _readyTcs;
 
     /// <summary>
     /// Gets the bridge that manages communication between C# and the JavaScript terminal.
@@ -84,10 +89,16 @@ public partial class WebTerminalControl : UserControl, IDisposable
         _logger = logger ?? NullLogger<WebTerminalControl>.Instance;
         _loggerFactory = loggerFactory;
         InitializeComponent();
+        _fitDebounceTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(FitDebounceMs)
+        };
+        _fitDebounceTimer.Tick += FitDebounceTimer_Tick;
     }
 
     /// <summary>
     /// Initializes the WebView2 control and loads the terminal HTML.
+    /// Waits for the terminal to be ready before returning.
     /// </summary>
     public async Task InitializeAsync()
     {
@@ -106,6 +117,9 @@ public partial class WebTerminalControl : UserControl, IDisposable
         {
             _logger.LogDebug("Initializing WebTerminalControl");
 
+            // Create TaskCompletionSource to wait for terminal ready
+            _readyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
             // Ensure WebView2 runtime is initialized
             await WebViewControl.EnsureCoreWebView2Async();
 
@@ -122,6 +136,18 @@ public partial class WebTerminalControl : UserControl, IDisposable
 
             // Load terminal HTML
             await LoadTerminalHtmlAsync();
+
+            // Wait for terminal to be ready (with timeout)
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            try
+            {
+                await _readyTcs.Task.WaitAsync(cts.Token);
+                _logger.LogDebug("Terminal ready signal received");
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("Timeout waiting for terminal ready, proceeding anyway");
+            }
 
             _isInitialized = true;
             _logger.LogInformation("WebTerminalControl initialized successfully");
@@ -169,6 +195,33 @@ public partial class WebTerminalControl : UserControl, IDisposable
     }
 
     /// <summary>
+    /// Sets the terminal font family and size.
+    /// </summary>
+    public void SetFont(string? fontFamily, double fontSize)
+    {
+        if (_disposed)
+        {
+            _logger.LogWarning("SetFont called on disposed control");
+            return;
+        }
+
+        _bridge?.SetFont(fontFamily, fontSize);
+    }
+
+    /// <summary>
+    /// Requests a terminal fit based on the current host size.
+    /// </summary>
+    public void RequestFit()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _bridge?.Fit();
+    }
+
+    /// <summary>
     /// Focuses the terminal for keyboard input.
     /// </summary>
     public new void Focus()
@@ -176,6 +229,13 @@ public partial class WebTerminalControl : UserControl, IDisposable
         if (_disposed)
         {
             return;
+        }
+
+        if (WebViewControl != null)
+        {
+            // Ensure keyboard focus lands on the WebView2 host.
+            WebViewControl.Focus();
+            Keyboard.Focus(WebViewControl);
         }
 
         _bridge?.Focus();
@@ -194,21 +254,64 @@ public partial class WebTerminalControl : UserControl, IDisposable
         _bridge?.Clear();
     }
 
+    /// <summary>
+    /// Increases the terminal font size by one step.
+    /// </summary>
+    /// <returns>True if zoom was applied, false if already at max.</returns>
+    public bool ZoomIn()
+    {
+        if (_disposed)
+        {
+            return false;
+        }
+
+        return _bridge?.ZoomIn() ?? false;
+    }
+
+    /// <summary>
+    /// Decreases the terminal font size by one step.
+    /// </summary>
+    /// <returns>True if zoom was applied, false if already at min.</returns>
+    public bool ZoomOut()
+    {
+        if (_disposed)
+        {
+            return false;
+        }
+
+        return _bridge?.ZoomOut() ?? false;
+    }
+
+    /// <summary>
+    /// Resets the terminal font size to the default.
+    /// </summary>
+    public void ResetZoom()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _bridge?.ResetZoom();
+    }
+
+    /// <summary>
+    /// Gets the current font size.
+    /// </summary>
+    public double CurrentFontSize => _bridge?.FontSize ?? WebTerminalBridge.DefaultFontSize;
+
     private async Task LoadTerminalHtmlAsync()
     {
         try
         {
-            // Get the embedded resource stream
             var assembly = Assembly.GetExecutingAssembly();
-            var resourceName = "SshManager.Terminal.Resources.Terminal.terminal.html";
 
             // Debug: List all embedded resources to verify the correct name
             var resourceNames = assembly.GetManifestResourceNames();
             _logger.LogDebug("Available embedded resources: {Resources}", string.Join(", ", resourceNames));
 
             // Find the terminal.html resource (case-insensitive search)
-            var actualResourceName = resourceNames.FirstOrDefault(r =>
-                r.EndsWith("terminal.html", StringComparison.OrdinalIgnoreCase));
+            var actualResourceName = FindResourceName(resourceNames, "terminal.html");
 
             if (actualResourceName == null)
             {
@@ -226,6 +329,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
 
             using var reader = new StreamReader(stream);
             var html = await reader.ReadToEndAsync();
+            html = InjectPowerlineFonts(html, assembly, resourceNames);
 
             // Navigate to the HTML content
             WebViewControl.NavigateToString(html);
@@ -238,9 +342,64 @@ public partial class WebTerminalControl : UserControl, IDisposable
         }
     }
 
+    private static string? FindResourceName(IEnumerable<string> resourceNames, string suffix)
+    {
+        return resourceNames.FirstOrDefault(r => r.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string LoadEmbeddedResourceAsBase64(
+        Assembly assembly,
+        IEnumerable<string> resourceNames,
+        string suffix)
+    {
+        var resourceName = FindResourceName(resourceNames, suffix);
+        if (resourceName == null)
+        {
+            throw new FileNotFoundException(
+                $"Embedded resource '{suffix}' not found. Available resources: {string.Join(", ", resourceNames)}");
+        }
+
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream == null)
+        {
+            throw new FileNotFoundException($"Failed to load embedded resource: {resourceName}");
+        }
+
+        using var memoryStream = new MemoryStream();
+        stream.CopyTo(memoryStream);
+        return Convert.ToBase64String(memoryStream.ToArray());
+    }
+
+    private static string InjectPowerlineFonts(string html, Assembly assembly, IEnumerable<string> resourceNames)
+    {
+        var regular = LoadEmbeddedResourceAsBase64(
+            assembly,
+            resourceNames,
+            "SourceCodePro-Powerline-Regular.otf");
+        var bold = LoadEmbeddedResourceAsBase64(
+            assembly,
+            resourceNames,
+            "SourceCodePro-Powerline-Bold.otf");
+        var italic = LoadEmbeddedResourceAsBase64(
+            assembly,
+            resourceNames,
+            "SourceCodePro-Powerline-Italic.otf");
+        var boldItalic = LoadEmbeddedResourceAsBase64(
+            assembly,
+            resourceNames,
+            "SourceCodePro-Powerline-BoldItalic.otf");
+
+        return html
+            .Replace("{{POWERLINE_SCP_REGULAR}}", regular)
+            .Replace("{{POWERLINE_SCP_BOLD}}", bold)
+            .Replace("{{POWERLINE_SCP_ITALIC}}", italic)
+            .Replace("{{POWERLINE_SCP_BOLDITALIC}}", boldItalic);
+    }
+
     private void UserControl_Loaded(object sender, RoutedEventArgs e)
     {
         _logger.LogDebug("WebTerminalControl loaded");
+        ScheduleFit();
     }
 
     private void UserControl_Unloaded(object sender, RoutedEventArgs e)
@@ -249,6 +408,46 @@ public partial class WebTerminalControl : UserControl, IDisposable
         // which would destroy the terminal state. Disposal should only happen
         // when the session is explicitly closed via Dispose().
         _logger.LogDebug("WebTerminalControl unloaded (keeping state)");
+    }
+
+    private void UserControl_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ScheduleFit();
+    }
+
+    private void UserControl_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        // Handle Ctrl+MouseWheel for zoom
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (e.Delta > 0)
+            {
+                ZoomIn();
+            }
+            else if (e.Delta < 0)
+            {
+                ZoomOut();
+            }
+
+            e.Handled = true;
+        }
+    }
+
+    private void ScheduleFit()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _fitDebounceTimer.Stop();
+        _fitDebounceTimer.Start();
+    }
+
+    private void FitDebounceTimer_Tick(object? sender, EventArgs e)
+    {
+        _fitDebounceTimer.Stop();
+        RequestFit();
     }
 
     private void OnBridgeInputReceived(string data)
@@ -263,6 +462,8 @@ public partial class WebTerminalControl : UserControl, IDisposable
 
     private void OnBridgeTerminalResized(int cols, int rows)
     {
+        // Signal that initialization can complete (we have the actual size now)
+        _readyTcs?.TrySetResult(true);
         TerminalResized?.Invoke(cols, rows);
     }
 
@@ -275,6 +476,8 @@ public partial class WebTerminalControl : UserControl, IDisposable
 
         _disposed = true;
         _logger.LogDebug("Disposing WebTerminalControl");
+        _fitDebounceTimer.Stop();
+        _fitDebounceTimer.Tick -= FitDebounceTimer_Tick;
 
         if (_bridge != null)
         {

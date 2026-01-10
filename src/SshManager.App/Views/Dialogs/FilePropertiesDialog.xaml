@@ -1,0 +1,238 @@
+<ui:FluentWindow x:Class="SshManager.App.Views.Dialogs.FilePropertiesDialog"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                xmlns:local="clr-namespace:SshManager.App.Converters"
+                mc:Ignorable="d"
+                Title="{Binding DialogTitle}"
+                Height="480" Width="400"
+                MinHeight="450" MinWidth="380"
+                WindowStartupLocation="CenterOwner"
+                ResizeMode="NoResize"
+                ExtendsContentIntoTitleBar="True"
+                WindowBackdropType="Mica">
+
+    <ui:FluentWindow.Resources>
+        <local:StringToVisibilityConverter x:Key="StringToVisibilityConverter" />
+        <local:InverseBoolConverter x:Key="InverseBoolConverter" />
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title Bar -->
+        <ui:TitleBar Grid.Row="0"
+                     Title="{Binding DialogTitle}"
+                     ShowMaximize="False"
+                     ShowMinimize="False" />
+
+        <!-- Content with Tabs -->
+        <TabControl Grid.Row="1" Margin="16,8,16,8">
+            <!-- Common Tab -->
+            <TabItem Header="Common">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
+                    <StackPanel>
+                        <!-- File Icon and Name -->
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,16">
+                            <ui:SymbolIcon x:Name="FileIcon"
+                                          FontSize="32"
+                                          Margin="0,0,12,0"
+                                          VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}"
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      VerticalAlignment="Center"
+                                      TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+
+                        <Separator Margin="0,0,0,12" />
+
+                        <!-- Location -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Location:" VerticalAlignment="Center" Foreground="#A0A0A0" />
+                            <TextBlock Grid.Column="1" Text="{Binding Location}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Location}" />
+                        </Grid>
+
+                        <!-- Size -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Size:" VerticalAlignment="Center" Foreground="#A0A0A0" />
+                            <TextBlock Grid.Column="1" Text="{Binding SizeDisplay}" />
+                        </Grid>
+
+                        <Separator Margin="0,8,0,12" />
+
+                        <!-- Owner -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Owner:" VerticalAlignment="Center" Foreground="#A0A0A0" />
+                            <ui:TextBox Grid.Column="1" Text="{Binding Owner, Mode=TwoWay}" IsReadOnly="True" />
+                        </Grid>
+
+                        <!-- Group -->
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Group:" VerticalAlignment="Center" Foreground="#A0A0A0" />
+                            <ui:TextBox Grid.Column="1" Text="{Binding Group, Mode=TwoWay}" IsReadOnly="True" />
+                        </Grid>
+
+                        <Separator Margin="0,0,0,12" />
+
+                        <!-- Permissions Section -->
+                        <TextBlock Text="Permissions:" FontWeight="SemiBold" Margin="0,0,0,8" />
+
+                        <!-- Permission Grid -->
+                        <Grid Margin="8,0,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="50" />
+                                <ColumnDefinition Width="50" />
+                                <ColumnDefinition Width="50" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Headers -->
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="R" HorizontalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="W" HorizontalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="0" Grid.Column="3" Text="X" HorizontalAlignment="Center" FontWeight="SemiBold" />
+
+                            <!-- Owner Row -->
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Owner:" VerticalAlignment="Center" Foreground="#A0A0A0" />
+                            <CheckBox Grid.Row="1" Grid.Column="1" IsChecked="{Binding OwnerRead}" HorizontalAlignment="Center" />
+                            <CheckBox Grid.Row="1" Grid.Column="2" IsChecked="{Binding OwnerWrite}" HorizontalAlignment="Center" />
+                            <CheckBox Grid.Row="1" Grid.Column="3" IsChecked="{Binding OwnerExecute}" HorizontalAlignment="Center" />
+                            <CheckBox Grid.Row="1" Grid.Column="4" Content="Set UID" IsChecked="{Binding SetUid}" Margin="8,0,0,0" />
+
+                            <!-- Group Row -->
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Group:" VerticalAlignment="Center" Foreground="#A0A0A0" />
+                            <CheckBox Grid.Row="2" Grid.Column="1" IsChecked="{Binding GroupRead}" HorizontalAlignment="Center" />
+                            <CheckBox Grid.Row="2" Grid.Column="2" IsChecked="{Binding GroupWrite}" HorizontalAlignment="Center" />
+                            <CheckBox Grid.Row="2" Grid.Column="3" IsChecked="{Binding GroupExecute}" HorizontalAlignment="Center" />
+                            <CheckBox Grid.Row="2" Grid.Column="4" Content="Set GID" IsChecked="{Binding SetGid}" Margin="8,0,0,0" />
+
+                            <!-- Others Row -->
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Others:" VerticalAlignment="Center" Foreground="#A0A0A0" />
+                            <CheckBox Grid.Row="3" Grid.Column="1" IsChecked="{Binding OthersRead}" HorizontalAlignment="Center" />
+                            <CheckBox Grid.Row="3" Grid.Column="2" IsChecked="{Binding OthersWrite}" HorizontalAlignment="Center" />
+                            <CheckBox Grid.Row="3" Grid.Column="3" IsChecked="{Binding OthersExecute}" HorizontalAlignment="Center" />
+                            <CheckBox Grid.Row="3" Grid.Column="4" Content="Sticky bit" IsChecked="{Binding StickyBit}" Margin="8,0,0,0" />
+                        </Grid>
+
+                        <!-- Octal -->
+                        <Grid Margin="8,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="80" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Octal:" VerticalAlignment="Center" Foreground="#A0A0A0" />
+                            <ui:TextBox Grid.Column="1"
+                                       Text="{Binding OctalPermissions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                       MaxLength="4" />
+                        </Grid>
+
+                        <!-- Error Message -->
+                        <TextBlock Text="{Binding ErrorMessage}"
+                                  Foreground="IndianRed"
+                                  Visibility="{Binding ErrorMessage, Converter={StaticResource StringToVisibilityConverter}}"
+                                  Margin="0,8,0,0"
+                                  TextWrapping="Wrap" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Checksum Tab (files only) -->
+            <TabItem Header="Checksum" Visibility="{Binding ShowChecksumTab, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel Margin="8,16">
+                    <TextBlock Text="Calculate file checksums to verify integrity."
+                              Foreground="#A0A0A0"
+                              TextWrapping="Wrap"
+                              Margin="0,0,0,16" />
+
+                    <ui:Button Content="Calculate Checksums"
+                              Command="{Binding CalculateChecksumCommand}"
+                              IsEnabled="{Binding IsCalculatingChecksum, Converter={StaticResource InverseBoolConverter}}"
+                              Margin="0,0,0,16" />
+
+                    <!-- Loading indicator -->
+                    <StackPanel Orientation="Horizontal"
+                               Visibility="{Binding IsCalculatingChecksum, Converter={StaticResource BoolToVisibilityConverter}}"
+                               Margin="0,0,0,8">
+                        <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" />
+                        <TextBlock Text="Calculating..." Margin="8,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- MD5 -->
+                    <TextBlock Text="MD5:" FontWeight="SemiBold" Margin="0,8,0,4" />
+                    <ui:TextBox Text="{Binding Md5Checksum, Mode=OneWay}"
+                               IsReadOnly="True"
+                               FontFamily="Consolas"
+                               FontSize="11"
+                               TextWrapping="Wrap" />
+
+                    <!-- SHA256 -->
+                    <TextBlock Text="SHA-256:" FontWeight="SemiBold" Margin="0,16,0,4" />
+                    <ui:TextBox Text="{Binding Sha256Checksum, Mode=OneWay}"
+                               IsReadOnly="True"
+                               FontFamily="Consolas"
+                               FontSize="11"
+                               TextWrapping="Wrap" />
+
+                    <!-- Checksum Error -->
+                    <TextBlock Text="{Binding ChecksumError}"
+                              Foreground="IndianRed"
+                              Visibility="{Binding ChecksumError, Converter={StaticResource StringToVisibilityConverter}}"
+                              Margin="0,8,0,0"
+                              TextWrapping="Wrap" />
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="2" Margin="16,8,16,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ui:Button Grid.Column="1"
+                      Content="Cancel"
+                      Command="{Binding CancelCommand}"
+                      Margin="0,0,8,0"
+                      MinWidth="80" />
+
+            <ui:Button Grid.Column="2"
+                      Content="OK"
+                      Appearance="Primary"
+                      Command="{Binding SaveCommand}"
+                      IsEnabled="{Binding IsSaving, Converter={StaticResource InverseBoolConverter}}"
+                      MinWidth="80" />
+        </Grid>
+    </Grid>
+</ui:FluentWindow>

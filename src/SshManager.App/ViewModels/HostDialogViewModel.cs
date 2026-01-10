@@ -15,6 +15,7 @@ namespace SshManager.App.ViewModels;
 public partial class HostDialogViewModel : ObservableObject
 {
     private readonly ISecretProtector _secretProtector;
+    private readonly IHostProfileRepository? _hostProfileRepo;
     private readonly IProxyJumpProfileRepository? _proxyJumpRepo;
     private readonly IPortForwardingProfileRepository? _portForwardingRepo;
     private readonly ILogger<HostDialogViewModel> _logger;
@@ -56,6 +57,12 @@ public partial class HostDialogViewModel : ObservableObject
     private ObservableCollection<HostGroup> _availableGroups = [];
 
     [ObservableProperty]
+    private HostProfile? _selectedHostProfile;
+
+    [ObservableProperty]
+    private ObservableCollection<HostProfile> _availableHostProfiles = [];
+
+    [ObservableProperty]
     private bool _isNewHost;
 
     [ObservableProperty]
@@ -93,11 +100,13 @@ public partial class HostDialogViewModel : ObservableObject
         ISecretProtector secretProtector,
         HostEntry? host = null,
         IEnumerable<HostGroup>? groups = null,
+        IHostProfileRepository? hostProfileRepo = null,
         IProxyJumpProfileRepository? proxyJumpRepo = null,
         IPortForwardingProfileRepository? portForwardingRepo = null,
         ILogger<HostDialogViewModel>? logger = null)
     {
         _secretProtector = secretProtector;
+        _hostProfileRepo = hostProfileRepo;
         _proxyJumpRepo = proxyJumpRepo;
         _portForwardingRepo = portForwardingRepo;
         _logger = logger ?? NullLogger<HostDialogViewModel>.Instance;
@@ -135,6 +144,34 @@ public partial class HostDialogViewModel : ObservableObject
         PortForwardingProfileCount = _originalHost.PortForwardingProfiles?.Count ?? 0;
 
         _logger.LogDebug("HostDialogViewModel initialized for {Mode} host", IsNewHost ? "new" : "editing");
+    }
+
+    /// <summary>
+    /// Loads available host profiles asynchronously.
+    /// Call this after constructing the ViewModel.
+    /// </summary>
+    public async Task LoadHostProfilesAsync(CancellationToken ct = default)
+    {
+        if (_hostProfileRepo == null) return;
+
+        try
+        {
+            var profiles = await _hostProfileRepo.GetAllAsync(ct);
+            AvailableHostProfiles = new ObservableCollection<HostProfile>(profiles);
+
+            // Set selected profile from host
+            if (_originalHost.HostProfileId.HasValue)
+            {
+                SelectedHostProfile = AvailableHostProfiles
+                    .FirstOrDefault(p => p.Id == _originalHost.HostProfileId.Value);
+            }
+
+            _logger.LogDebug("Loaded {ProfileCount} available host profiles", profiles.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load host profiles");
+        }
     }
 
     /// <summary>
@@ -320,6 +357,8 @@ public partial class HostDialogViewModel : ObservableObject
         _originalHost.Notes = string.IsNullOrWhiteSpace(Notes) ? null : Notes.Trim();
         _originalHost.GroupId = SelectedGroup?.Id;
         _originalHost.Group = SelectedGroup;
+        _originalHost.HostProfileId = SelectedHostProfile?.Id;
+        _originalHost.HostProfile = SelectedHostProfile;
         _originalHost.ProxyJumpProfileId = SelectedProxyJumpProfile?.Id;
         _originalHost.ProxyJumpProfile = SelectedProxyJumpProfile;
         _originalHost.UpdatedAt = DateTimeOffset.UtcNow;
@@ -353,6 +392,16 @@ public partial class HostDialogViewModel : ObservableObject
     private void ManagePortForwarding()
     {
         ManagePortForwardingRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Clears the selected host profile.
+    /// </summary>
+    [RelayCommand]
+    private void ClearHostProfile()
+    {
+        SelectedHostProfile = null;
+        _logger.LogDebug("Cleared host profile selection");
     }
 
     /// <summary>

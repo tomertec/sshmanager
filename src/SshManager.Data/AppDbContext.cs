@@ -10,6 +10,7 @@ public sealed class AppDbContext : DbContext
 {
     public DbSet<HostEntry> Hosts => Set<HostEntry>();
     public DbSet<HostGroup> Groups => Set<HostGroup>();
+    public DbSet<HostProfile> HostProfiles => Set<HostProfile>();
     public DbSet<ConnectionHistory> ConnectionHistory => Set<ConnectionHistory>();
     public DbSet<AppSettings> Settings => Set<AppSettings>();
     public DbSet<CommandSnippet> Snippets => Set<CommandSnippet>();
@@ -36,12 +37,17 @@ public sealed class AppDbContext : DbContext
              .WithMany(g => g.Hosts)
              .HasForeignKey(x => x.GroupId)
              .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.HostProfile)
+             .WithMany(p => p.Hosts)
+             .HasForeignKey(x => x.HostProfileId)
+             .OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.ProxyJumpProfile)
              .WithMany(p => p.AssociatedHosts)
              .HasForeignKey(x => x.ProxyJumpProfileId)
              .OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => x.DisplayName);
             e.HasIndex(x => x.Hostname);
+            e.HasIndex(x => new { x.GroupId, x.SortOrder });
         });
 
         // HostGroup configuration
@@ -50,6 +56,7 @@ public sealed class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Name).HasMaxLength(100).IsRequired();
             e.Property(x => x.Icon).HasMaxLength(50);
+            e.Property(x => x.Color).HasMaxLength(20);
             e.HasIndex(x => x.SortOrder);
         });
 
@@ -147,6 +154,21 @@ public sealed class AppDbContext : DbContext
              .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.DisplayName);
             e.HasIndex(x => x.HostId);
+        });
+
+        // HostProfile configuration
+        modelBuilder.Entity<HostProfile>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(1000);
+            e.Property(x => x.DefaultUsername).HasMaxLength(100);
+            e.Property(x => x.PrivateKeyPath).HasMaxLength(1000);
+            e.HasOne(x => x.ProxyJumpProfile)
+             .WithMany()
+             .HasForeignKey(x => x.ProxyJumpProfileId)
+             .OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => x.DisplayName);
         });
     }
 }

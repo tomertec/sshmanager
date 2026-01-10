@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SshManager.Core;
 using SshManager.Core.Models;
 
 namespace SshManager.App.ViewModels;
@@ -19,6 +20,9 @@ public partial class GroupDialogViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isNewGroup;
+
+    [ObservableProperty]
+    private GroupColors.ColorOption _selectedColor;
 
     public string Title => IsNewGroup ? "Add Group" : "Edit Group";
 
@@ -41,6 +45,11 @@ public partial class GroupDialogViewModel : ObservableObject
         "Organization24"
     };
 
+    /// <summary>
+    /// Gets all available color options for groups.
+    /// </summary>
+    public IReadOnlyList<GroupColors.ColorOption> AvailableColors { get; } = GroupColors.All;
+
     public GroupDialogViewModel(HostGroup? group = null)
     {
         _originalGroup = group ?? new HostGroup();
@@ -51,6 +60,9 @@ public partial class GroupDialogViewModel : ObservableObject
         StatusCheckIntervalSeconds = _originalGroup.StatusCheckIntervalSeconds > 0
             ? _originalGroup.StatusCheckIntervalSeconds
             : 30;
+
+        // Initialize selected color from the group
+        _selectedColor = GroupColors.GetByHexValue(_originalGroup.Color);
     }
 
     [RelayCommand]
@@ -77,6 +89,7 @@ public partial class GroupDialogViewModel : ObservableObject
         _originalGroup.Name = Name.Trim();
         _originalGroup.Icon = Icon;
         _originalGroup.StatusCheckIntervalSeconds = Math.Max(StatusCheckIntervalSeconds, 5);
+        _originalGroup.Color = SelectedColor.HexValue;
         return _originalGroup;
     }
 }
