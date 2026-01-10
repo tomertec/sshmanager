@@ -83,4 +83,22 @@ public partial class SftpBrowserControl : UserControl
             }
         }
     }
+
+    private void LocalBrowser_UploadRequested(object? sender, FilesTransferRequestedEventArgs e)
+    {
+        // Upload selected local files to remote
+        if (DataContext is SftpBrowserViewModel vm)
+        {
+            vm.UploadFiles(e.FilePaths);
+        }
+    }
+
+    private void RemoteBrowser_DownloadRequested(object? sender, FilesTransferRequestedEventArgs e)
+    {
+        // Download selected remote files to local
+        if (DataContext is SftpBrowserViewModel vm)
+        {
+            vm.DownloadFiles(e.FilePaths);
+        }
+    }
 }

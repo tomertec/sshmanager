@@ -132,13 +132,19 @@ public partial class FileItemViewModel : ObservableObject
 
     /// <summary>
     /// Display text for the file size.
+    /// Shows "-" for directories for better visual alignment.
     /// </summary>
-    public string SizeDisplay => IsDirectory ? "" : FormatFileSize(Size);
+    public string SizeDisplay => IsDirectory ? "-" : FormatFileSize(Size);
 
     /// <summary>
-    /// Display text for the modified date.
+    /// Display text for the modified date in a friendly format.
     /// </summary>
-    public string ModifiedDisplay => ModifiedDate.LocalDateTime.ToString("yyyy-MM-dd HH:mm");
+    public string ModifiedDisplay => FormatModifiedDate(ModifiedDate);
+
+    /// <summary>
+    /// Full timestamp for tooltip display.
+    /// </summary>
+    public string ModifiedFullTimestamp => ModifiedDate.LocalDateTime.ToString("F");
 
     /// <summary>
     /// Display text for permissions (rwxr-xr-x).
@@ -245,5 +251,13 @@ public partial class FileItemViewModel : ObservableObject
         var group = (permissions >> 3) & 0x7;
         var other = permissions & 0x7;
         return $"0{owner}{group}{other}";
+    }
+
+    private static string FormatModifiedDate(DateTimeOffset date)
+    {
+        if (date == DateTimeOffset.MinValue)
+            return "";
+
+        return date.LocalDateTime.ToString("dd/MM/yyyy HH:mm:ss");
     }
 }

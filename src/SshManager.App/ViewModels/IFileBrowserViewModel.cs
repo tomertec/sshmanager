@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace SshManager.App.ViewModels;
@@ -88,6 +89,31 @@ public interface IFileBrowserViewModel
     /// Command to copy an item's path to clipboard.
     /// </summary>
     IRelayCommand<FileItemViewModel> CopyPathCommand { get; }
+
+    /// <summary>
+    /// Command to sort items by a column.
+    /// </summary>
+    IRelayCommand<FileSortColumn> SortByCommand { get; }
+
+    /// <summary>
+    /// Current sort column.
+    /// </summary>
+    FileSortColumn SortColumn { get; }
+
+    /// <summary>
+    /// Current sort direction.
+    /// </summary>
+    ListSortDirection SortDirection { get; }
+
+    /// <summary>
+    /// Filter text for searching files by name.
+    /// </summary>
+    string FilterText { get; set; }
+
+    /// <summary>
+    /// Command to clear the filter.
+    /// </summary>
+    IRelayCommand ClearFilterCommand { get; }
 
     /// <summary>
     /// Initializes the browser (navigates to initial directory).

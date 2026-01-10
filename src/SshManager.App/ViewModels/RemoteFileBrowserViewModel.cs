@@ -15,6 +15,9 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
 {
     private ISftpSession? _session;
     private bool _disposed;
+    private string _hostname = "";
+    private Func<string>? _getFavoritesCallback;
+    private Action<string>? _saveFavoritesCallback;
 
     /// <summary>
     /// Whether the SFTP session is connected.
@@ -27,6 +30,18 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
     /// </summary>
     [ObservableProperty]
     private string _homeDirectory = "";
+
+    /// <summary>
+    /// Favorite/bookmarked paths for this host.
+    /// </summary>
+    [ObservableProperty]
+    private ObservableCollection<RemoteQuickAccess> _favorites = [];
+
+    /// <summary>
+    /// Whether the current path is bookmarked.
+    /// </summary>
+    public bool IsCurrentPathFavorite => !string.IsNullOrEmpty(CurrentPath) &&
+        Favorites.Any(f => f.Path == CurrentPath);
 
     /// <inheritdoc />
     public override bool CanGoBack => _navigationHistory.Count > 0;
@@ -62,6 +77,153 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
         _logger.LogDebug("SFTP session set, home directory: {HomeDir}", HomeDirectory);
     }
 
+    /// <summary>
+    /// Sets the hostname and favorites callbacks for bookmark management.
+    /// </summary>
+    public void SetFavoritesSupport(string hostname, Func<string> getFavorites, Action<string> saveFavorites)
+    {
+        _hostname = hostname;
+        _getFavoritesCallback = getFavorites;
+        _saveFavoritesCallback = saveFavorites;
+        LoadFavorites();
+    }
+
+    /// <summary>
+    /// Loads favorites from storage.
+    /// </summary>
+    private void LoadFavorites()
+    {
+        if (_getFavoritesCallback == null || string.IsNullOrEmpty(_hostname))
+        {
+            return;
+        }
+
+        try
+        {
+            var allFavorites = _getFavoritesCallback();
+            var hostPrefix = $"{_hostname}:";
+
+            var hostFavorites = allFavorites
+                .Split('|', StringSplitOptions.RemoveEmptyEntries)
+                .Where(f => f.StartsWith(hostPrefix))
+                .Select(f => f[hostPrefix.Length..])
+                .Select(path => new RemoteQuickAccess
+                {
+                    Name = GetFavoriteDisplayName(path),
+                    Path = path,
+                    Icon = "Star"
+                })
+                .ToList();
+
+            Favorites = new ObservableCollection<RemoteQuickAccess>(hostFavorites);
+            _logger.LogDebug("Loaded {Count} favorites for {Host}", hostFavorites.Count, _hostname);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load favorites");
+        }
+    }
+
+    /// <summary>
+    /// Saves favorites to storage.
+    /// </summary>
+    private void SaveFavorites()
+    {
+        if (_saveFavoritesCallback == null || string.IsNullOrEmpty(_hostname))
+        {
+            return;
+        }
+
+        try
+        {
+            // Get existing favorites for other hosts
+            var allFavorites = _getFavoritesCallback?.Invoke() ?? "";
+            var hostPrefix = $"{_hostname}:";
+
+            var otherHostFavorites = allFavorites
+                .Split('|', StringSplitOptions.RemoveEmptyEntries)
+                .Where(f => !f.StartsWith(hostPrefix))
+                .ToList();
+
+            // Add this host's favorites
+            var thisHostFavorites = Favorites.Select(f => $"{hostPrefix}{f.Path}");
+
+            var combined = otherHostFavorites.Concat(thisHostFavorites);
+            var newValue = string.Join("|", combined);
+
+            _saveFavoritesCallback(newValue);
+            _logger.LogDebug("Saved favorites for {Host}", _hostname);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to save favorites");
+        }
+    }
+
+    /// <summary>
+    /// Gets a display name for a favorite path.
+    /// </summary>
+    private static string GetFavoriteDisplayName(string path)
+    {
+        if (path == "/") return "/";
+        var name = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+        return string.IsNullOrEmpty(name) ? path : name;
+    }
+
+    /// <summary>
+    /// Toggles the current path as a favorite.
+    /// </summary>
+    [RelayCommand]
+    public void ToggleFavorite()
+    {
+        if (string.IsNullOrEmpty(CurrentPath)) return;
+
+        var existing = Favorites.FirstOrDefault(f => f.Path == CurrentPath);
+        if (existing != null)
+        {
+            Favorites.Remove(existing);
+            _logger.LogInformation("Removed favorite: {Path}", CurrentPath);
+        }
+        else
+        {
+            Favorites.Add(new RemoteQuickAccess
+            {
+                Name = GetFavoriteDisplayName(CurrentPath),
+                Path = CurrentPath,
+                Icon = "Star"
+            });
+            _logger.LogInformation("Added favorite: {Path}", CurrentPath);
+        }
+
+        SaveFavorites();
+        OnPropertyChanged(nameof(IsCurrentPathFavorite));
+    }
+
+    /// <summary>
+    /// Removes a specific favorite.
+    /// </summary>
+    [RelayCommand]
+    public void RemoveFavorite(RemoteQuickAccess? favorite)
+    {
+        if (favorite == null) return;
+
+        Favorites.Remove(favorite);
+        SaveFavorites();
+        OnPropertyChanged(nameof(IsCurrentPathFavorite));
+    }
+
+    /// <summary>
+    /// Navigates to a favorite path.
+    /// </summary>
+    [RelayCommand]
+    public async Task NavigateToFavoriteAsync(RemoteQuickAccess? favorite)
+    {
+        if (favorite != null)
+        {
+            await NavigateToAsync(favorite.Path);
+        }
+    }
+
     /// <inheritdoc />
     public override async Task InitializeAsync()
     {
@@ -84,6 +246,7 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
         }
 
         await base.NavigateToAsync(path);
+        OnPropertyChanged(nameof(IsCurrentPathFavorite));
     }
 
     /// <inheritdoc />

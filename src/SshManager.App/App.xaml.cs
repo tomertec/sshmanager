@@ -491,6 +491,12 @@ public partial class App : Application
             ["MinimumPaneSize"] = ("INTEGER", "100"),
             // Terminal theme settings
             ["TerminalThemeId"] = ("TEXT", "'default'"),
+            // Performance settings
+            ["EnableHostListAnimations"] = ("INTEGER", "1"),
+            ["TerminalBufferInMemoryLines"] = ("INTEGER", "5000"),
+            // SFTP browser settings
+            ["SftpFavorites"] = ("TEXT", "''"),
+            ["SftpMirrorNavigation"] = ("INTEGER", "0"),
         };
 
         foreach (var (columnName, (type, defaultValue)) in migrations)

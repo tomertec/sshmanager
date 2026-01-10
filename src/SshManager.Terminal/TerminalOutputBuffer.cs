@@ -4,16 +4,23 @@ using System.Text.RegularExpressions;
 namespace SshManager.Terminal;
 
 /// <summary>
-/// Stores terminal output text for search and logging functionality.
-/// This is a simple text-based buffer that captures output from the terminal
-/// and strips ANSI escape sequences for searchable plain text storage.
+/// Stores terminal output text for search and logging functionality with lazy-loading support.
+/// Uses tiered storage: recent lines kept in memory (hot tier), older lines compressed to disk (cold tier).
+/// This reduces memory usage during long sessions while maintaining fast access to recent output.
 /// </summary>
-public sealed class TerminalOutputBuffer
+public sealed class TerminalOutputBuffer : IDisposable
 {
-    private readonly List<string> _lines = new();
+    // Segmented storage
+    private readonly List<ITerminalOutputSegment> _segments = new();
+    private MemoryTerminalOutputSegment? _currentSegment;
     private readonly StringBuilder _currentLine = new();
     private readonly object _lock = new();
     private int _maxLines;
+    private int _maxLinesInMemory;
+    private bool _disposed;
+
+    // Constants
+    private const int SegmentSize = 1000;
 
     // Regex to strip ANSI escape sequences
     // Matches: ESC followed by various control sequences:
@@ -28,14 +35,20 @@ public sealed class TerminalOutputBuffer
     /// <summary>
     /// Creates a new terminal output buffer with the specified maximum line count.
     /// </summary>
-    /// <param name="maxLines">Maximum number of lines to retain.</param>
-    public TerminalOutputBuffer(int maxLines = 10000)
+    /// <param name="maxLines">Maximum number of lines to retain (default: 10000).</param>
+    /// <param name="maxLinesInMemory">Maximum number of lines to keep in memory (default: 5000). Older lines are archived to disk.</param>
+    public TerminalOutputBuffer(int maxLines = 10000, int maxLinesInMemory = 5000)
     {
         _maxLines = Math.Max(100, maxLines);
+        _maxLinesInMemory = Math.Max(100, Math.Min(maxLinesInMemory, maxLines));
+
+        // Create initial segment
+        _currentSegment = new MemoryTerminalOutputSegment(0);
+        _segments.Add(_currentSegment);
     }
 
     /// <summary>
-    /// Gets or sets the maximum number of lines to retain.
+    /// Gets or sets the maximum number of lines to retain across all segments.
     /// </summary>
     public int MaxLines
     {
@@ -44,15 +57,32 @@ public sealed class TerminalOutputBuffer
     }
 
     /// <summary>
-    /// Gets the current number of lines in the buffer.
+    /// Gets or sets the maximum number of lines to keep in memory.
+    /// Older lines are archived to compressed disk files.
     /// </summary>
-    public int LineCount
+    public int MaxLinesInMemory
+    {
+        get => _maxLinesInMemory;
+        set => _maxLinesInMemory = Math.Max(100, Math.Min(value, _maxLines));
+    }
+
+    /// <summary>
+    /// Gets the current number of lines in the buffer (legacy property for backward compatibility).
+    /// Use TotalLineCount for the total across all segments.
+    /// </summary>
+    public int LineCount => TotalLineCount;
+
+    /// <summary>
+    /// Gets the total number of lines across all segments.
+    /// </summary>
+    public int TotalLineCount
     {
         get
         {
             lock (_lock)
             {
-                return _lines.Count;
+                ThrowIfDisposed();
+                return _segments.Sum(s => s.LineCount);
             }
         }
     }
@@ -60,6 +90,8 @@ public sealed class TerminalOutputBuffer
     /// <summary>
     /// Appends text output from the terminal.
     /// ANSI escape sequences are stripped and the text is stored as plain text.
+    /// Lines are added to the current in-memory segment. When the segment reaches capacity,
+    /// it is rotated and older segments may be archived to disk.
     /// </summary>
     /// <param name="text">The terminal output text (may contain ANSI sequences).</param>
     public void AppendOutput(string text)
@@ -68,6 +100,8 @@ public sealed class TerminalOutputBuffer
 
         lock (_lock)
         {
+            ThrowIfDisposed();
+
             // Strip ANSI escape sequences
             var cleanText = StripAnsiEscapes(text);
 
@@ -75,11 +109,18 @@ public sealed class TerminalOutputBuffer
             {
                 if (ch == '\n')
                 {
-                    // End of line - store it
-                    _lines.Add(_currentLine.ToString());
+                    // End of line - store it in current segment
+                    var line = _currentLine.ToString();
+                    _currentSegment?.AppendLine(line);
                     _currentLine.Clear();
 
-                    // Trim excess lines
+                    // Check if we need to rotate the current segment
+                    if (_currentSegment?.LineCount >= SegmentSize)
+                    {
+                        RotateSegment();
+                    }
+
+                    // Trim excess lines across all segments
                     TrimExcess();
                 }
                 else if (ch == '\r')
@@ -98,7 +139,8 @@ public sealed class TerminalOutputBuffer
     }
 
     /// <summary>
-    /// Gets a specific line by index.
+    /// Gets a specific line by index across all segments.
+    /// This method transparently searches across segments and may trigger lazy loading of archived segments.
     /// </summary>
     /// <param name="index">The line index (0 = oldest line).</param>
     /// <returns>The line text, or empty string if index is out of range.</returns>
@@ -106,16 +148,30 @@ public sealed class TerminalOutputBuffer
     {
         lock (_lock)
         {
-            if (index >= 0 && index < _lines.Count)
+            ThrowIfDisposed();
+
+            if (index < 0) return string.Empty;
+
+            // Find the segment containing this line
+            var currentIndex = 0;
+            foreach (var segment in _segments)
             {
-                return _lines[index];
+                if (index < currentIndex + segment.LineCount)
+                {
+                    // This segment contains the line
+                    var relativeIndex = index - currentIndex;
+                    return segment.GetLine(relativeIndex);
+                }
+                currentIndex += segment.LineCount;
             }
+
             return string.Empty;
         }
     }
 
     /// <summary>
-    /// Gets a range of lines from the buffer.
+    /// Gets a range of lines from the buffer across all segments.
+    /// This method transparently searches across segments and may trigger lazy loading of archived segments.
     /// </summary>
     /// <param name="startIndex">Start index (0 = oldest line).</param>
     /// <param name="count">Number of lines to retrieve.</param>
@@ -124,15 +180,40 @@ public sealed class TerminalOutputBuffer
     {
         lock (_lock)
         {
-            var result = new List<string>();
-            var end = Math.Min(startIndex + count, _lines.Count);
+            ThrowIfDisposed();
 
-            for (var i = startIndex; i < end; i++)
+            var result = new List<string>();
+            if (startIndex < 0 || count <= 0) return result;
+
+            var totalLines = TotalLineCount;
+            var end = Math.Min(startIndex + count, totalLines);
+
+            // Iterate through segments to collect the requested lines
+            var currentIndex = 0;
+            foreach (var segment in _segments)
             {
-                if (i >= 0 && i < _lines.Count)
+                var segmentStartIndex = currentIndex;
+                var segmentEndIndex = currentIndex + segment.LineCount;
+
+                // Check if this segment overlaps with the requested range
+                if (segmentEndIndex > startIndex && segmentStartIndex < end)
                 {
-                    result.Add(_lines[i]);
+                    // Calculate the range within this segment
+                    var relativeStart = Math.Max(0, startIndex - segmentStartIndex);
+                    var relativeEnd = Math.Min(segment.LineCount, end - segmentStartIndex);
+                    var relativeCount = relativeEnd - relativeStart;
+
+                    if (relativeCount > 0)
+                    {
+                        var segmentLines = segment.GetLines(relativeStart, relativeCount);
+                        result.AddRange(segmentLines);
+                    }
                 }
+
+                currentIndex += segment.LineCount;
+
+                // Stop if we've collected enough lines
+                if (currentIndex >= end) break;
             }
 
             return result;
@@ -141,33 +222,51 @@ public sealed class TerminalOutputBuffer
 
     /// <summary>
     /// Gets all lines as a single string.
+    /// Note: This may be memory-intensive for large buffers as it loads all segments.
     /// </summary>
     public string GetAllText()
     {
         lock (_lock)
         {
+            ThrowIfDisposed();
+
             var sb = new StringBuilder();
-            foreach (var line in _lines)
+            var totalLines = TotalLineCount;
+
+            for (int i = 0; i < totalLines; i++)
             {
-                sb.AppendLine(line);
+                sb.AppendLine(GetLine(i));
             }
+
             if (_currentLine.Length > 0)
             {
                 sb.Append(_currentLine);
             }
+
             return sb.ToString();
         }
     }
 
     /// <summary>
-    /// Clears all lines from the buffer.
+    /// Clears all lines from the buffer and disposes all segments.
     /// </summary>
     public void Clear()
     {
         lock (_lock)
         {
-            _lines.Clear();
+            ThrowIfDisposed();
+
+            // Dispose all segments (including file cleanup)
+            foreach (var segment in _segments)
+            {
+                segment.Dispose();
+            }
+            _segments.Clear();
             _currentLine.Clear();
+
+            // Create new initial segment
+            _currentSegment = new MemoryTerminalOutputSegment(0);
+            _segments.Add(_currentSegment);
         }
     }
 
@@ -180,14 +279,173 @@ public sealed class TerminalOutputBuffer
     }
 
     /// <summary>
-    /// Trims excess lines from the beginning of the buffer.
+    /// Rotates the current segment by creating a new one and checking if old segments need archiving.
+    /// </summary>
+    private void RotateSegment()
+    {
+        if (_currentSegment == null) return;
+
+        // Calculate the starting index for the new segment
+        var newStartIndex = _segments.Sum(s => s.LineCount);
+
+        // Create new current segment
+        _currentSegment = new MemoryTerminalOutputSegment(newStartIndex);
+        _segments.Add(_currentSegment);
+
+        // Check if we need to archive old segments to disk
+        ArchiveOldSegmentsIfNeeded();
+    }
+
+    /// <summary>
+    /// Archives older memory segments to disk if the in-memory line count exceeds the limit.
+    /// </summary>
+    private void ArchiveOldSegmentsIfNeeded()
+    {
+        // Count total lines in memory segments
+        var linesInMemory = 0;
+        var memorySegmentCount = 0;
+
+        for (int i = _segments.Count - 1; i >= 0; i--)
+        {
+            if (_segments[i] is MemoryTerminalOutputSegment)
+            {
+                linesInMemory += _segments[i].LineCount;
+                memorySegmentCount++;
+            }
+        }
+
+        // If we exceed the memory limit, archive the oldest memory segment
+        while (linesInMemory > _maxLinesInMemory && memorySegmentCount > 1)
+        {
+            // Find the oldest memory segment (excluding the current one)
+            MemoryTerminalOutputSegment? oldestMemorySegment = null;
+            int oldestIndex = -1;
+
+            for (int i = 0; i < _segments.Count - 1; i++)
+            {
+                if (_segments[i] is MemoryTerminalOutputSegment memSeg)
+                {
+                    oldestMemorySegment = memSeg;
+                    oldestIndex = i;
+                    break;
+                }
+            }
+
+            if (oldestMemorySegment == null || oldestIndex < 0) break;
+
+            // Archive this segment to disk asynchronously
+            var lines = oldestMemorySegment.GetAllLines();
+            var startIndex = oldestMemorySegment.StartLineIndex;
+
+            // Create file segment (fire and forget - errors are silently ignored)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var fileSegment = await FileTerminalOutputSegment.CreateAsync(lines, startIndex);
+
+                    // Replace the memory segment with the file segment
+                    lock (_lock)
+                    {
+                        if (!_disposed && oldestIndex < _segments.Count && _segments[oldestIndex] == oldestMemorySegment)
+                        {
+                            _segments[oldestIndex].Dispose();
+                            _segments[oldestIndex] = fileSegment;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Archiving failed - keep the memory segment
+                }
+            });
+
+            // Update counts
+            linesInMemory -= oldestMemorySegment.LineCount;
+            memorySegmentCount--;
+        }
+    }
+
+    /// <summary>
+    /// Trims excess lines from the beginning of the buffer by removing old segments.
     /// </summary>
     private void TrimExcess()
     {
-        var excess = _lines.Count - _maxLines;
-        if (excess > 0)
+        var totalLines = _segments.Sum(s => s.LineCount);
+        var excess = totalLines - _maxLines;
+
+        if (excess <= 0) return;
+
+        // Remove segments from the beginning until we're under the limit
+        while (excess > 0 && _segments.Count > 1)
         {
-            _lines.RemoveRange(0, excess);
+            var firstSegment = _segments[0];
+            var linesToRemove = Math.Min(firstSegment.LineCount, excess);
+
+            if (linesToRemove >= firstSegment.LineCount)
+            {
+                // Remove entire segment
+                _segments.RemoveAt(0);
+                firstSegment.Dispose();
+                excess -= firstSegment.LineCount;
+
+                // Update start indices for remaining segments
+                UpdateSegmentStartIndices();
+            }
+            else
+            {
+                // We can't partially remove a segment, so we're done
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Updates the start indices of all segments after segment removal.
+    /// </summary>
+    private void UpdateSegmentStartIndices()
+    {
+        var currentIndex = 0;
+        foreach (var segment in _segments)
+        {
+            if (segment is MemoryTerminalOutputSegment memSeg)
+            {
+                memSeg.UpdateStartIndex(currentIndex);
+            }
+            currentIndex += segment.LineCount;
+        }
+    }
+
+    /// <summary>
+    /// Throws ObjectDisposedException if the buffer has been disposed.
+    /// </summary>
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(TerminalOutputBuffer));
+        }
+    }
+
+    /// <summary>
+    /// Disposes the buffer and cleans up all segments and temp files.
+    /// </summary>
+    public void Dispose()
+    {
+        lock (_lock)
+        {
+            if (_disposed) return;
+
+            _disposed = true;
+
+            // Dispose all segments (including file cleanup)
+            foreach (var segment in _segments)
+            {
+                segment.Dispose();
+            }
+            _segments.Clear();
+            _currentSegment = null;
+            _currentLine.Clear();
         }
     }
 }

@@ -30,6 +30,12 @@ public sealed class AppSettings
     public int ScrollbackBufferSize { get; set; } = 10000;
 
     /// <summary>
+    /// Maximum number of lines to keep in memory for terminal output buffer.
+    /// Older lines are compressed and archived to disk. Default: 5000 lines.
+    /// </summary>
+    public int TerminalBufferInMemoryLines { get; set; } = 5000;
+
+    /// <summary>
     /// Enable the Find in Terminal feature (Ctrl+Shift+F).
     /// </summary>
     public bool EnableFindInTerminal { get; set; } = true;
@@ -283,4 +289,24 @@ public sealed class AppSettings
     /// Minimum pane size in pixels.
     /// </summary>
     public int MinimumPaneSize { get; set; } = 100;
+
+    // ===== Performance Settings =====
+
+    /// <summary>
+    /// Enable animations for host list items (disable for better performance with 500+ hosts).
+    /// </summary>
+    public bool EnableHostListAnimations { get; set; } = true;
+
+    // ===== SFTP Browser Settings =====
+
+    /// <summary>
+    /// Saved remote path favorites/bookmarks (JSON serialized list of paths).
+    /// Format: "hostname:path" entries separated by "|"
+    /// </summary>
+    public string SftpFavorites { get; set; } = "";
+
+    /// <summary>
+    /// Enable mirror navigation mode in SFTP browser (sync local and remote navigation).
+    /// </summary>
+    public bool SftpMirrorNavigation { get; set; } = false;
 }

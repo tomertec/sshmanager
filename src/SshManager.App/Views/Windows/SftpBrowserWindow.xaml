@@ -20,7 +20,15 @@
         </Grid.RowDefinitions>
 
         <!-- Title Bar -->
-        <ui:TitleBar Grid.Row="0" Title="{Binding WindowTitle}"/>
+        <Grid Grid.Row="0">
+            <ui:TitleBar ShowMaximize="True"
+                         ShowMinimize="True" />
+            <TextBlock Text="{Binding WindowTitle}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       IsHitTestVisible="False" />
+        </Grid>
 
         <!-- SFTP Browser Control (reuse existing) -->
         <controls:SftpBrowserControl Grid.Row="1"

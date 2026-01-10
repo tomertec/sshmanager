@@ -22,6 +22,7 @@
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
         <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
         <converters:NullToPrimaryAppearanceConverter x:Key="NullToPrimaryAppearanceConverter" />
+        <converters:NullToBoolConverter x:Key="NullToBoolConverter" />
         <converters:HostStatusToColorConverter x:Key="HostStatusToColorConverter" />
         <converters:HostStatusToTooltipConverter x:Key="HostStatusToTooltipConverter" />
         <converters:HostActiveSessionBorderConverter x:Key="HostActiveSessionBorderConverter" />
@@ -62,10 +63,15 @@
         </Grid.RowDefinitions>
 
         <!-- Title Bar -->
-        <ui:TitleBar Grid.Row="0"
-                     Title="SSH Manager"
-                     ShowMaximize="True"
-                     ShowMinimize="True" />
+        <Grid Grid.Row="0">
+            <ui:TitleBar ShowMaximize="True"
+                         ShowMinimize="True" />
+            <TextBlock Text="SSH Manager"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       IsHitTestVisible="False" />
+        </Grid>
 
         <!-- Main Content -->
         <Grid Grid.Row="1">
@@ -128,13 +134,31 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
 
-                    <!-- Add Group Button -->
-                    <ui:Button Grid.Column="1"
-                              Icon="{ui:SymbolIcon Add16}"
-                              Command="{Binding AddGroupCommand}"
-                              ToolTip="Add New Group"
-                              Padding="8,6"
-                              Margin="6,0,0,0" />
+                    <!-- Group Action Buttons -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <!-- Edit Group Button -->
+                        <ui:Button Icon="{ui:SymbolIcon Edit16}"
+                                  Command="{Binding EditGroupCommand}"
+                                  CommandParameter="{Binding SelectedGroupFilter}"
+                                  ToolTip="Edit Selected Group"
+                                  Padding="8,6"
+                                  Margin="6,0,0,0"
+                                  IsEnabled="{Binding SelectedGroupFilter, Converter={StaticResource NullToBoolConverter}}" />
+                        <!-- Delete Group Button -->
+                        <ui:Button Icon="{ui:SymbolIcon Delete16}"
+                                  Command="{Binding DeleteGroupCommand}"
+                                  CommandParameter="{Binding SelectedGroupFilter}"
+                                  ToolTip="Delete Selected Group"
+                                  Padding="8,6"
+                                  Margin="2,0,0,0"
+                                  IsEnabled="{Binding SelectedGroupFilter, Converter={StaticResource NullToBoolConverter}}" />
+                        <!-- Add Group Button -->
+                        <ui:Button Icon="{ui:SymbolIcon Add16}"
+                                  Command="{Binding AddGroupCommand}"
+                                  ToolTip="Add New Group"
+                                  Padding="8,6"
+                                  Margin="2,0,0,0" />
+                    </StackPanel>
                 </Grid>
 
                 <!-- Host List -->
@@ -144,15 +168,18 @@
                          Margin="8,8,8,0"
                          Background="Transparent"
                          BorderThickness="0"
-                         ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                         ScrollViewer.CanContentScroll="False"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         VirtualizingPanel.IsVirtualizing="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling"
                          VirtualizingPanel.ScrollUnit="Pixel"
+                         VirtualizingPanel.CacheLength="20,20"
+                         VirtualizingPanel.CacheLengthUnit="Item"
                          behaviors:ListBoxDragDropBehavior.IsEnabled="True"
                          behaviors:ListBoxDragDropBehavior.ReorderCommand="{Binding ReorderHostsCommand}">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="0" />
-                            <Setter Property="Margin" Value="0,0,0,8" />
+                            <Setter Property="Margin" Value="0,0,12,8" />
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="Background" Value="Transparent" />
                             <Setter Property="Template">
@@ -170,6 +197,42 @@
                             <Border CornerRadius="8"
                                    BorderThickness="2"
                                    Padding="0">
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <ui:MenuItem Header="Connect"
+                                                    Icon="{ui:SymbolIcon Play16}"
+                                                    Command="{Binding DataContext.ConnectCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                    CommandParameter="{Binding}"
+                                                    FontWeight="SemiBold" />
+                                        <Separator />
+                                        <ui:MenuItem Header="Copy Hostname"
+                                                    Icon="{ui:SymbolIcon Copy16}"
+                                                    Command="{Binding DataContext.CopyHostnameCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                    CommandParameter="{Binding}" />
+                                        <ui:MenuItem Header="Copy IP Address"
+                                                    Icon="{ui:SymbolIcon Globe16}"
+                                                    Command="{Binding DataContext.CopyIpAddressCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                    CommandParameter="{Binding}" />
+                                        <Separator />
+                                        <ui:MenuItem Header="Duplicate Host"
+                                                    Icon="{ui:SymbolIcon DocumentCopy16}"
+                                                    Command="{Binding DataContext.DuplicateHostCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                    CommandParameter="{Binding}" />
+                                        <ui:MenuItem Header="Edit"
+                                                    Icon="{ui:SymbolIcon Edit16}"
+                                                    Command="{Binding DataContext.EditHostCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                    CommandParameter="{Binding}" />
+                                        <ui:MenuItem Header="SFTP Browser"
+                                                    Icon="{ui:SymbolIcon FolderOpen16}"
+                                                    Command="{Binding DataContext.OpenSftpBrowserForHostCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                    CommandParameter="{Binding}" />
+                                        <Separator />
+                                        <ui:MenuItem Header="Delete"
+                                                    Icon="{ui:SymbolIcon Delete16}"
+                                                    Command="{Binding DataContext.DeleteHostCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                    CommandParameter="{Binding}" />
+                                    </ContextMenu>
+                                </Border.ContextMenu>
                                 <Border.BorderBrush>
                                     <MultiBinding Converter="{StaticResource HostActiveSessionBorderConverter}">
                                         <Binding Path="Id" />
@@ -351,15 +414,6 @@
                                     <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
                                                Orientation="Horizontal"
                                                Margin="0,2,0,0">
-                                        <!-- Small color dot for group color -->
-                                        <Ellipse Width="6" Height="6"
-                                                Margin="0,0,4,0"
-                                                VerticalAlignment="Center"
-                                                Visibility="{Binding Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
-                                            <Ellipse.Fill>
-                                                <Binding Path="Group.Color" Converter="{StaticResource GroupColorConverter}" />
-                                            </Ellipse.Fill>
-                                        </Ellipse>
                                         <TextBlock Text="{Binding Group.Name, FallbackValue='Ungrouped'}"
                                                   Opacity="0.5"
                                                   FontSize="11"
@@ -481,6 +535,22 @@
                                 <DataTemplate>
                                     <Border CornerRadius="10,10,0,0"
                                            Padding="12,8">
+                                        <Border.ToolTip>
+                                            <StackPanel>
+                                                <TextBlock FontWeight="SemiBold">
+                                                    <TextBlock.Text>
+                                                        <MultiBinding StringFormat="{}{0}@{1}">
+                                                            <Binding Path="Host.Username" />
+                                                            <Binding Path="Host.Hostname" />
+                                                        </MultiBinding>
+                                                    </TextBlock.Text>
+                                                </TextBlock>
+                                                <TextBlock Opacity="0.7"
+                                                          Text="{Binding CreatedAt, StringFormat='Connected: {0:g}'}" />
+                                                <TextBlock Opacity="0.7"
+                                                          Text="{Binding Stats.Uptime, StringFormat='Duration: {0:hh\\:mm\\:ss}'}" />
+                                            </StackPanel>
+                                        </Border.ToolTip>
                                         <Border.Style>
                                             <Style TargetType="Border">
                                                 <Setter Property="Background" Value="{ui:ThemeResource ControlFillColorDefaultBrush}" />
@@ -501,21 +571,21 @@
                                             </Style>
                                         </Border.Style>
                                         <StackPanel Orientation="Horizontal">
+                                            <!-- Group color vertical bar indicator -->
+                                            <Border Width="3"
+                                                   Margin="-12,-8,8,-8"
+                                                   CornerRadius="10,0,0,0"
+                                                   Visibility="{Binding Host.Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                                <Border.Background>
+                                                    <Binding Path="Host.Group.Color" Converter="{StaticResource GroupColorConverter}" />
+                                                </Border.Background>
+                                            </Border>
                                             <!-- Broadcast selection checkbox (visible when broadcast mode is on) -->
                                             <CheckBox IsChecked="{Binding IsSelectedForBroadcast, Mode=TwoWay}"
                                                      Visibility="{Binding DataContext.IsBroadcastMode, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibilityConverter}}"
                                                      VerticalAlignment="Center"
                                                      Margin="0,0,6,0"
                                                      ToolTip="Include in broadcast" />
-                                            <!-- Group color indicator -->
-                                            <Ellipse Width="8" Height="8"
-                                                    Margin="0,0,6,0"
-                                                    VerticalAlignment="Center"
-                                                    Visibility="{Binding Host.Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
-                                                <Ellipse.Fill>
-                                                    <Binding Path="Host.Group.Color" Converter="{StaticResource GroupColorConverter}" />
-                                                </Ellipse.Fill>
-                                            </Ellipse>
                                             <TextBlock Text="{Binding Title}" Margin="0,0,8,0" VerticalAlignment="Center" />
                                             <ui:Button Icon="{ui:SymbolIcon Dismiss12}"
                                                       Padding="2"
@@ -732,7 +802,18 @@
                            CornerRadius="50"
                            Width="100" Height="100"
                            HorizontalAlignment="Center"
-                           Margin="0,0,0,24">
+                           Margin="0,0,0,24"
+                           BorderThickness="2">
+                        <Border.BorderBrush>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#0078D4" Offset="0" />
+                                <GradientStop Color="#00B4D8" Offset="0.5" />
+                                <GradientStop Color="#0078D4" Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.BorderBrush>
+                        <Border.Effect>
+                            <DropShadowEffect Color="#0078D4" BlurRadius="20" ShadowDepth="0" Opacity="0.4" />
+                        </Border.Effect>
                         <ui:SymbolIcon Symbol="DesktopSignal24"
                                       FontSize="48"
                                       Opacity="0.7"
@@ -752,12 +833,22 @@
                     <StackPanel Orientation="Horizontal"
                                HorizontalAlignment="Center">
                         <ui:Button Icon="{ui:SymbolIcon Add24}"
-                                  Content="Add Your First Host"
                                   Appearance="Primary"
                                   Command="{Binding AddHostCommand}"
                                   Padding="16,10"
                                   FontSize="14"
-                                  Margin="0,0,12,0" />
+                                  Margin="0,0,12,0">
+                            <ui:Button.Style>
+                                <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                    <Setter Property="Content" Value="Add Host" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasHosts}" Value="False">
+                                            <Setter Property="Content" Value="Add Your First Host" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ui:Button.Style>
+                        </ui:Button>
                         <ui:DropDownButton Icon="{ui:SymbolIcon ArrowDownload24}"
                                           Content="Import Hosts"
                                           Padding="16,10"

@@ -1,4 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.Net;
+using System.Net.Sockets;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -34,6 +37,11 @@ public partial class HostManagementViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<HostGroup> _groups = [];
 
+    /// <summary>
+    /// Gets whether there are any hosts in the collection.
+    /// </summary>
+    public bool HasHosts => Hosts.Count > 0;
+
     [ObservableProperty]
     private HostEntry? _selectedHost;
 
@@ -63,7 +71,28 @@ public partial class HostManagementViewModel : ObservableObject
         _secretProtector = secretProtector;
         _logger = logger ?? NullLogger<HostManagementViewModel>.Instance;
 
+        // Subscribe to initial collection changes
+        _hosts.CollectionChanged += OnHostsCollectionChanged;
+
         _logger.LogDebug("HostManagementViewModel initialized");
+    }
+
+    /// <summary>
+    /// Called when the Hosts collection is replaced.
+    /// </summary>
+    partial void OnHostsChanged(ObservableCollection<HostEntry>? oldValue, ObservableCollection<HostEntry> newValue)
+    {
+        if (oldValue != null)
+        {
+            oldValue.CollectionChanged -= OnHostsCollectionChanged;
+        }
+        newValue.CollectionChanged += OnHostsCollectionChanged;
+        OnPropertyChanged(nameof(HasHosts));
+    }
+
+    private void OnHostsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(HasHosts));
     }
 
     /// <summary>
@@ -185,6 +214,21 @@ public partial class HostManagementViewModel : ObservableObject
         await RefreshHostsAsync();
     }
 
+    /// <summary>
+    /// Gets the total host count for each group from the database (unfiltered).
+    /// Returns a dictionary mapping group ID to host count.
+    /// </summary>
+    public async Task<(int totalCount, Dictionary<Guid, int> countsByGroup)> GetTotalHostCountsAsync()
+    {
+        var allHosts = await _hostRepo.GetAllAsync();
+        var totalCount = allHosts.Count;
+        var countsByGroup = allHosts
+            .Where(h => h.GroupId.HasValue)
+            .GroupBy(h => h.GroupId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
+        return (totalCount, countsByGroup);
+    }
+
     [RelayCommand]
     private async Task AddHostAsync()
     {
@@ -277,6 +321,114 @@ public partial class HostManagementViewModel : ObservableObject
 
         if (SelectedHost == host)
             SelectedHost = null;
+    }
+
+    [RelayCommand]
+    private void CopyHostname(HostEntry? host)
+    {
+        if (host == null) return;
+
+        try
+        {
+            Clipboard.SetText(host.Hostname);
+            _logger.LogDebug("Copied hostname to clipboard: {Hostname}", host.Hostname);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to copy hostname to clipboard");
+        }
+    }
+
+    [RelayCommand]
+    private async Task CopyIpAddressAsync(HostEntry? host)
+    {
+        if (host == null) return;
+
+        try
+        {
+            // Check if hostname is already an IP address
+            if (IPAddress.TryParse(host.Hostname, out var existingIp))
+            {
+                Clipboard.SetText(existingIp.ToString());
+                _logger.LogDebug("Copied IP address to clipboard: {IpAddress}", existingIp);
+                return;
+            }
+
+            // Resolve hostname to IP address
+            var addresses = await Dns.GetHostAddressesAsync(host.Hostname);
+            var ipv4 = addresses.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
+            var ip = ipv4 ?? addresses.FirstOrDefault();
+
+            if (ip != null)
+            {
+                Clipboard.SetText(ip.ToString());
+                _logger.LogDebug("Resolved and copied IP address to clipboard: {IpAddress}", ip);
+            }
+            else
+            {
+                MessageBox.Show(
+                    $"Could not resolve IP address for '{host.Hostname}'.",
+                    "DNS Resolution Failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve or copy IP address for {Hostname}", host.Hostname);
+            MessageBox.Show(
+                $"Could not resolve IP address for '{host.Hostname}'.\n\n{ex.Message}",
+                "DNS Resolution Failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    [RelayCommand]
+    private async Task DuplicateHostAsync(HostEntry? host)
+    {
+        if (host == null) return;
+
+        try
+        {
+            var duplicatedHost = new HostEntry
+            {
+                Id = Guid.NewGuid(),
+                DisplayName = $"{host.DisplayName} (Copy)",
+                Hostname = host.Hostname,
+                Port = host.Port,
+                Username = host.Username,
+                AuthType = host.AuthType,
+                PrivateKeyPath = host.PrivateKeyPath,
+                PasswordProtected = host.PasswordProtected,
+                Notes = host.Notes,
+                GroupId = host.GroupId,
+                Group = host.Group,
+                HostProfileId = host.HostProfileId,
+                HostProfile = host.HostProfile,
+                ProxyJumpProfileId = host.ProxyJumpProfileId,
+                ProxyJumpProfile = host.ProxyJumpProfile,
+                SortOrder = host.SortOrder + 1,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+
+            await _hostRepo.AddAsync(duplicatedHost);
+            Hosts.Add(duplicatedHost);
+            SelectedHost = duplicatedHost;
+
+            _logger.LogInformation("Duplicated host {OriginalDisplayName} as {NewDisplayName}",
+                host.DisplayName, duplicatedHost.DisplayName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to duplicate host {HostId}", host.Id);
+            MessageBox.Show(
+                $"Failed to duplicate host.\n\n{ex.Message}",
+                "Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     [RelayCommand]

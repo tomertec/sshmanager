@@ -142,24 +142,32 @@
                                         </ProgressBar>
                                     </Grid>
 
-                                    <!-- Status Text -->
-                                    <TextBlock Grid.Column="2" Grid.Row="0" Grid.RowSpan="2"
-                                               Text="{Binding StatusDisplay}"
-                                               FontSize="11"
-                                               VerticalAlignment="Center"
-                                               Margin="0,0,8,0">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Opacity" Value="0.7" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Status}" Value="{x:Static models:TransferStatus.Failed}">
-                                                        <Setter Property="Foreground" Value="#E74C3C" />
-                                                        <Setter Property="Opacity" Value="1" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                    <!-- Status Text and Speed -->
+                                    <StackPanel Grid.Column="2" Grid.Row="0" Grid.RowSpan="2"
+                                                Orientation="Horizontal"
+                                                VerticalAlignment="Center"
+                                                Margin="0,0,8,0">
+                                        <TextBlock Text="{Binding StatusDisplay}"
+                                                   FontSize="11"
+                                                   MinWidth="45"
+                                                   TextAlignment="Right">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Opacity" Value="0.7" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:TransferStatus.Failed}">
+                                                            <Setter Property="Foreground" Value="#E74C3C" />
+                                                            <Setter Property="Opacity" Value="1" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding SpeedDisplay}"
+                                                   FontSize="11"
+                                                   Opacity="0.6"
+                                                   Margin="6,0,0,0" />
+                                    </StackPanel>
 
                                     <!-- Action Buttons -->
                                     <StackPanel Grid.Column="3" Grid.Row="0" Grid.RowSpan="2"

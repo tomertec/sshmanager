@@ -1,7 +1,10 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using SshManager.App.Behaviors;
 using SshManager.App.ViewModels;
 using SshManager.App.Views.Dialogs;
 
@@ -15,6 +18,21 @@ public abstract class FileBrowserControlBase : UserControl
 {
     private Point _dragStartPoint;
     private bool _isDragging;
+    private FileDragAdorner? _dragAdorner;
+    private AdornerLayer? _adornerLayer;
+    private UIElement? _adornedElement;
+
+    // P/Invoke to get cursor position during drag
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int X;
+        public int Y;
+    }
 
     /// <summary>
     /// Event raised when files are dragged from this control.
@@ -30,6 +48,16 @@ public abstract class FileBrowserControlBase : UserControl
     /// Event raised when edit is requested for a file.
     /// </summary>
     public event EventHandler<FileEditRequestedEventArgs>? EditRequested;
+
+    /// <summary>
+    /// Event raised when upload is requested for selected files.
+    /// </summary>
+    public event EventHandler<FilesTransferRequestedEventArgs>? UploadRequested;
+
+    /// <summary>
+    /// Event raised when download is requested for selected files.
+    /// </summary>
+    public event EventHandler<FilesTransferRequestedEventArgs>? DownloadRequested;
 
     /// <summary>
     /// Gets the data key used for drag operations (e.g., "LocalFilePaths" or "RemoteFilePaths").
@@ -158,11 +186,84 @@ public abstract class FileBrowserControlBase : UserControl
         var data = new DataObject();
         data.SetData(DragDataKey, filePaths);
         data.SetData("SourceType", SourceType);
+        data.SetData("FileCount", selectedItems.Count);
 
         FilesDragged?.Invoke(this, new FilesDraggedEventArgs(filePaths));
 
-        DragDrop.DoDragDrop(FileListView, data, DragDropEffects.Copy);
-        _isDragging = false;
+        // Show drag adorner
+        ShowDragAdorner(filePaths);
+
+        try
+        {
+            DragDrop.DoDragDrop(FileListView, data, DragDropEffects.Copy);
+        }
+        finally
+        {
+            HideDragAdorner();
+            _isDragging = false;
+        }
+    }
+
+    /// <summary>
+    /// Shows the file drag adorner.
+    /// </summary>
+    private void ShowDragAdorner(string[] filePaths)
+    {
+        // Get adorner layer from the main window for proper positioning
+        var window = Window.GetWindow(this);
+        if (window == null) return;
+
+        _adornedElement = window.Content as UIElement ?? this;
+        _adornerLayer = AdornerLayer.GetAdornerLayer(_adornedElement);
+        if (_adornerLayer == null) return;
+
+        var direction = SourceType == "Local"
+            ? Behaviors.TransferDirection.Upload
+            : Behaviors.TransferDirection.Download;
+
+        _dragAdorner = new FileDragAdorner(_adornedElement, filePaths, direction);
+        _adornerLayer.Add(_dragAdorner);
+
+        // Set initial position
+        UpdateAdornerPosition();
+    }
+
+    /// <summary>
+    /// Hides the file drag adorner.
+    /// </summary>
+    private void HideDragAdorner()
+    {
+        if (_adornerLayer != null && _dragAdorner != null)
+        {
+            _adornerLayer.Remove(_dragAdorner);
+            _dragAdorner = null;
+            _adornerLayer = null;
+            _adornedElement = null;
+        }
+    }
+
+    /// <summary>
+    /// Updates the adorner position based on current cursor location.
+    /// </summary>
+    private void UpdateAdornerPosition()
+    {
+        if (_dragAdorner == null || _adornedElement == null) return;
+
+        if (GetCursorPos(out var screenPoint))
+        {
+            var relativePoint = _adornedElement.PointFromScreen(new Point(screenPoint.X, screenPoint.Y));
+            _dragAdorner.UpdatePosition(relativePoint);
+        }
+    }
+
+    /// <summary>
+    /// Handles GiveFeedback to update adorner position during drag.
+    /// </summary>
+    protected void FileListView_GiveFeedback(object sender, GiveFeedbackEventArgs e)
+    {
+        UpdateAdornerPosition();
+        e.UseDefaultCursors = true;
+        e.Handled = true;
     }
 
     /// <summary>
@@ -224,9 +325,19 @@ public abstract class FileBrowserControlBase : UserControl
     /// </summary>
     protected virtual void FileListView_DragEnter(object sender, DragEventArgs e)
     {
-        if (ShouldHighlightForDrag(e))
+        var isValidDrop = ShouldHighlightForDrag(e);
+        var hasSourceType = e.Data.GetData("SourceType") is string;
+
+        if (isValidDrop)
         {
+            // Valid drop zone - show accent color
             FileListView.BorderBrush = new SolidColorBrush(DragEnterHighlightColor);
+            FileListView.BorderThickness = new Thickness(2);
+        }
+        else if (hasSourceType)
+        {
+            // Invalid drop zone (e.g., same source type) - show red border
+            FileListView.BorderBrush = new SolidColorBrush(Color.FromRgb(231, 76, 60));
             FileListView.BorderThickness = new Thickness(2);
         }
     }
@@ -283,6 +394,24 @@ public abstract class FileBrowserControlBase : UserControl
     }
 
     /// <summary>
+    /// Copies the current directory path to clipboard.
+    /// </summary>
+    protected void CopyPath_Click(object sender, RoutedEventArgs e)
+    {
+        if (GetViewModel() is { CurrentPath: { } path } && !string.IsNullOrEmpty(path))
+        {
+            try
+            {
+                Clipboard.SetText(path);
+            }
+            catch
+            {
+                // Clipboard access can fail in some scenarios
+            }
+        }
+    }
+
+    /// <summary>
     /// Handles the rename request for the selected item.
     /// </summary>
     protected async void HandleRenameRequest()
@@ -328,6 +457,40 @@ public abstract class FileBrowserControlBase : UserControl
     protected void ContextMenu_Delete_Click(object sender, RoutedEventArgs e)
     {
         DeleteRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Requests upload for the selected files.
+    /// </summary>
+    protected void ContextMenu_Upload_Click(object sender, RoutedEventArgs e)
+    {
+        var selectedItems = FileListView.SelectedItems
+            .Cast<FileItemViewModel>()
+            .Where(i => !i.IsParentDirectory && !i.IsDirectory)
+            .ToList();
+
+        if (selectedItems.Count > 0)
+        {
+            var filePaths = selectedItems.Select(i => i.FullPath).ToArray();
+            UploadRequested?.Invoke(this, new FilesTransferRequestedEventArgs(filePaths));
+        }
+    }
+
+    /// <summary>
+    /// Requests download for the selected files.
+    /// </summary>
+    protected void ContextMenu_Download_Click(object sender, RoutedEventArgs e)
+    {
+        var selectedItems = FileListView.SelectedItems
+            .Cast<FileItemViewModel>()
+            .Where(i => !i.IsParentDirectory && !i.IsDirectory)
+            .ToList();
+
+        if (selectedItems.Count > 0)
+        {
+            var filePaths = selectedItems.Select(i => i.FullPath).ToArray();
+            DownloadRequested?.Invoke(this, new FilesTransferRequestedEventArgs(filePaths));
+        }
     }
 
     /// <summary>
@@ -389,6 +552,19 @@ public class FilesDraggedEventArgs : EventArgs
     public IReadOnlyList<string> FilePaths { get; }
 
     public FilesDraggedEventArgs(IReadOnlyList<string> filePaths)
+    {
+        FilePaths = filePaths;
+    }
+}
+
+/// <summary>
+/// Event args for when a file transfer (upload/download) is requested.
+/// </summary>
+public class FilesTransferRequestedEventArgs : EventArgs
+{
+    public IReadOnlyList<string> FilePaths { get; }
+
+    public FilesTransferRequestedEventArgs(IReadOnlyList<string> filePaths)
     {
         FilePaths = filePaths;
     }

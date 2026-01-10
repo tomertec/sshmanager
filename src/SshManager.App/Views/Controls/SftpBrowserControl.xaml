@@ -18,10 +18,37 @@
         <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
         <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter" />
         <converters:CountToVisibilityConverter x:Key="CountToVisibilityConverter" />
+        <converters:CollapsedWidthConverter x:Key="CollapsedWidthConverter" />
+
+        <!-- Animated Progress Tooltip Style -->
+        <Style x:Key="TransferProgressToolTipStyle" TargetType="ToolTip">
+            <Setter Property="Background" Value="{ui:ThemeResource ApplicationBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{ui:ThemeResource ControlStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolTip">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.3" />
+                            </Border.Effect>
+                            <ContentPresenter />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <UserControl.InputBindings>
         <KeyBinding Key="F5" Command="{Binding RefreshAllCommand}" />
+        <KeyBinding Key="U" Modifiers="Ctrl" Command="{Binding UploadSelectedCommand}" />
+        <KeyBinding Key="D" Modifiers="Ctrl" Command="{Binding DownloadSelectedCommand}" />
     </UserControl.InputBindings>
 
     <Grid>
@@ -35,7 +62,7 @@
         <Border Grid.Row="0"
                 Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
                 CornerRadius="6"
-                Padding="8"
+                Padding="6"
                 Margin="4">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -44,66 +71,287 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Left: Connection Info -->
+                <!-- Left: Connection Info with subtle status dot -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <ui:SymbolIcon Symbol="Server24" FontSize="16" Margin="0,0,6,0" />
+                    <!-- Connected state: green dot -->
+                    <Ellipse Width="8" Height="8"
+                             Fill="#2ECC71"
+                             Margin="0,0,8,0"
+                             VerticalAlignment="Center"
+                             Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibilityConverter}}"
+                             ToolTip="Connected" />
+                    <!-- Disconnected state: red dot -->
+                    <Ellipse Width="8" Height="8"
+                             Fill="#E74C3C"
+                             Margin="0,0,8,0"
+                             VerticalAlignment="Center"
+                             Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolToVisibilityConverter}}"
+                             ToolTip="Disconnected" />
+                    <ui:SymbolIcon Symbol="Server24" FontSize="14" Margin="0,0,6,0" Opacity="0.7" />
                     <TextBlock Text="{Binding Hostname}"
                                FontWeight="SemiBold"
+                               FontSize="13"
                                VerticalAlignment="Center" />
-                    <Border Background="#2ECC71"
-                            CornerRadius="4"
-                            Padding="6,2"
-                            Margin="8,0,0,0"
-                            Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <TextBlock Text="Connected"
-                                   FontSize="10"
-                                   Foreground="White" />
-                    </Border>
-                    <Border Background="#E74C3C"
-                            CornerRadius="4"
-                            Padding="6,2"
-                            Margin="8,0,0,0"
-                            Visibility="{Binding IsConnected, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                        <TextBlock Text="Disconnected"
-                                   FontSize="10"
-                                   Foreground="White" />
-                    </Border>
                 </StackPanel>
 
-                <!-- Center: Action Buttons -->
+                <!-- Center: Grouped Action Buttons -->
                 <ScrollViewer Grid.Column="1"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Disabled"
-                              Margin="8,0">
+                              Margin="12,0">
                     <StackPanel Orientation="Horizontal"
                                 HorizontalAlignment="Center">
+
+                        <!-- Navigation Group -->
                         <ui:Button Icon="{ui:SymbolIcon ArrowSync24}"
-                                   Content="Refresh"
                                    ToolTip="Refresh All (F5)"
                                    Command="{Binding RefreshAllCommand}"
-                                   Padding="10,6"
-                                   Margin="0,0,4,0" />
+                                   Padding="8,5" />
 
-                        <!-- Upload Button -->
-                        <ui:Button Icon="{ui:SymbolIcon ArrowUpload24}"
-                                   Content="Upload"
-                                   ToolTip="Upload Selected Files"
-                                   Command="{Binding UploadSelectedCommand}"
-                                   Appearance="Primary"
-                                   Padding="10,6"
-                                   Margin="0,0,4,0" />
+                        <!-- Separator -->
+                        <Border Width="1"
+                                Background="{ui:ThemeResource ControlStrokeColorDefaultBrush}"
+                                Opacity="0.3"
+                                Margin="8,4" />
 
-                        <!-- Download Button -->
-                        <ui:Button Icon="{ui:SymbolIcon ArrowDownload24}"
-                                   Content="Download"
-                                   ToolTip="Download Selected Files"
-                                   Command="{Binding DownloadSelectedCommand}"
-                                   Padding="10,6"
-                                   Margin="0,0,4,0" />
+                        <!-- Transfer Group with Badge -->
+                        <Grid Margin="0,0,4,0">
+                            <ui:Button Icon="{ui:SymbolIcon ArrowUpload24}"
+                                       Command="{Binding UploadSelectedCommand}"
+                                       Appearance="Primary"
+                                       Padding="8,5">
+                                <ui:Button.ToolTip>
+                                    <ToolTip Style="{StaticResource TransferProgressToolTipStyle}">
+                                        <StackPanel MinWidth="220">
+                                            <TextBlock Text="Upload Selected Files (Ctrl+U)"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,0,8" />
 
+                                            <!-- Active Transfers Section - Only visible when transfers exist -->
+                                            <Border Visibility="{Binding HasActiveTransfer, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                    Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
+                                                    CornerRadius="4"
+                                                    Padding="8"
+                                                    Margin="0,4,0,0">
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                        <ui:SymbolIcon Symbol="ArrowSync24" FontSize="14" Margin="0,0,6,0" />
+                                                        <TextBlock Text="{Binding ActiveTransferCount, StringFormat='{}{0} Active Transfer(s)'}"
+                                                                   FontWeight="Medium"
+                                                                   FontSize="12" />
+                                                    </StackPanel>
+
+                                                    <!-- Transfer Items Preview -->
+                                                    <ItemsControl ItemsSource="{Binding Transfers}" MaxHeight="120">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Margin="0,0,0,4">
+                                                                    <Grid>
+                                                                        <Grid.RowDefinitions>
+                                                                            <RowDefinition Height="Auto" />
+                                                                            <RowDefinition Height="Auto" />
+                                                                        </Grid.RowDefinitions>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+
+                                                                        <!-- Direction indicator -->
+                                                                        <TextBlock Grid.Column="0" Grid.RowSpan="2"
+                                                                                   Text="{Binding DirectionDisplay}"
+                                                                                   FontWeight="Bold"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Margin="0,0,6,0">
+                                                                            <TextBlock.Style>
+                                                                                <Style TargetType="TextBlock">
+                                                                                    <Setter Property="Foreground" Value="#3498DB" />
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding DirectionDisplay}" Value="↑">
+                                                                                            <Setter Property="Foreground" Value="#2ECC71" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </TextBlock.Style>
+                                                                        </TextBlock>
+
+                                                                        <!-- File name -->
+                                                                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                                                                   Text="{Binding FileName}"
+                                                                                   FontSize="11"
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   MaxWidth="150" />
+
+                                                                        <!-- Status -->
+                                                                        <TextBlock Grid.Row="0" Grid.Column="2"
+                                                                                   Text="{Binding StatusDisplay}"
+                                                                                   FontSize="10"
+                                                                                   Opacity="0.7"
+                                                                                   Margin="4,0,0,0" />
+
+                                                                        <!-- Animated progress bar -->
+                                                                        <ProgressBar Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                                                                     Value="{Binding Progress}"
+                                                                                     Maximum="100"
+                                                                                     Height="4"
+                                                                                     Margin="0,2,0,0"
+                                                                                     Background="#30FFFFFF">
+                                                                            <ProgressBar.Style>
+                                                                                <Style TargetType="ProgressBar">
+                                                                                    <Setter Property="Foreground" Value="#3498DB" />
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding DirectionDisplay}" Value="↑">
+                                                                                            <Setter Property="Foreground" Value="#2ECC71" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </ProgressBar.Style>
+                                                                        </ProgressBar>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </ToolTip>
+                                </ui:Button.ToolTip>
+                            </ui:Button>
+                        </Grid>
+
+                        <Grid>
+                            <ui:Button Icon="{ui:SymbolIcon ArrowDownload24}"
+                                       Command="{Binding DownloadSelectedCommand}"
+                                       Padding="8,5">
+                                <ui:Button.ToolTip>
+                                    <ToolTip Style="{StaticResource TransferProgressToolTipStyle}">
+                                        <StackPanel MinWidth="220">
+                                            <TextBlock Text="Download Selected Files (Ctrl+D)"
+                                                       FontWeight="SemiBold"
+                                                       Margin="0,0,0,8" />
+
+                                            <!-- Active Transfers Section - Only visible when transfers exist -->
+                                            <Border Visibility="{Binding HasActiveTransfer, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                    Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
+                                                    CornerRadius="4"
+                                                    Padding="8"
+                                                    Margin="0,4,0,0">
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                        <ui:SymbolIcon Symbol="ArrowSync24" FontSize="14" Margin="0,0,6,0" />
+                                                        <TextBlock Text="{Binding ActiveTransferCount, StringFormat='{}{0} Active Transfer(s)'}"
+                                                                   FontWeight="Medium"
+                                                                   FontSize="12" />
+                                                    </StackPanel>
+
+                                                    <!-- Transfer Items Preview -->
+                                                    <ItemsControl ItemsSource="{Binding Transfers}" MaxHeight="120">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Margin="0,0,0,4">
+                                                                    <Grid>
+                                                                        <Grid.RowDefinitions>
+                                                                            <RowDefinition Height="Auto" />
+                                                                            <RowDefinition Height="Auto" />
+                                                                        </Grid.RowDefinitions>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+
+                                                                        <!-- Direction indicator -->
+                                                                        <TextBlock Grid.Column="0" Grid.RowSpan="2"
+                                                                                   Text="{Binding DirectionDisplay}"
+                                                                                   FontWeight="Bold"
+                                                                                   VerticalAlignment="Center"
+                                                                                   Margin="0,0,6,0">
+                                                                            <TextBlock.Style>
+                                                                                <Style TargetType="TextBlock">
+                                                                                    <Setter Property="Foreground" Value="#3498DB" />
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding DirectionDisplay}" Value="↑">
+                                                                                            <Setter Property="Foreground" Value="#2ECC71" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </TextBlock.Style>
+                                                                        </TextBlock>
+
+                                                                        <!-- File name -->
+                                                                        <TextBlock Grid.Row="0" Grid.Column="1"
+                                                                                   Text="{Binding FileName}"
+                                                                                   FontSize="11"
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   MaxWidth="150" />
+
+                                                                        <!-- Status -->
+                                                                        <TextBlock Grid.Row="0" Grid.Column="2"
+                                                                                   Text="{Binding StatusDisplay}"
+                                                                                   FontSize="10"
+                                                                                   Opacity="0.7"
+                                                                                   Margin="4,0,0,0" />
+
+                                                                        <!-- Animated progress bar -->
+                                                                        <ProgressBar Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                                                                     Value="{Binding Progress}"
+                                                                                     Maximum="100"
+                                                                                     Height="4"
+                                                                                     Margin="0,2,0,0"
+                                                                                     Background="#30FFFFFF">
+                                                                            <ProgressBar.Style>
+                                                                                <Style TargetType="ProgressBar">
+                                                                                    <Setter Property="Foreground" Value="#3498DB" />
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding DirectionDisplay}" Value="↑">
+                                                                                            <Setter Property="Foreground" Value="#2ECC71" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </ProgressBar.Style>
+                                                                        </ProgressBar>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </ToolTip>
+                                </ui:Button.ToolTip>
+                            </ui:Button>
+                            <!-- Transfer Queue Badge -->
+                            <Border Background="{ui:ThemeResource SystemFillColorCriticalBrush}"
+                                    CornerRadius="8"
+                                    MinWidth="16"
+                                    Height="16"
+                                    Padding="4,0"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Top"
+                                    Margin="0,-4,-4,0"
+                                    IsHitTestVisible="False"
+                                    Visibility="{Binding HasActiveTransfer, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <TextBlock Text="{Binding ActiveTransferCount}"
+                                           FontSize="10"
+                                           FontWeight="SemiBold"
+                                           Foreground="White"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Border>
+                        </Grid>
+
+                        <!-- Separator -->
+                        <Border Width="1"
+                                Background="{ui:ThemeResource ControlStrokeColorDefaultBrush}"
+                                Opacity="0.3"
+                                Margin="8,4" />
+
+                        <!-- File Operations Group -->
                         <ui:DropDownButton Icon="{ui:SymbolIcon FolderAdd24}"
-                                           Content="New Folder"
-                                           Padding="10,6"
+                                           ToolTip="New Folder"
+                                           Padding="8,5"
                                            Margin="0,0,4,0">
                             <ui:DropDownButton.Flyout>
                                 <ContextMenu>
@@ -118,8 +366,9 @@
                         </ui:DropDownButton>
 
                         <ui:DropDownButton Icon="{ui:SymbolIcon Delete24}"
-                                           Content="Delete"
-                                           Padding="10,6">
+                                           ToolTip="Delete (Del)"
+                                           Padding="8,5"
+                                           Margin="0,0,4,0">
                             <ui:DropDownButton.Flyout>
                                 <ContextMenu>
                                     <ui:MenuItem Header="Delete Local"
@@ -132,56 +381,178 @@
                             </ui:DropDownButton.Flyout>
                         </ui:DropDownButton>
 
-                        <ui:Button Icon="{ui:SymbolIcon Edit24}"
-                                   Content="Permissions"
-                                   ToolTip="Edit remote permissions"
+                        <ui:Button Icon="{ui:SymbolIcon LockClosed24}"
+                                   ToolTip="Edit Permissions"
                                    Command="{Binding ShowPermissionsDialogCommand}"
-                                   Padding="10,6"
-                                   Margin="4,0,0,0" />
+                                   Padding="8,5" />
+
+                        <!-- Separator -->
+                        <Border Width="1"
+                                Background="{ui:ThemeResource ControlStrokeColorDefaultBrush}"
+                                Opacity="0.3"
+                                Margin="8,4" />
+
+                        <!-- Mirror Navigation Toggle -->
+                        <ui:Button Command="{Binding ToggleMirrorNavigationCommand}"
+                                   Padding="8,5">
+                            <ui:Button.Style>
+                                <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                    <Setter Property="ToolTip" Value="Enable Mirror Navigation - Sync local and remote folders" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMirrorNavigationEnabled}" Value="True">
+                                            <Setter Property="ToolTip" Value="Disable Mirror Navigation" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ui:Button.Style>
+                            <ui:SymbolIcon FontSize="16">
+                                <ui:SymbolIcon.Style>
+                                    <Style TargetType="ui:SymbolIcon">
+                                        <Setter Property="Symbol" Value="ArrowSync24" />
+                                        <Setter Property="Foreground" Value="{ui:ThemeResource TextFillColorSecondaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMirrorNavigationEnabled}" Value="True">
+                                                <Setter Property="Foreground" Value="{ui:ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:SymbolIcon.Style>
+                            </ui:SymbolIcon>
+                        </ui:Button>
                     </StackPanel>
                 </ScrollViewer>
 
                 <!-- Right: Disconnect Button -->
                 <ui:Button Grid.Column="2"
                            Icon="{ui:SymbolIcon PlugDisconnected24}"
-                           Content="Disconnect"
                            ToolTip="Disconnect SFTP Session"
                            Command="{Binding DisconnectCommand}"
                            Appearance="Caution"
-                           Padding="10,6" />
+                           Padding="8,5" />
             </Grid>
         </Border>
 
-        <!-- Dual-Pane File Browsers -->
+        <!-- Dual-Pane File Browsers with Collapse Buttons -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="200" />
+                <!-- Local Panel - animates to 0 when collapsed -->
+                <ColumnDefinition Width="{Binding IsLocalPanelCollapsed, Converter={StaticResource CollapsedWidthConverter}}" />
+                <!-- Collapse Left Button -->
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" MinWidth="200" />
+                <!-- Splitter -->
+                <ColumnDefinition Width="Auto" />
+                <!-- Collapse Right Button -->
+                <ColumnDefinition Width="Auto" />
+                <!-- Remote Panel - animates to 0 when collapsed -->
+                <ColumnDefinition Width="{Binding IsRemotePanelCollapsed, Converter={StaticResource CollapsedWidthConverter}}" />
             </Grid.ColumnDefinitions>
 
             <!-- Local File Browser -->
             <controls:LocalFileBrowserControl x:Name="LocalBrowser"
                                               Grid.Column="0"
                                               DataContext="{Binding LocalBrowser}"
+                                              Visibility="{Binding IsLocalPanelCollapsed, Converter={StaticResource InverseBoolToVisibilityConverter}}"
                                               FilesDroppedFromRemote="LocalBrowser_FilesDroppedFromRemote"
                                               DeleteRequested="LocalBrowser_DeleteRequested"
-                                              EditRequested="LocalBrowser_EditRequested" />
+                                              EditRequested="LocalBrowser_EditRequested"
+                                              UploadRequested="LocalBrowser_UploadRequested" />
+
+            <!-- Collapse Local Panel Button -->
+            <ui:Button Grid.Column="1"
+                       Width="20"
+                       Height="48"
+                       Padding="0"
+                       VerticalAlignment="Center"
+                       Command="{Binding ToggleLocalPanelCommand}"
+                       Background="Transparent"
+                       BorderThickness="0"
+                       Cursor="Hand">
+                <ui:Button.ToolTip>
+                    <ToolTip>
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Collapse Local Panel" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsLocalPanelCollapsed}" Value="True">
+                                            <Setter Property="Text" Value="Expand Local Panel" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </ToolTip>
+                </ui:Button.ToolTip>
+                <ui:SymbolIcon FontSize="12">
+                    <ui:SymbolIcon.Style>
+                        <Style TargetType="ui:SymbolIcon">
+                            <Setter Property="Symbol" Value="ChevronLeft20" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsLocalPanelCollapsed}" Value="True">
+                                    <Setter Property="Symbol" Value="ChevronRight20" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ui:SymbolIcon.Style>
+                </ui:SymbolIcon>
+            </ui:Button>
 
             <!-- Splitter -->
-            <GridSplitter Grid.Column="1"
+            <GridSplitter Grid.Column="2"
                           Width="4"
                           HorizontalAlignment="Center"
                           VerticalAlignment="Stretch"
                           Background="Transparent" />
 
+            <!-- Collapse Remote Panel Button -->
+            <ui:Button Grid.Column="3"
+                       Width="20"
+                       Height="48"
+                       Padding="0"
+                       VerticalAlignment="Center"
+                       Command="{Binding ToggleRemotePanelCommand}"
+                       Background="Transparent"
+                       BorderThickness="0"
+                       Cursor="Hand">
+                <ui:Button.ToolTip>
+                    <ToolTip>
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Collapse Remote Panel" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRemotePanelCollapsed}" Value="True">
+                                            <Setter Property="Text" Value="Expand Remote Panel" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </ToolTip>
+                </ui:Button.ToolTip>
+                <ui:SymbolIcon FontSize="12">
+                    <ui:SymbolIcon.Style>
+                        <Style TargetType="ui:SymbolIcon">
+                            <Setter Property="Symbol" Value="ChevronRight20" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsRemotePanelCollapsed}" Value="True">
+                                    <Setter Property="Symbol" Value="ChevronLeft20" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ui:SymbolIcon.Style>
+                </ui:SymbolIcon>
+            </ui:Button>
+
             <!-- Remote File Browser -->
             <controls:RemoteFileBrowserControl x:Name="RemoteBrowser"
-                                               Grid.Column="2"
+                                               Grid.Column="4"
                                                DataContext="{Binding RemoteBrowser}"
+                                               Visibility="{Binding IsRemotePanelCollapsed, Converter={StaticResource InverseBoolToVisibilityConverter}}"
                                                FilesDroppedFromLocal="RemoteBrowser_FilesDroppedFromLocal"
                                                DeleteRequested="RemoteBrowser_DeleteRequested"
-                                               EditRequested="RemoteBrowser_EditRequested" />
+                                               EditRequested="RemoteBrowser_EditRequested"
+                                               DownloadRequested="RemoteBrowser_DownloadRequested" />
         </Grid>
 
         <!-- Transfer Progress Panel -->
@@ -430,6 +801,114 @@
                         <ui:Button Content="Apply"
                                    Appearance="Primary"
                                    Command="{Binding ApplyPermissionsCommand}"
+                                   Padding="16,8" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Delete Confirmation Dialog Overlay -->
+        <Border Grid.RowSpan="3"
+                Background="#80000000"
+                Visibility="{Binding IsDeleteDialogVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Border Background="{ui:ThemeResource ApplicationBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MinWidth="360"
+                    MaxWidth="460">
+                <StackPanel>
+                    <!-- Header with warning icon -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <ui:SymbolIcon Symbol="Warning24"
+                                       FontSize="24"
+                                       Foreground="#E74C3C"
+                                       Margin="0,0,12,0" />
+                        <TextBlock FontSize="16"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   Text="Confirm Delete" />
+                    </StackPanel>
+
+                    <!-- Message -->
+                    <TextBlock TextWrapping="Wrap"
+                               Margin="0,0,0,8"
+                               Opacity="0.9">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="Are you sure you want to delete this item?" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDeleteRemote}" Value="True">
+                                        <Setter Property="Text" Value="Are you sure you want to delete this remote item?" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- Item name -->
+                    <Border Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
+                            CornerRadius="4"
+                            Padding="12,8"
+                            Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon FontSize="16"
+                                           Margin="0,0,8,0"
+                                           Opacity="0.7">
+                                <ui:SymbolIcon.Style>
+                                    <Style TargetType="ui:SymbolIcon">
+                                        <Setter Property="Symbol" Value="Document24" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDeleteDirectory}" Value="True">
+                                                <Setter Property="Symbol" Value="Folder24" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:SymbolIcon.Style>
+                            </ui:SymbolIcon>
+                            <TextBlock Text="{Binding DeleteTargetName}"
+                                       FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Directory warning -->
+                    <Border Background="#30E74C3C"
+                            CornerRadius="4"
+                            Padding="12,8"
+                            Margin="0,0,0,16"
+                            Visibility="{Binding IsDeleteDirectory, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Warning24"
+                                           FontSize="14"
+                                           Foreground="#E74C3C"
+                                           Margin="0,0,8,0" />
+                            <TextBlock Text="This folder and all its contents will be permanently deleted."
+                                       Foreground="#E74C3C"
+                                       FontSize="12"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Warning message for files -->
+                    <TextBlock Opacity="0.7"
+                               FontSize="12"
+                               Margin="0,0,0,16"
+                               Visibility="{Binding IsDeleteDirectory, Converter={StaticResource InverseBoolToVisibilityConverter}}"
+                               Text="This action cannot be undone." />
+
+                    <!-- Buttons -->
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right">
+                        <ui:Button Content="Cancel"
+                                   Command="{Binding CancelDeleteCommand}"
+                                   Padding="16,8"
+                                   Margin="0,0,8,0" />
+                        <ui:Button Content="Delete"
+                                   Appearance="Danger"
+                                   Icon="{ui:SymbolIcon Delete24}"
+                                   Command="{Binding ConfirmDeleteCommand}"
                                    Padding="16,8" />
                     </StackPanel>
                 </StackPanel>

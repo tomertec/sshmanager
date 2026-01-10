@@ -72,8 +72,9 @@ public partial class SshTerminalControl : UserControl
     {
         InitializeComponent();
 
-        // Initialize output buffer for search
-        _outputBuffer = new TerminalOutputBuffer(10000);
+        // Initialize output buffer for search with default values
+        // These will be updated via ScrollbackBufferSize and MaxLinesInMemory properties
+        _outputBuffer = new TerminalOutputBuffer(maxLines: 10000, maxLinesInMemory: 5000);
 
         // Try to get logger from DI if available
         try
@@ -578,7 +579,7 @@ public partial class SshTerminalControl : UserControl
     }
 
     /// <summary>
-    /// Disconnects from the SSH server.
+    /// Disconnects from the SSH server and cleans up resources.
     /// </summary>
     public void Disconnect()
     {
@@ -603,6 +604,10 @@ public partial class SshTerminalControl : UserControl
             _session.Connection.Disconnected -= OnConnectionDisconnected;
             _session.Connection.Dispose();
         }
+
+        // Clear the output buffer to free memory and cleanup temp files
+        // Note: We clear rather than dispose since the control may be reused
+        _outputBuffer.Clear();
 
         ShowStatus("Disconnected");
     }
@@ -745,12 +750,22 @@ public partial class SshTerminalControl : UserControl
     public bool IsConnected => _session?.Connection?.IsConnected == true;
 
     /// <summary>
-    /// Gets or sets the scrollback buffer size.
+    /// Gets or sets the scrollback buffer size (total lines across all segments).
     /// </summary>
     public int ScrollbackBufferSize
     {
         get => _outputBuffer.MaxLines;
         set => _outputBuffer.MaxLines = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the maximum number of lines to keep in memory.
+    /// Older lines are compressed and archived to disk.
+    /// </summary>
+    public int MaxLinesInMemory
+    {
+        get => _outputBuffer.MaxLinesInMemory;
+        set => _outputBuffer.MaxLinesInMemory = value;
     }
 
     /// <summary>

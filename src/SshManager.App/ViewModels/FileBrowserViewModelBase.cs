@@ -1,10 +1,22 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 
 namespace SshManager.App.ViewModels;
+
+/// <summary>
+/// Columns that can be sorted in the file browser.
+/// </summary>
+public enum FileSortColumn
+{
+    Name,
+    Size,
+    Modified,
+    Permissions
+}
 
 /// <summary>
 /// Abstract base class for file browser view models.
@@ -64,6 +76,29 @@ public abstract partial class FileBrowserViewModelBase<TQuickAccess> : Observabl
     /// </summary>
     [ObservableProperty]
     private ObservableCollection<TQuickAccess> _quickAccess = [];
+
+    /// <summary>
+    /// Current sort column.
+    /// </summary>
+    [ObservableProperty]
+    private FileSortColumn _sortColumn = FileSortColumn.Name;
+
+    /// <summary>
+    /// Current sort direction (ascending or descending).
+    /// </summary>
+    [ObservableProperty]
+    private ListSortDirection _sortDirection = ListSortDirection.Ascending;
+
+    /// <summary>
+    /// Filter text for searching files by name.
+    /// </summary>
+    [ObservableProperty]
+    private string _filterText = "";
+
+    /// <summary>
+    /// All items before filtering (used to restore when filter is cleared).
+    /// </summary>
+    private List<FileItemViewModel>? _allItems;
 
     /// <summary>
     /// Whether navigation back is available.
@@ -166,6 +201,7 @@ public abstract partial class FileBrowserViewModelBase<TQuickAccess> : Observabl
 
             CurrentPath = path;
             UpdateBreadcrumbs();
+            ResetFilterState();
 
             var items = await LoadDirectoryItemsAsync(path);
             Items = new ObservableCollection<FileItemViewModel>(items);
@@ -274,5 +310,149 @@ public abstract partial class FileBrowserViewModelBase<TQuickAccess> : Observabl
         {
             _logger.LogWarning(ex, "Failed to copy path to clipboard");
         }
+    }
+
+    /// <summary>
+    /// Sorts the items by the specified column.
+    /// </summary>
+    [RelayCommand]
+    public void SortBy(FileSortColumn column)
+    {
+        // Toggle direction if clicking the same column
+        if (SortColumn == column)
+        {
+            SortDirection = SortDirection == ListSortDirection.Ascending
+                ? ListSortDirection.Descending
+                : ListSortDirection.Ascending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortDirection = ListSortDirection.Ascending;
+        }
+
+        ApplySort();
+    }
+
+    /// <summary>
+    /// Applies the current sort settings to the items collection.
+    /// </summary>
+    protected void ApplySort()
+    {
+        if (Items.Count == 0) return;
+
+        var parentDir = Items.FirstOrDefault(i => i.IsParentDirectory);
+        var sortableItems = Items.Where(i => !i.IsParentDirectory).ToList();
+
+        IOrderedEnumerable<FileItemViewModel> sorted;
+
+        // Always sort directories first, then apply the selected sort
+        if (SortDirection == ListSortDirection.Ascending)
+        {
+            sorted = SortColumn switch
+            {
+                FileSortColumn.Name => sortableItems
+                    .OrderByDescending(i => i.IsDirectory)
+                    .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase),
+                FileSortColumn.Size => sortableItems
+                    .OrderByDescending(i => i.IsDirectory)
+                    .ThenBy(i => i.Size),
+                FileSortColumn.Modified => sortableItems
+                    .OrderByDescending(i => i.IsDirectory)
+                    .ThenBy(i => i.ModifiedDate),
+                FileSortColumn.Permissions => sortableItems
+                    .OrderByDescending(i => i.IsDirectory)
+                    .ThenBy(i => i.Permissions ?? 0),
+                _ => sortableItems.OrderByDescending(i => i.IsDirectory).ThenBy(i => i.Name)
+            };
+        }
+        else
+        {
+            sorted = SortColumn switch
+            {
+                FileSortColumn.Name => sortableItems
+                    .OrderByDescending(i => i.IsDirectory)
+                    .ThenByDescending(i => i.Name, StringComparer.OrdinalIgnoreCase),
+                FileSortColumn.Size => sortableItems
+                    .OrderByDescending(i => i.IsDirectory)
+                    .ThenByDescending(i => i.Size),
+                FileSortColumn.Modified => sortableItems
+                    .OrderByDescending(i => i.IsDirectory)
+                    .ThenByDescending(i => i.ModifiedDate),
+                FileSortColumn.Permissions => sortableItems
+                    .OrderByDescending(i => i.IsDirectory)
+                    .ThenByDescending(i => i.Permissions ?? 0),
+                _ => sortableItems.OrderByDescending(i => i.IsDirectory).ThenByDescending(i => i.Name)
+            };
+        }
+
+        var newItems = new ObservableCollection<FileItemViewModel>();
+        if (parentDir != null)
+        {
+            newItems.Add(parentDir);
+        }
+        foreach (var item in sorted)
+        {
+            newItems.Add(item);
+        }
+
+        Items = newItems;
+    }
+
+    /// <summary>
+    /// Called when FilterText changes to apply filtering.
+    /// </summary>
+    partial void OnFilterTextChanged(string value)
+    {
+        ApplyFilter();
+    }
+
+    /// <summary>
+    /// Applies the current filter to the items collection.
+    /// </summary>
+    protected void ApplyFilter()
+    {
+        if (_allItems == null || _allItems.Count == 0)
+        {
+            // Store current items as the full list if not already stored
+            _allItems = Items.ToList();
+        }
+
+        if (string.IsNullOrWhiteSpace(FilterText))
+        {
+            // Restore all items when filter is cleared
+            Items = new ObservableCollection<FileItemViewModel>(_allItems);
+            ApplySort();
+            return;
+        }
+
+        var filterLower = FilterText.ToLowerInvariant();
+
+        // Filter items (always keep parent directory)
+        var filteredItems = _allItems
+            .Where(item => item.IsParentDirectory ||
+                           item.Name.Contains(filterLower, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        Items = new ObservableCollection<FileItemViewModel>(filteredItems);
+        ApplySort();
+    }
+
+    /// <summary>
+    /// Clears the filter and shows all items.
+    /// </summary>
+    [RelayCommand]
+    public void ClearFilter()
+    {
+        FilterText = "";
+    }
+
+    /// <summary>
+    /// Called after navigation to reset filter state.
+    /// </summary>
+    protected void ResetFilterState()
+    {
+        _allItems = null;
+        FilterText = "";
     }
 }

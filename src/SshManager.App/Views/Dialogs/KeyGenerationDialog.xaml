@@ -5,6 +5,7 @@
                 xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                 xmlns:security="clr-namespace:SshManager.Security;assembly=SshManager.Security"
+                xmlns:converters="clr-namespace:SshManager.App.Converters"
                 mc:Ignorable="d"
                 Title="Generate SSH Key"
                 Height="550" Width="500"
@@ -16,6 +17,7 @@
 
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
     </ui:FluentWindow.Resources>
 
     <Grid>

@@ -46,6 +46,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     public bool IsLoading => _hostManagement.IsLoading;
+    public bool HasHosts => _hostManagement.HasHosts;
 
     public HostGroup? SelectedGroupFilter
     {
@@ -58,6 +59,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public IAsyncRelayCommand<HostEntry?> EditHostCommand => _hostManagement.EditHostCommand;
     public IAsyncRelayCommand<HostEntry?> DeleteHostCommand => _hostManagement.DeleteHostCommand;
     public IAsyncRelayCommand<HostEntry?> SaveHostCommand => _hostManagement.SaveHostCommand;
+    public IRelayCommand<HostEntry?> CopyHostnameCommand => _hostManagement.CopyHostnameCommand;
+    public IAsyncRelayCommand<HostEntry?> CopyIpAddressCommand => _hostManagement.CopyIpAddressCommand;
+    public IAsyncRelayCommand<HostEntry?> DuplicateHostCommand => _hostManagement.DuplicateHostCommand;
     public IAsyncRelayCommand AddGroupCommand => _hostManagement.AddGroupCommand;
     public IAsyncRelayCommand<HostGroup?> EditGroupCommand => _hostManagement.EditGroupCommand;
     public IAsyncRelayCommand<HostGroup?> DeleteGroupCommand => _hostManagement.DeleteGroupCommand;
@@ -228,6 +232,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             case nameof(HostManagementViewModel.SelectedGroupFilter):
                 OnPropertyChanged(nameof(SelectedGroupFilter));
                 break;
+            case nameof(HostManagementViewModel.HasHosts):
+                OnPropertyChanged(nameof(HasHosts));
+                break;
         }
     }
 
@@ -296,6 +303,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// Delegates to HostManagementViewModel.
     /// </summary>
     public Task RefreshHostsAsync() => _hostManagement.RefreshHostsAsync();
+
+    /// <summary>
+    /// Gets the total host count for each group from the database (unfiltered).
+    /// Delegates to HostManagementViewModel.
+    /// </summary>
+    public Task<(int totalCount, Dictionary<Guid, int> countsByGroup)> GetTotalHostCountsAsync() =>
+        _hostManagement.GetTotalHostCountsAsync();
 
     /// <summary>
     /// Creates a session for a host without raising the SessionCreated event.

@@ -160,6 +160,8 @@ public partial class TerminalPane : UserControl
 
             Terminal.TerminalFontFamily = settings.TerminalFontFamily;
             Terminal.TerminalFontSize = settings.TerminalFontSize;
+            Terminal.ScrollbackBufferSize = settings.ScrollbackBufferSize;
+            Terminal.MaxLinesInMemory = settings.TerminalBufferInMemoryLines;
         }
         catch
         {

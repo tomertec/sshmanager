@@ -52,6 +52,7 @@ public sealed class TerminalTextSearchService
 
     /// <summary>
     /// Search the buffer for the given term.
+    /// Works transparently across all segments (memory and file-backed).
     /// </summary>
     public void Search(string searchTerm, bool caseSensitive)
     {
@@ -66,7 +67,7 @@ public sealed class TerminalTextSearchService
             ? StringComparison.Ordinal
             : StringComparison.OrdinalIgnoreCase;
 
-        var lineCount = _buffer.LineCount;
+        var lineCount = _buffer.TotalLineCount;
         for (int lineIndex = 0; lineIndex < lineCount; lineIndex++)
         {
             var line = _buffer.GetLine(lineIndex);

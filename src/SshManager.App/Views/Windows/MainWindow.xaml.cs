@@ -120,28 +120,33 @@ public partial class MainWindow : FluentWindow
 
     private void Groups_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        RefreshGroupFilter();
+        _ = RefreshGroupFilterAsync();
     }
 
     private void Hosts_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        RefreshGroupFilter();
+        _ = RefreshGroupFilterAsync();
     }
 
-    private void RefreshGroupFilter()
+    private void RefreshGroupFilter() => _ = RefreshGroupFilterAsync();
+
+    private async Task RefreshGroupFilterAsync()
     {
         _isUpdatingGroupFilter = true;
         try
         {
+            // Get unfiltered host counts from database
+            var (totalCount, countsByGroup) = await _viewModel.GetTotalHostCountsAsync();
+
             var items = new List<GroupFilterItem>();
 
-            // Add "All Groups" item
-            items.Add(GroupFilterItem.CreateAllItem(_viewModel.Hosts.Count));
+            // Add "All Groups" item with total count
+            items.Add(GroupFilterItem.CreateAllItem(totalCount));
 
-            // Add individual groups with host counts
+            // Add individual groups with host counts from unfiltered data
             foreach (var group in _viewModel.Groups.OrderBy(g => g.Name))
             {
-                var hostCount = _viewModel.Hosts.Count(h => h.GroupId == group.Id);
+                var hostCount = countsByGroup.TryGetValue(group.Id, out var count) ? count : 0;
                 items.Add(GroupFilterItem.CreateGroupItem(group, hostCount));
             }
 
