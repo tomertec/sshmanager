@@ -61,3 +61,18 @@ Desktop.ini
 
 # Backup files
 *.backup
+
+# User-specific files
+*.rsuser
+*.DotSettings.user
+
+# JetBrains Rider
+*.sln.iml
+
+# Local database
+*.db
+*.db-shm
+*.db-wal
+
+# Screenshots folder (for development)
+ss/
