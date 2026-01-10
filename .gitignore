@@ -76,5 +76,8 @@ Desktop.ini
 
 # Screenshots folder (for development)
 ss/
+
+# Local development files (not synced to GitHub)
 CLAUDE.md
 AGENTS.md
+scripts/
