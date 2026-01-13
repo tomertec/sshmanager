@@ -34,7 +34,7 @@ A modern Windows desktop application for managing SSH connections with an embedd
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/sshmanager.git
+git clone https://github.com/tomertec/sshmanager.git
 cd sshmanager
 
 # Build

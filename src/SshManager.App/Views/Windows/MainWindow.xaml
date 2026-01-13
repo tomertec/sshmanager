@@ -39,7 +39,7 @@
         <KeyBinding Key="Return" Command="{Binding ConnectCommand}" CommandParameter="{Binding SelectedHost}" />
 
         <!-- Terminal Sessions -->
-        <KeyBinding Key="W" Modifiers="Ctrl" Command="{Binding CloseSessionCommand}" CommandParameter="{Binding CurrentSession}" />
+        <!-- Note: Ctrl+W is NOT used for closing - it passes through to terminal for nano, vim, etc. Use Ctrl+F4 instead -->
         <KeyBinding Key="F4" Modifiers="Ctrl" Command="{Binding CloseSessionCommand}" CommandParameter="{Binding CurrentSession}" />
 
         <!-- Navigation -->
@@ -48,6 +48,7 @@
         <KeyBinding Key="H" Modifiers="Ctrl" x:Name="HistoryShortcut" />
         <KeyBinding Key="S" Modifiers="Ctrl+Shift" x:Name="SnippetsShortcut" />
         <KeyBinding Key="K" Modifiers="Ctrl" x:Name="KeyManagerShortcut" />
+        <KeyBinding Key="Q" Modifiers="Ctrl" x:Name="QuickConnectShortcut" />
 
         <!-- SFTP Browser -->
         <KeyBinding Key="B" Modifiers="Ctrl" Command="{Binding OpenSftpBrowserCommand}" />
@@ -730,7 +731,7 @@
                             <!-- Port Forwarding Button with Flyout -->
                             <Grid>
                                 <ui:DropDownButton x:Name="PortForwardingButton"
-                                                  Icon="{ui:SymbolIcon ArrowRouting24}"
+                                                  Icon="{ui:SymbolIcon ArrowSync24}"
                                                   Padding="8">
                                     <ui:DropDownButton.ToolTip>
                                         <StackPanel>
@@ -798,12 +799,23 @@
                 <StackPanel VerticalAlignment="Center"
                            HorizontalAlignment="Center"
                            Visibility="{Binding HasActiveSessions, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                    <Border Background="#1FFFFFFF"
+                    <!-- Quick Connect Circle Button -->
+                    <Border x:Name="QuickConnectCircle"
+                           Background="#1FFFFFFF"
                            CornerRadius="50"
                            Width="100" Height="100"
                            HorizontalAlignment="Center"
                            Margin="0,0,0,24"
-                           BorderThickness="2">
+                           BorderThickness="2"
+                           Cursor="Hand"
+                           ToolTip="Quick Connect - Connect to any host (Ctrl+Q)"
+                           MouseLeftButtonDown="QuickConnectCircle_MouseLeftButtonDown"
+                           RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <TransformGroup>
+                                <ScaleTransform x:Name="QuickConnectScale" ScaleX="1" ScaleY="1" />
+                            </TransformGroup>
+                        </Border.RenderTransform>
                         <Border.BorderBrush>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                 <GradientStop Color="#0078D4" Offset="0" />
@@ -812,11 +824,61 @@
                             </LinearGradientBrush>
                         </Border.BorderBrush>
                         <Border.Effect>
-                            <DropShadowEffect Color="#0078D4" BlurRadius="20" ShadowDepth="0" Opacity="0.4" />
+                            <DropShadowEffect x:Name="QuickConnectGlow" Color="#0078D4" BlurRadius="20" ShadowDepth="0" Opacity="0.4" />
                         </Border.Effect>
-                        <ui:SymbolIcon Symbol="DesktopSignal24"
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <EventTrigger RoutedEvent="MouseEnter">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
+                                                                To="1.08" Duration="0:0:0.2">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
+                                                                To="1.08" Duration="0:0:0.2">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
+                                                                To="35" Duration="0:0:0.2" />
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)"
+                                                                To="0.7" Duration="0:0:0.2" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                    <EventTrigger RoutedEvent="MouseLeave">
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
+                                                                To="1" Duration="0:0:0.2">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
+                                                                To="1" Duration="0:0:0.2">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
+                                                                To="20" Duration="0:0:0.2" />
+                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.Opacity)"
+                                                                To="0.4" Duration="0:0:0.2" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <ui:SymbolIcon Symbol="PlugConnected24"
                                       FontSize="48"
-                                      Opacity="0.7"
+                                      Opacity="0.8"
                                       HorizontalAlignment="Center"
                                       VerticalAlignment="Center" />
                     </Border>

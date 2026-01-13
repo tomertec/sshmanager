@@ -123,6 +123,11 @@ public partial class WebTerminalControl : UserControl, IDisposable
             // Ensure WebView2 runtime is initialized
             await WebViewControl.EnsureCoreWebView2Async();
 
+            // Disable browser accelerator keys (Ctrl+W, Ctrl+N, Ctrl+T, etc.)
+            // This allows these keys to pass through to xterm.js instead of being
+            // handled by WebView2 as browser shortcuts
+            WebViewControl.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
+
             // Create and initialize the bridge with correctly typed logger
             var bridgeLogger = _loggerFactory?.CreateLogger<WebTerminalBridge>()
                 ?? NullLogger<WebTerminalBridge>.Instance;
@@ -488,7 +493,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
             _bridge = null;
         }
 
-        if (WebViewControl?.CoreWebView2 != null)
+        if (WebViewControl != null)
         {
             try
             {

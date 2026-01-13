@@ -7,7 +7,7 @@
              mc:Ignorable="d"
              d:DesignHeight="450" d:DesignWidth="800"
              Background="#0C0C0C"
-             KeyDown="UserControl_KeyDown">
+             PreviewKeyDown="UserControl_PreviewKeyDown">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>

@@ -35,7 +35,7 @@
                 </Grid.ColumnDefinitions>
 
                 <ui:SymbolIcon Grid.Column="0"
-                              Symbol="ArrowRouting24"
+                              Symbol="ArrowSync24"
                               FontSize="18"
                               Margin="0,0,8,0" />
 
@@ -188,7 +188,7 @@
                        VerticalAlignment="Center"
                        HorizontalAlignment="Center"
                        Visibility="{Binding HasActiveForwardings, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                <ui:SymbolIcon Symbol="ArrowRoutingRectangleMultiple24"
+                <ui:SymbolIcon Symbol="PlugDisconnected24"
                               FontSize="32"
                               Opacity="0.3"
                               HorizontalAlignment="Center"

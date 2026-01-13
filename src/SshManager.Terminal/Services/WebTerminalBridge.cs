@@ -47,7 +47,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// <summary>
     /// Font size increment/decrement step for zoom.
     /// </summary>
-    public const double FontSizeStep = 2;
+    public const double FontSizeStep = 1;
 
     /// <summary>
     /// Gets the WebView2 control associated with this bridge.

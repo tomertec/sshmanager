@@ -133,6 +133,27 @@ public sealed class MemoryTerminalOutputSegment : ITerminalOutputSegment
         }
     }
 
+    /// <summary>
+    /// Removes lines from the front of the segment.
+    /// </summary>
+    /// <param name="count">Number of lines to remove.</param>
+    internal void TrimFromFront(int count)
+    {
+        lock (_lock)
+        {
+            ThrowIfDisposed();
+            if (count <= 0) return;
+            if (count >= _lines.Count)
+            {
+                _lines.Clear();
+            }
+            else
+            {
+                _lines.RemoveRange(0, count);
+            }
+        }
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {

@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using SshManager.App.Models;
 using SshManager.App.Services;
 using SshManager.App.ViewModels;
@@ -307,6 +308,14 @@ public partial class MainWindow : FluentWindow
             ShowKeyManagerDialog();
             e.Handled = true;
         }
+        // Handle Ctrl+Q for Quick Connect
+        else if (e.Key == Key.Q && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            ShowQuickConnectDialog();
+            e.Handled = true;
+        }
+        // Note: Ctrl+W is NOT used for closing sessions to allow it to work in terminal apps
+        // like nano, vim, etc. Use Ctrl+F4 to close sessions instead.
         // Handle Ctrl+Tab to cycle through panes
         else if (e.Key == Key.Tab && Keyboard.Modifiers == ModifierKeys.Control)
         {
@@ -704,6 +713,120 @@ public partial class MainWindow : FluentWindow
     private void KeyManagerButton_Click(object sender, RoutedEventArgs e)
     {
         ShowKeyManagerDialog();
+    }
+
+    private void QuickConnectButton_Click(object sender, RoutedEventArgs e)
+    {
+        ShowQuickConnectDialog();
+    }
+
+    private void QuickConnectCircle_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        // Play click animation
+        PlayQuickConnectClickAnimation();
+        ShowQuickConnectDialog();
+    }
+
+    private void PlayQuickConnectClickAnimation()
+    {
+        var scaleDown = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = 0.92,
+            Duration = TimeSpan.FromMilliseconds(100),
+            EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+        };
+
+        var scaleUp = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = 1.0,
+            Duration = TimeSpan.FromMilliseconds(150),
+            BeginTime = TimeSpan.FromMilliseconds(100),
+            EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+        };
+
+        var glowBright = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = 50,
+            Duration = TimeSpan.FromMilliseconds(100)
+        };
+
+        var glowNormal = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = 20,
+            Duration = TimeSpan.FromMilliseconds(200),
+            BeginTime = TimeSpan.FromMilliseconds(100)
+        };
+
+        var storyboard = new System.Windows.Media.Animation.Storyboard();
+
+        System.Windows.Media.Animation.Storyboard.SetTarget(scaleDown, QuickConnectCircle);
+        System.Windows.Media.Animation.Storyboard.SetTargetProperty(scaleDown,
+            new PropertyPath("(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"));
+        storyboard.Children.Add(scaleDown);
+
+        var scaleDownY = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = 0.92,
+            Duration = TimeSpan.FromMilliseconds(100),
+            EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+        };
+        System.Windows.Media.Animation.Storyboard.SetTarget(scaleDownY, QuickConnectCircle);
+        System.Windows.Media.Animation.Storyboard.SetTargetProperty(scaleDownY,
+            new PropertyPath("(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"));
+        storyboard.Children.Add(scaleDownY);
+
+        System.Windows.Media.Animation.Storyboard.SetTarget(scaleUp, QuickConnectCircle);
+        System.Windows.Media.Animation.Storyboard.SetTargetProperty(scaleUp,
+            new PropertyPath("(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"));
+        storyboard.Children.Add(scaleUp);
+
+        var scaleUpY = new System.Windows.Media.Animation.DoubleAnimation
+        {
+            To = 1.0,
+            Duration = TimeSpan.FromMilliseconds(150),
+            BeginTime = TimeSpan.FromMilliseconds(100),
+            EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+        };
+        System.Windows.Media.Animation.Storyboard.SetTarget(scaleUpY, QuickConnectCircle);
+        System.Windows.Media.Animation.Storyboard.SetTargetProperty(scaleUpY,
+            new PropertyPath("(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"));
+        storyboard.Children.Add(scaleUpY);
+
+        System.Windows.Media.Animation.Storyboard.SetTarget(glowBright, QuickConnectCircle);
+        System.Windows.Media.Animation.Storyboard.SetTargetProperty(glowBright,
+            new PropertyPath("(UIElement.Effect).(DropShadowEffect.BlurRadius)"));
+        storyboard.Children.Add(glowBright);
+
+        System.Windows.Media.Animation.Storyboard.SetTarget(glowNormal, QuickConnectCircle);
+        System.Windows.Media.Animation.Storyboard.SetTargetProperty(glowNormal,
+            new PropertyPath("(UIElement.Effect).(DropShadowEffect.BlurRadius)"));
+        storyboard.Children.Add(glowNormal);
+
+        storyboard.Begin();
+    }
+
+    private async void ShowQuickConnectDialog()
+    {
+        var viewModel = new ViewModels.Dialogs.QuickConnectViewModel();
+        var dialog = new QuickConnectDialog(viewModel)
+        {
+            Owner = this
+        };
+
+        if (dialog.ShowDialog() == true && viewModel.CreatedHostEntry != null)
+        {
+            var hostEntry = viewModel.CreatedHostEntry;
+
+            // If password was provided, encrypt it for the connection flow
+            if (!string.IsNullOrEmpty(viewModel.Password))
+            {
+                var secretProtector = App.GetService<ISecretProtector>();
+                hostEntry.PasswordProtected = secretProtector.Protect(viewModel.Password);
+            }
+
+            // Connect using the temporary host entry
+            await _viewModel.ConnectCommand.ExecuteAsync(hostEntry);
+        }
     }
 
     private void ShowKeyManagerDialog()

@@ -367,7 +367,7 @@ public sealed class TerminalOutputBuffer : IDisposable
     }
 
     /// <summary>
-    /// Trims excess lines from the beginning of the buffer by removing old segments.
+    /// Trims excess lines from the beginning of the buffer by removing old segments or partial lines.
     /// </summary>
     private void TrimExcess()
     {
@@ -376,27 +376,34 @@ public sealed class TerminalOutputBuffer : IDisposable
 
         if (excess <= 0) return;
 
-        // Remove segments from the beginning until we're under the limit
+        // Remove entire segments from the beginning until we're under the limit
         while (excess > 0 && _segments.Count > 1)
         {
             var firstSegment = _segments[0];
-            var linesToRemove = Math.Min(firstSegment.LineCount, excess);
 
-            if (linesToRemove >= firstSegment.LineCount)
+            if (excess >= firstSegment.LineCount)
             {
                 // Remove entire segment
+                var linesRemoved = firstSegment.LineCount;
                 _segments.RemoveAt(0);
                 firstSegment.Dispose();
-                excess -= firstSegment.LineCount;
+                excess -= linesRemoved;
 
                 // Update start indices for remaining segments
                 UpdateSegmentStartIndices();
             }
             else
             {
-                // We can't partially remove a segment, so we're done
+                // Can't remove entire segment, break and handle partial below
                 break;
             }
+        }
+
+        // Handle remaining excess by trimming from the first segment
+        if (excess > 0 && _segments.Count > 0 && _segments[0] is MemoryTerminalOutputSegment memSegment)
+        {
+            memSegment.TrimFromFront(excess);
+            UpdateSegmentStartIndices();
         }
     }
 

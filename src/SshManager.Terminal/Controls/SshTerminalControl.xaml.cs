@@ -210,8 +210,25 @@ public partial class SshTerminalControl : UserControl
 
     #region Keyboard Handling
 
-    private void UserControl_KeyDown(object sender, KeyEventArgs e)
+    private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // Handle Delete key - send escape sequence directly to SSH
+        // WebView2 may intercept this key before it reaches xterm.js
+        if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            _bridge?.SendText("\x1b[3~");
+            e.Handled = true;
+            return;
+        }
+
+        // Handle Insert key - send escape sequence directly to SSH
+        if (e.Key == Key.Insert && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            _bridge?.SendText("\x1b[2~");
+            e.Handled = true;
+            return;
+        }
+
         // Handle Ctrl+F for Find
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
         {
@@ -240,6 +257,33 @@ public partial class SshTerminalControl : UserControl
         if (e.Key == Key.V && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             PasteFromClipboard();
+            e.Handled = true;
+            return;
+        }
+
+        // Handle Ctrl++ (Ctrl+Plus or Ctrl+OemPlus) for zoom in
+        if (Keyboard.Modifiers == ModifierKeys.Control &&
+            (e.Key == Key.OemPlus || e.Key == Key.Add))
+        {
+            TerminalHost.ZoomIn();
+            e.Handled = true;
+            return;
+        }
+
+        // Handle Ctrl+- (Ctrl+Minus or Ctrl+OemMinus) for zoom out
+        if (Keyboard.Modifiers == ModifierKeys.Control &&
+            (e.Key == Key.OemMinus || e.Key == Key.Subtract))
+        {
+            TerminalHost.ZoomOut();
+            e.Handled = true;
+            return;
+        }
+
+        // Handle Ctrl+0 for reset zoom
+        if (Keyboard.Modifiers == ModifierKeys.Control &&
+            (e.Key == Key.D0 || e.Key == Key.NumPad0))
+        {
+            TerminalHost.ResetZoom();
             e.Handled = true;
             return;
         }

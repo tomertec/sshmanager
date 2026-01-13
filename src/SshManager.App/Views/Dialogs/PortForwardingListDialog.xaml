@@ -232,7 +232,7 @@
                     <StackPanel VerticalAlignment="Center"
                                HorizontalAlignment="Center"
                                Visibility="{Binding HasProfiles, Converter={StaticResource InverseBoolToVisibilityConverter}}">
-                        <ui:SymbolIcon Symbol="ArrowRouting24"
+                        <ui:SymbolIcon Symbol="ArrowSync24"
                                       FontSize="48"
                                       Opacity="0.3"
                                       HorizontalAlignment="Center"

@@ -147,6 +147,25 @@
                     postMessageToHost({ type: 'input', data: data });
                 });
 
+                // Handle special keys that may not be forwarded properly by WebView2
+                // Use document-level listener to catch keys before any component handling
+                document.addEventListener('keydown', function(event) {
+                    // Delete key sends escape sequence \x1b[3~
+                    if (event.key === 'Delete' || event.keyCode === 46) {
+                        postMessageToHost({ type: 'input', data: '\x1b[3~' });
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                    }
+                    // Insert key sends escape sequence \x1b[2~
+                    if (event.key === 'Insert' || event.keyCode === 45) {
+                        postMessageToHost({ type: 'input', data: '\x1b[2~' });
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return;
+                    }
+                }, true); // Use capture phase to get events first
+
                 // Listen for terminal resize
                 terminal.onResize(function(size) {
                     postMessageToHost({ type: 'resized', cols: size.cols, rows: size.rows });
