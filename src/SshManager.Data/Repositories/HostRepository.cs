@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 using SshManager.Core.Models;
 
@@ -65,6 +66,13 @@ public sealed class HostRepository : IHostRepository
 
     public async Task AddAsync(HostEntry host, CancellationToken ct = default)
     {
+        var validationContext = new ValidationContext(host);
+        var validationResults = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(host, validationContext, validationResults, validateAllProperties: true))
+        {
+            throw new ValidationException(validationResults.First().ErrorMessage);
+        }
+
         host.CreatedAt = DateTimeOffset.UtcNow;
         host.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -86,6 +94,13 @@ public sealed class HostRepository : IHostRepository
 
     public async Task UpdateAsync(HostEntry host, CancellationToken ct = default)
     {
+        var validationContext = new ValidationContext(host);
+        var validationResults = new List<ValidationResult>();
+        if (!Validator.TryValidateObject(host, validationContext, validationResults, validateAllProperties: true))
+        {
+            throw new ValidationException(validationResults.First().ErrorMessage);
+        }
+
         host.UpdatedAt = DateTimeOffset.UtcNow;
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);

@@ -247,6 +247,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             _logger.LogDebug("Received keyboard-interactive request: {Name} with {PromptCount} prompts",
                 request.Name, request.Prompts.Count);
 
+            // Check if application is available before showing dialog
+            if (Application.Current?.Dispatcher == null)
+            {
+                _logger.LogWarning("Cannot show keyboard-interactive dialog - application is shutting down");
+                return null;
+            }
+
             // Show dialog on UI thread
             var result = await Application.Current.Dispatcher.InvokeAsync(() =>
             {
@@ -289,6 +296,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 await _fingerprintRepo.UpdateLastSeenAsync(existingFingerprint.Id);
                 _logger.LogDebug("Host key verified - fingerprint matches stored value");
                 return true;
+            }
+
+            // Check if application is available before showing dialog
+            if (Application.Current?.Dispatcher == null)
+            {
+                _logger.LogWarning("Cannot show host key verification dialog - application is shutting down");
+                return false;
             }
 
             // Show verification dialog on UI thread

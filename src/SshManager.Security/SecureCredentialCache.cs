@@ -134,7 +134,13 @@ public sealed class SecureCredentialCache : ICredentialCache
 
         if (credential.IsExpired)
         {
-            RemoveCredential(hostId);
+            // Use TryRemove with KeyValuePair to ensure we only remove if it's still the same expired credential.
+            // This prevents a TOCTOU race condition where another thread could replace the credential
+            // between our IsExpired check and the removal, causing us to remove the wrong credential.
+            if (_cache.TryRemove(KeyValuePair.Create(hostId, credential)))
+            {
+                credential.Dispose();
+            }
             return false;
         }
 

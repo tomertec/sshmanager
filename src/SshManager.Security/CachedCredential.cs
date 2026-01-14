@@ -31,6 +31,30 @@ public sealed class CachedCredential : IDisposable
     /// <param name="type">The type of credential.</param>
     /// <param name="value">The credential value to cache.</param>
     /// <param name="expiresAt">When the credential should expire.</param>
+    /// <remarks>
+    /// <para><strong>SECURITY LIMITATION:</strong> This constructor accepts a plain <see cref="string"/> parameter
+    /// for the credential value. This means the sensitive data already exists in memory as an unprotected, immutable
+    /// string before being converted to a <see cref="SecureString"/> internally via <see cref="SecureStringExtensions.ToSecureString"/>.</para>
+    ///
+    /// <para><strong>Memory Security Risk:</strong> The plain string parameter remains in memory until garbage collected
+    /// and cannot be securely zeroed because strings are immutable in .NET. This creates a window where the credential
+    /// could be exposed in memory dumps, debugging sessions, or if memory is swapped to disk.</para>
+    ///
+    /// <para><strong>Recommendation:</strong> When possible, prefer using the overload that accepts a <see cref="SecureString"/>
+    /// directly: <see cref="CachedCredential(CredentialType, SecureString, DateTimeOffset)"/>. This avoids creating a
+    /// plain string in the first place.</para>
+    ///
+    /// <para><strong>Best Practice:</strong> If you must use this constructor, set the source string reference to <c>null</c>
+    /// immediately after construction to make it eligible for garbage collection:</para>
+    ///
+    /// <example>
+    /// <code>
+    /// string password = GetPasswordFromSomewhere();
+    /// var credential = new CachedCredential(CredentialType.Password, password, expiresAt);
+    /// password = null; // Allow GC to reclaim the plain string
+    /// </code>
+    /// </example>
+    /// </remarks>
     public CachedCredential(CredentialType type, string value, DateTimeOffset expiresAt)
     {
         Type = type;

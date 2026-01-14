@@ -31,27 +31,16 @@
     </ui:FluentWindow.Resources>
 
     <!-- Keyboard Shortcuts -->
+    <!-- NOTE: Many shortcuts are handled in code-behind (OnPreviewKeyDown) to allow them to pass through
+         to the terminal when the terminal has focus. Only shortcuts that don't conflict with common
+         terminal/bash shortcuts are defined here. -->
     <ui:FluentWindow.InputBindings>
-        <!-- Host Management -->
-        <KeyBinding Key="N" Modifiers="Ctrl" Command="{Binding AddHostCommand}" />
-        <KeyBinding Key="E" Modifiers="Ctrl" Command="{Binding EditHostCommand}" CommandParameter="{Binding SelectedHost}" />
-        <KeyBinding Key="Delete" Command="{Binding DeleteHostCommand}" CommandParameter="{Binding SelectedHost}" />
+        <!-- Host Management - Enter to connect (doesn't conflict with terminal) -->
         <KeyBinding Key="Return" Command="{Binding ConnectCommand}" CommandParameter="{Binding SelectedHost}" />
 
         <!-- Terminal Sessions -->
         <!-- Note: Ctrl+W is NOT used for closing - it passes through to terminal for nano, vim, etc. Use Ctrl+F4 instead -->
         <KeyBinding Key="F4" Modifiers="Ctrl" Command="{Binding CloseSessionCommand}" CommandParameter="{Binding CurrentSession}" />
-
-        <!-- Navigation -->
-        <KeyBinding Key="F" Modifiers="Ctrl" x:Name="SearchShortcut" />
-        <KeyBinding Key="OemComma" Modifiers="Ctrl" x:Name="SettingsShortcut" />
-        <KeyBinding Key="H" Modifiers="Ctrl" x:Name="HistoryShortcut" />
-        <KeyBinding Key="S" Modifiers="Ctrl+Shift" x:Name="SnippetsShortcut" />
-        <KeyBinding Key="K" Modifiers="Ctrl" x:Name="KeyManagerShortcut" />
-        <KeyBinding Key="Q" Modifiers="Ctrl" x:Name="QuickConnectShortcut" />
-
-        <!-- SFTP Browser -->
-        <KeyBinding Key="B" Modifiers="Ctrl" Command="{Binding OpenSftpBrowserCommand}" />
 
         <!-- Refresh -->
         <KeyBinding Key="F5" Command="{Binding SearchCommand}" />

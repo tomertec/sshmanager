@@ -15,9 +15,13 @@ namespace SshManager.Terminal.Services;
 public sealed class SftpService : ISftpService
 {
     private readonly ILogger<SftpService> _logger;
+    private readonly ISshAuthenticationFactory _authFactory;
 
-    public SftpService(ILogger<SftpService>? logger = null)
+    public SftpService(
+        ISshAuthenticationFactory authFactory,
+        ILogger<SftpService>? logger = null)
     {
+        _authFactory = authFactory ?? throw new ArgumentNullException(nameof(authFactory));
         _logger = logger ?? NullLogger<SftpService>.Instance;
     }
 
@@ -26,12 +30,12 @@ public sealed class SftpService : ISftpService
         _logger.LogInformation("Connecting SFTP to {Host}:{Port} as {Username} using {AuthType}",
             connectionInfo.Hostname, connectionInfo.Port, connectionInfo.Username, connectionInfo.AuthType);
 
-        var authMethods = CreateAuthMethods(connectionInfo);
+        var authResult = _authFactory.CreateAuthMethods(connectionInfo);
         var connInfo = new ConnectionInfo(
             connectionInfo.Hostname,
             connectionInfo.Port,
             connectionInfo.Username,
-            authMethods)
+            authResult.Methods)
         {
             Timeout = connectionInfo.Timeout
         };
@@ -52,103 +56,39 @@ public sealed class SftpService : ISftpService
             _logger.LogInformation("SFTP connection established to {Host}:{Port}",
                 connectionInfo.Hostname, connectionInfo.Port);
 
-            return new SftpSession(client, _logger);
+            var session = new SftpSession(client, _logger);
+
+            // Transfer ownership of disposable resources to the session
+            foreach (var disposable in authResult.Disposables)
+            {
+                session.TrackDisposable(disposable);
+            }
+
+            return session;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "SFTP connection to {Host}:{Port} failed: {Message}",
                 connectionInfo.Hostname, connectionInfo.Port, ex.Message);
             client.Dispose();
+
+            // Dispose auth resources (PrivateKeyFile instances) on connection failure
+            foreach (var disposable in authResult.Disposables)
+            {
+                try
+                {
+                    disposable.Dispose();
+                }
+                catch (Exception disposeEx)
+                {
+                    _logger.LogDebug(disposeEx, "Error disposing auth resource on SFTP connection failure");
+                }
+            }
+
             throw;
         }
     }
 
-    private AuthenticationMethod[] CreateAuthMethods(TerminalConnectionInfo connectionInfo)
-    {
-        _logger.LogDebug("Creating authentication methods for {AuthType}", connectionInfo.AuthType);
-
-        return connectionInfo.AuthType switch
-        {
-            AuthType.Password when !string.IsNullOrEmpty(connectionInfo.Password) =>
-                CreatePasswordAuth(connectionInfo),
-
-            AuthType.PrivateKeyFile when !string.IsNullOrEmpty(connectionInfo.PrivateKeyPath) =>
-                CreatePrivateKeyAuth(connectionInfo),
-
-            AuthType.SshAgent => CreateAgentAuth(connectionInfo),
-
-            _ when connectionInfo.AuthType == AuthType.Password =>
-                LogAndFallback(connectionInfo, "Password auth configured but no password provided"),
-
-            _ => CreateAgentAuth(connectionInfo)
-        };
-    }
-
-    private AuthenticationMethod[] LogAndFallback(TerminalConnectionInfo connectionInfo, string reason)
-    {
-        _logger.LogWarning("Falling back to agent auth: {Reason}", reason);
-        return CreateAgentAuth(connectionInfo);
-    }
-
-    private AuthenticationMethod[] CreatePasswordAuth(TerminalConnectionInfo connectionInfo)
-    {
-        return [new PasswordAuthenticationMethod(connectionInfo.Username, connectionInfo.Password!)];
-    }
-
-    private AuthenticationMethod[] CreateAgentAuth(TerminalConnectionInfo connectionInfo)
-    {
-        var sshDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
-        var keyFiles = new List<PrivateKeyFile>();
-
-        _logger.LogDebug("Searching for SSH keys in {SshDir}", sshDir);
-
-        var defaultKeys = new[] { "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa" };
-        foreach (var keyName in defaultKeys)
-        {
-            var keyPath = Path.Combine(sshDir, keyName);
-            if (File.Exists(keyPath))
-            {
-                try
-                {
-                    keyFiles.Add(new PrivateKeyFile(keyPath));
-                    _logger.LogDebug("Loaded SSH key: {KeyPath}", keyPath);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to load SSH key {KeyPath}", keyPath);
-                }
-            }
-        }
-
-        if (keyFiles.Count > 0)
-        {
-            _logger.LogInformation("Using {KeyCount} SSH keys for SFTP authentication", keyFiles.Count);
-            return [new PrivateKeyAuthenticationMethod(connectionInfo.Username, keyFiles.ToArray())];
-        }
-
-        _logger.LogWarning("No SSH keys found for SFTP authentication");
-        return [new KeyboardInteractiveAuthenticationMethod(connectionInfo.Username)];
-    }
-
-    private AuthenticationMethod[] CreatePrivateKeyAuth(TerminalConnectionInfo connectionInfo)
-    {
-        _logger.LogDebug("Loading private key from {KeyPath}", connectionInfo.PrivateKeyPath);
-
-        PrivateKeyFile keyFile;
-
-        if (!string.IsNullOrEmpty(connectionInfo.PrivateKeyPassphrase))
-        {
-            keyFile = new PrivateKeyFile(connectionInfo.PrivateKeyPath!, connectionInfo.PrivateKeyPassphrase);
-            _logger.LogDebug("Private key loaded with passphrase");
-        }
-        else
-        {
-            keyFile = new PrivateKeyFile(connectionInfo.PrivateKeyPath!);
-            _logger.LogDebug("Private key loaded without passphrase");
-        }
-
-        return [new PrivateKeyAuthenticationMethod(connectionInfo.Username, keyFile)];
-    }
 }
 
 /// <summary>
@@ -158,6 +98,7 @@ internal sealed class SftpSession : ISftpSession
 {
     private readonly SftpClient _client;
     private readonly ILogger _logger;
+    private readonly List<IDisposable> _disposables = new();
     private bool _disposed;
 
     public bool IsConnected => _client.IsConnected && !_disposed;
@@ -170,6 +111,15 @@ internal sealed class SftpSession : ISftpSession
         _logger = logger;
 
         _client.ErrorOccurred += OnError;
+    }
+
+    /// <summary>
+    /// Registers a disposable resource to be disposed when this session is closed.
+    /// Used to track PrivateKeyFile instances that need cleanup.
+    /// </summary>
+    public void TrackDisposable(IDisposable disposable)
+    {
+        _disposables.Add(disposable);
     }
 
     /// <summary>
@@ -535,6 +485,25 @@ internal sealed class SftpSession : ISftpSession
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error disposing SFTP session");
+        }
+
+        // Dispose tracked resources (PrivateKeyFile instances)
+        var disposableCount = _disposables.Count;
+        foreach (var disposable in _disposables)
+        {
+            try
+            {
+                disposable.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error disposing tracked resource");
+            }
+        }
+        _disposables.Clear();
+        if (disposableCount > 0)
+        {
+            _logger.LogDebug("Tracked disposables disposed ({Count} items)", disposableCount);
         }
 
         _logger.LogInformation("SFTP session disposed");

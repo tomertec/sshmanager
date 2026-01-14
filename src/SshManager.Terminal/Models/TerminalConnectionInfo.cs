@@ -58,6 +58,20 @@ public sealed class TerminalConnectionInfo
     public Guid? HostId { get; init; }
 
     /// <summary>
+    /// When true, explicitly skips host key verification.
+    /// Default is false, meaning host key verification is expected.
+    /// </summary>
+    /// <remarks>
+    /// <para><strong>SECURITY WARNING:</strong> Setting this to <c>true</c> disables host key verification,
+    /// which protects against man-in-the-middle (MITM) attacks. Only set this to <c>true</c> if you
+    /// understand the security implications and have other means of verifying the server's identity.</para>
+    ///
+    /// <para>When this is <c>false</c> (the default) and no host key verification callback is provided
+    /// to the connection service, a warning will be logged to alert about the potential security risk.</para>
+    /// </remarks>
+    public bool SkipHostKeyVerification { get; init; } = false;
+
+    /// <summary>
     /// Creates a connection info from a HostEntry and optional decrypted password.
     /// </summary>
     public static TerminalConnectionInfo FromHostEntry(

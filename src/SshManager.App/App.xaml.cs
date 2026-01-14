@@ -130,6 +130,8 @@ public partial class App : Application
 
         // Terminal services
         services.AddSingleton<ITerminalResizeService, TerminalResizeService>();
+        services.AddSingleton<ISshAuthenticationFactory, SshAuthenticationFactory>();
+        services.AddSingleton<IProxyChainConnectionBuilder, ProxyChainConnectionBuilder>();
         services.AddSingleton<ISshConnectionService, SshConnectionService>();
         services.AddSingleton<ISftpService, SftpService>();
         services.AddSingleton<ITerminalSessionManager, TerminalSessionManager>();
@@ -139,6 +141,11 @@ public partial class App : Application
         services.AddSingleton<IProxyJumpService, ProxyJumpService>();
         services.AddSingleton<IPortForwardingService, PortForwardingService>();
         services.AddSingleton<ITerminalThemeService, TerminalThemeService>();
+
+        // Phase 2: Terminal control extracted services (transient - per-control instances)
+        services.AddTransient<ITerminalClipboardService, TerminalClipboardService>();
+        services.AddTransient<ITerminalKeyboardHandler, TerminalKeyboardHandler>();
+        services.AddTransient<ITerminalConnectionHandler, TerminalConnectionHandler>();
 
         // App services
         services.AddSingleton<IEditorThemeService, EditorThemeService>();
@@ -499,34 +506,8 @@ public partial class App : Application
             ["SftpMirrorNavigation"] = ("INTEGER", "0"),
         };
 
-        foreach (var (columnName, (type, defaultValue)) in migrations)
-        {
-            if (!existingColumns.Contains(columnName))
-            {
-                // Validate inputs to prevent SQL injection
-                if (!IsValidColumnName(columnName))
-                {
-                    logger.Error("Invalid column name in migration: {ColumnName}", columnName);
-                    throw new InvalidOperationException($"Invalid column name in migration: {columnName}");
-                }
-
-                if (!AllowedColumnTypes.Contains(type))
-                {
-                    logger.Error("Invalid column type in migration: {Type}", type);
-                    throw new InvalidOperationException($"Invalid column type in migration: {type}");
-                }
-
-                if (!IsValidDefaultValue(defaultValue))
-                {
-                    logger.Error("Invalid default value in migration for column {ColumnName}: {DefaultValue}", columnName, defaultValue);
-                    throw new InvalidOperationException($"Invalid default value in migration for column {columnName}: {defaultValue}");
-                }
-
-                var sql = $"ALTER TABLE Settings ADD COLUMN {columnName} {type} DEFAULT {defaultValue}";
-                await db.Database.ExecuteSqlRawAsync(sql);
-                logger.Information("Added missing column {ColumnName} to Settings table", columnName);
-            }
-        }
+        // Add missing settings columns using validated compile-time constants
+        await AddMissingSettingsColumnsAsync(db, existingColumns, migrations, logger);
 
         // Migrate Groups table: add StatusCheckIntervalSeconds column if missing
         var groupColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -552,6 +533,98 @@ public partial class App : Application
             await db.Database.ExecuteSqlRawAsync(
                 "ALTER TABLE Groups ADD COLUMN Color TEXT DEFAULT NULL");
             logger.Information("Added missing column Color to Groups table");
+        }
+    }
+
+    /// <summary>
+    /// Adds missing columns to the Settings table from a dictionary of migrations.
+    /// </summary>
+    /// <param name="db">The database context.</param>
+    /// <param name="existingColumns">Set of existing column names in the Settings table.</param>
+    /// <param name="migrations">Dictionary of column migrations (name -> (type, defaultValue)).</param>
+    /// <param name="logger">Logger for recording migration operations.</param>
+    /// <remarks>
+    /// <para><strong>SECURITY NOTE - SQL String Interpolation:</strong></para>
+    /// <para>
+    /// This method uses string interpolation to build SQL statements, which is normally a critical security
+    /// vulnerability that enables SQL injection attacks. However, this specific usage is SAFE because:
+    /// </para>
+    /// <list type="number">
+    /// <item>
+    ///   <term>All values are compile-time constants:</term>
+    ///   <description>
+    ///   Column names, types, and default values come from the migrations dictionary declared inline
+    ///   in <see cref="ApplySchemaMigrationsAsync"/>. They are hardcoded string literals, not user input.
+    ///   </description>
+    /// </item>
+    /// <item>
+    ///   <term>Strict validation via whitelists:</term>
+    ///   <description>
+    ///   Every value is validated before SQL construction:
+    ///   <list type="bullet">
+    ///     <item><see cref="IsValidColumnName"/>: Ensures column names contain only alphanumeric characters and underscores</item>
+    ///     <item><see cref="AllowedColumnTypes"/>: Validates types against a whitelist (TEXT, INTEGER, REAL, BLOB only)</item>
+    ///     <item><see cref="IsValidDefaultValue"/>: Ensures defaults are integers, NULL, or safely-quoted strings without embedded quotes</item>
+    ///   </list>
+    ///   </description>
+    /// </item>
+    /// <item>
+    ///   <term>No user-provided data:</term>
+    ///   <description>
+    ///   This method is called only during application startup for schema migrations. No external input
+    ///   can reach the SQL construction logic.
+    ///   </description>
+    /// </item>
+    /// </list>
+    /// <para><strong>WARNING:</strong> DO NOT copy this pattern for user-provided input or runtime data.</para>
+    /// <para>
+    /// For any operation involving user input, always use parameterized queries (e.g., ExecuteSqlAsync with parameters).
+    /// String interpolation in SQL is only acceptable when ALL inputs are:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item>Compile-time constants defined in source code</item>
+    ///   <item>Validated against strict whitelists</item>
+    ///   <item>Never derived from user input, files, network, or any external source</item>
+    /// </list>
+    /// </remarks>
+    private static async Task AddMissingSettingsColumnsAsync(
+        AppDbContext db,
+        HashSet<string> existingColumns,
+        Dictionary<string, (string Type, string Default)> migrations,
+        Serilog.ILogger logger)
+    {
+        foreach (var (columnName, (type, defaultValue)) in migrations)
+        {
+            if (!existingColumns.Contains(columnName))
+            {
+                // Validate inputs to prevent SQL injection
+                if (!IsValidColumnName(columnName))
+                {
+                    logger.Error("Invalid column name in migration: {ColumnName}", columnName);
+                    throw new InvalidOperationException($"Invalid column name in migration: {columnName}");
+                }
+
+                if (!AllowedColumnTypes.Contains(type))
+                {
+                    logger.Error("Invalid column type in migration: {Type}", type);
+                    throw new InvalidOperationException($"Invalid column type in migration: {type}");
+                }
+
+                if (!IsValidDefaultValue(defaultValue))
+                {
+                    logger.Error("Invalid default value in migration for column {ColumnName}: {DefaultValue}", columnName, defaultValue);
+                    throw new InvalidOperationException($"Invalid default value in migration for column {columnName}: {defaultValue}");
+                }
+
+                // SAFE: String interpolation here is acceptable because all values are:
+                // 1. Compile-time constants from the migrations dictionary
+                // 2. Validated against strict whitelists (IsValidColumnName, AllowedColumnTypes, IsValidDefaultValue)
+                // 3. Never derived from user input or external sources
+                // DO NOT replicate this pattern for user-provided data - always use parameterized queries.
+                var sql = $"ALTER TABLE Settings ADD COLUMN {columnName} {type} DEFAULT {defaultValue}";
+                await db.Database.ExecuteSqlRawAsync(sql);
+                logger.Information("Added missing column {ColumnName} to Settings table", columnName);
+            }
         }
     }
 

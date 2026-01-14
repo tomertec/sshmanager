@@ -269,14 +269,52 @@ public partial class MainWindow : FluentWindow
         Activate();
     }
 
+    /// <summary>
+    /// Checks if the keyboard focus is currently within a terminal control (WebView2).
+    /// When true, most Ctrl+letter shortcuts should pass through to the terminal
+    /// instead of being handled by the application.
+    /// </summary>
+    private bool IsTerminalFocused()
+    {
+        var focused = Keyboard.FocusedElement as DependencyObject;
+        if (focused == null) return false;
+
+        // Walk up the visual tree to check if focus is within a WebTerminalControl or SshTerminalControl
+        while (focused != null)
+        {
+            var typeName = focused.GetType().FullName;
+
+            // Check for WebView2 control (the actual terminal renderer)
+            if (typeName == "Microsoft.Web.WebView2.Wpf.WebView2")
+                return true;
+
+            // Check for our terminal control types
+            if (focused is SshTerminalControl)
+                return true;
+
+            focused = VisualTreeHelper.GetParent(focused);
+        }
+
+        return false;
+    }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        // Handle Ctrl+F to focus search
+        // Check if terminal has focus - if so, let terminal-conflicting shortcuts pass through
+        var terminalHasFocus = IsTerminalFocused();
+
+        // Handle Ctrl+F - only intercept when terminal is NOT focused
+        // (Ctrl+F is forward-char in bash/readline)
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
         {
-            SearchBox.Focus();
-            SearchBox.SelectAll();
-            e.Handled = true;
+            if (!terminalHasFocus)
+            {
+                SearchBox.Focus();
+                SearchBox.SelectAll();
+                e.Handled = true;
+            }
+            // When terminal is focused, let it pass through for forward-char
+            return;
         }
         // Handle Escape to clear search
         else if (e.Key == Key.Escape && SearchBox.IsFocused)
@@ -284,35 +322,88 @@ public partial class MainWindow : FluentWindow
             _viewModel.SearchText = "";
             e.Handled = true;
         }
-        // Handle Ctrl+H for history
+        // Handle Ctrl+H for history - only when terminal NOT focused
+        // (Ctrl+H is backspace in terminals)
         else if (e.Key == Key.H && Keyboard.Modifiers == ModifierKeys.Control)
         {
-            ShowHistoryDialog();
-            e.Handled = true;
+            if (!terminalHasFocus)
+            {
+                ShowHistoryDialog();
+                e.Handled = true;
+            }
+            return;
         }
-        // Handle Ctrl+, for settings
+        // Handle Ctrl+, for settings (not a terminal shortcut, always handle)
         else if (e.Key == Key.OemComma && Keyboard.Modifiers == ModifierKeys.Control)
         {
             ShowSettingsDialog();
             e.Handled = true;
         }
-        // Handle Ctrl+Shift+S for snippets
+        // Handle Ctrl+Shift+S for snippets (Shift modifier, always handle)
         else if (e.Key == Key.S && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
             ShowSnippetsDialog();
             e.Handled = true;
         }
-        // Handle Ctrl+K for SSH Key Manager
+        // Handle Ctrl+K for SSH Key Manager - only when terminal NOT focused
+        // (Ctrl+K is kill-line in bash, cut-line in nano)
         else if (e.Key == Key.K && Keyboard.Modifiers == ModifierKeys.Control)
         {
-            ShowKeyManagerDialog();
-            e.Handled = true;
+            if (!terminalHasFocus)
+            {
+                ShowKeyManagerDialog();
+                e.Handled = true;
+            }
+            return;
         }
-        // Handle Ctrl+Q for Quick Connect
+        // Handle Ctrl+Q for Quick Connect (not a common terminal shortcut, always handle)
         else if (e.Key == Key.Q && Keyboard.Modifiers == ModifierKeys.Control)
         {
             ShowQuickConnectDialog();
             e.Handled = true;
+        }
+        // Handle Ctrl+N for Add Host - only when terminal NOT focused
+        // (Ctrl+N is next-history in bash)
+        else if (e.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (!terminalHasFocus)
+            {
+                _viewModel.AddHostCommand.Execute(null);
+                e.Handled = true;
+            }
+            return;
+        }
+        // Handle Ctrl+E for Edit Host - only when terminal NOT focused
+        // (Ctrl+E is end-of-line in bash)
+        else if (e.Key == Key.E && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (!terminalHasFocus && _viewModel.SelectedHost != null)
+            {
+                _viewModel.EditHostCommand.Execute(_viewModel.SelectedHost);
+                e.Handled = true;
+            }
+            return;
+        }
+        // Handle Ctrl+B for SFTP Browser - only when terminal NOT focused
+        // (Ctrl+B is back-char in bash)
+        else if (e.Key == Key.B && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (!terminalHasFocus)
+            {
+                _viewModel.OpenSftpBrowserCommand.Execute(null);
+                e.Handled = true;
+            }
+            return;
+        }
+        // Handle Delete for Delete Host - only when terminal NOT focused
+        else if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            if (!terminalHasFocus && _viewModel.SelectedHost != null)
+            {
+                _viewModel.DeleteHostCommand.Execute(_viewModel.SelectedHost);
+                e.Handled = true;
+            }
+            return;
         }
         // Note: Ctrl+W is NOT used for closing sessions to allow it to work in terminal apps
         // like nano, vim, etc. Use Ctrl+F4 to close sessions instead.

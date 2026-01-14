@@ -1,16 +1,14 @@
 using System.Buffers;
-using System.IO;
-using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.Core.Models;
 using SshManager.Terminal.Models;
 using SshManager.Terminal.Services;
+using SshManager.Terminal.Utilities;
 
 namespace SshManager.Terminal.Controls;
 
@@ -19,12 +17,18 @@ namespace SshManager.Terminal.Controls;
 /// Uses xterm.js rendering for proper VT100/ANSI escape sequence support.
 /// This includes full support for alternate screen buffer (mode 1049) used by docker, vim, etc.
 /// </summary>
-public partial class SshTerminalControl : UserControl
+public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext
 {
     private TerminalSession? _session;
     private SshTerminalBridge? _bridge;
     private bool _ownsBridge; // True if this control created the bridge, false if sharing
     private ILogger<SshTerminalControl> _logger = NullLogger<SshTerminalControl>.Instance;
+
+    // Extracted services
+    private readonly ITerminalKeyboardHandler _keyboardHandler;
+    private readonly ITerminalClipboardService _clipboardService;
+    private ITerminalStatsCollector? _statsCollector;
+    private readonly ITerminalConnectionHandler _connectionHandler;
 
     // Services
     private IBroadcastInputService? _broadcastService;
@@ -37,10 +41,6 @@ public partial class SshTerminalControl : UserControl
     // Decoder for UTF-8 conversion
     private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
     private readonly object _decoderLock = new();
-
-    // Stats tracking
-    private readonly DispatcherTimer _statsTimer;
-    private DateTimeOffset _lastStatsTime = DateTimeOffset.UtcNow;
 
     // Settings
     private string _fontFamily = "Cascadia Mono";
@@ -55,47 +55,28 @@ public partial class SshTerminalControl : UserControl
     // Disconnect tracking to prevent duplicate events
     private bool _disconnectedRaised;
 
-    private static readonly string[] FontFallbacks =
-    [
-        "Cascadia Mono",
-        "Cascadia Code",
-        "Consolas",
-        "Source Code Pro",
-        "Source Code Pro Powerline",
-        "Fira Code",
-        "JetBrains Mono",
-        "Courier New",
-        "monospace"
-    ];
-
     public SshTerminalControl()
+        : this(null, null, null)
+    {
+    }
+
+    public SshTerminalControl(
+        ITerminalKeyboardHandler? keyboardHandler,
+        ITerminalClipboardService? clipboardService,
+        ITerminalConnectionHandler? connectionHandler)
     {
         InitializeComponent();
 
+        // Initialize services (use defaults if not injected)
+        _keyboardHandler = keyboardHandler ?? new TerminalKeyboardHandler();
+        _clipboardService = clipboardService ?? new TerminalClipboardService();
+        _connectionHandler = connectionHandler ?? new TerminalConnectionHandler();
+
         // Initialize output buffer for search with default values
-        // These will be updated via ScrollbackBufferSize and MaxLinesInMemory properties
         _outputBuffer = new TerminalOutputBuffer(maxLines: 10000, maxLinesInMemory: 5000);
 
         // Try to get logger from DI if available
-        try
-        {
-            var loggerFactory = Application.Current?.TryFindResource("ILoggerFactory") as ILoggerFactory;
-            if (loggerFactory != null)
-            {
-                _logger = loggerFactory.CreateLogger<SshTerminalControl>();
-            }
-        }
-        catch
-        {
-            // Logger not available, use null logger
-        }
-
-        // Set up stats update timer (1 second interval)
-        _statsTimer = new DispatcherTimer(DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromSeconds(1)
-        };
-        _statsTimer.Tick += StatsTimer_Tick;
+        TryInitializeLogger();
 
         // Wire up find overlay events
         FindOverlay.CloseRequested += FindOverlay_CloseRequested;
@@ -111,16 +92,35 @@ public partial class SshTerminalControl : UserControl
         Unloaded += OnUnloaded;
     }
 
+    private void TryInitializeLogger()
+    {
+        try
+        {
+            var loggerFactory = Application.Current?.TryFindResource("ILoggerFactory") as ILoggerFactory;
+            if (loggerFactory != null)
+            {
+                _logger = loggerFactory.CreateLogger<SshTerminalControl>();
+            }
+        }
+        catch
+        {
+            // Logger not available, use null logger
+        }
+    }
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         // Initialize search service with output buffer
         _searchService ??= new TerminalTextSearchService(_outputBuffer);
         FindOverlay.SetSearchService(_searchService);
 
-        // Restart stats timer if we have an active session
-        if (_session?.IsConnected == true && !_statsTimer.IsEnabled)
+        // Restart stats collector if we have an active session
+        if (_session?.IsConnected == true && _statsCollector != null && !_statsCollector.IsRunning)
         {
-            _statsTimer.Start();
+            if (_bridge != null)
+            {
+                _statsCollector.Start(_session, _bridge);
+            }
         }
 
         _logger.LogDebug("SshTerminalControl loaded");
@@ -129,7 +129,7 @@ public partial class SshTerminalControl : UserControl
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         // Pause stats updates while not visible (saves resources)
-        _statsTimer.Stop();
+        _statsCollector?.Stop();
         _logger.LogDebug("SshTerminalControl unloaded (pausing stats)");
     }
 
@@ -201,7 +201,6 @@ public partial class SshTerminalControl : UserControl
         if (string.IsNullOrEmpty(text)) return;
 
         // Capture to buffer for search functionality
-        // Buffer automatically trims old data when it exceeds MaxLines to prevent unbounded growth
         _outputBuffer.AppendOutput(text);
 
         // Write to WebTerminal - the bridge handles batching and UI thread dispatch
@@ -212,82 +211,33 @@ public partial class SshTerminalControl : UserControl
 
     private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        // Handle Delete key - send escape sequence directly to SSH
-        // WebView2 may intercept this key before it reaches xterm.js
-        if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None)
+        if (_keyboardHandler.HandleKeyDown(e, this))
         {
-            _bridge?.SendText("\x1b[3~");
             e.Handled = true;
-            return;
-        }
-
-        // Handle Insert key - send escape sequence directly to SSH
-        if (e.Key == Key.Insert && Keyboard.Modifiers == ModifierKeys.None)
-        {
-            _bridge?.SendText("\x1b[2~");
-            e.Handled = true;
-            return;
-        }
-
-        // Handle Ctrl+F for Find
-        if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
-        {
-            ShowFindOverlay();
-            e.Handled = true;
-            return;
-        }
-
-        // Handle Escape to close find overlay
-        if (e.Key == Key.Escape && FindOverlay.Visibility == Visibility.Visible)
-        {
-            HideFindOverlay();
-            e.Handled = true;
-            return;
-        }
-
-        // Handle Ctrl+Shift+C for Copy
-        if (e.Key == Key.C && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
-        {
-            CopyToClipboard();
-            e.Handled = true;
-            return;
-        }
-
-        // Handle Ctrl+Shift+V for Paste
-        if (e.Key == Key.V && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
-        {
-            PasteFromClipboard();
-            e.Handled = true;
-            return;
-        }
-
-        // Handle Ctrl++ (Ctrl+Plus or Ctrl+OemPlus) for zoom in
-        if (Keyboard.Modifiers == ModifierKeys.Control &&
-            (e.Key == Key.OemPlus || e.Key == Key.Add))
-        {
-            TerminalHost.ZoomIn();
-            e.Handled = true;
-            return;
-        }
-
-        // Handle Ctrl+- (Ctrl+Minus or Ctrl+OemMinus) for zoom out
-        if (Keyboard.Modifiers == ModifierKeys.Control &&
-            (e.Key == Key.OemMinus || e.Key == Key.Subtract))
-        {
-            TerminalHost.ZoomOut();
-            e.Handled = true;
-            return;
-        }
-
-        // Handle Ctrl+0 for reset zoom
-        if (Keyboard.Modifiers == ModifierKeys.Control &&
-            (e.Key == Key.D0 || e.Key == Key.NumPad0))
-        {
-            TerminalHost.ResetZoom();
-            e.Handled = true;
-            return;
         }
     }
+
+    #endregion
+
+    #region IKeyboardHandlerContext Implementation
+
+    void IKeyboardHandlerContext.SendText(string text) => _bridge?.SendText(text);
+
+    void IKeyboardHandlerContext.ShowFindOverlay() => ShowFindOverlay();
+
+    void IKeyboardHandlerContext.HideFindOverlay() => HideFindOverlay();
+
+    bool IKeyboardHandlerContext.IsFindOverlayVisible => FindOverlay.Visibility == Visibility.Visible;
+
+    void IKeyboardHandlerContext.CopyToClipboard() => CopyToClipboard();
+
+    void IKeyboardHandlerContext.PasteFromClipboard() => PasteFromClipboard();
+
+    void IKeyboardHandlerContext.ZoomIn() => TerminalHost.ZoomIn();
+
+    void IKeyboardHandlerContext.ZoomOut() => TerminalHost.ZoomOut();
+
+    void IKeyboardHandlerContext.ResetZoom() => TerminalHost.ResetZoom();
 
     #endregion
 
@@ -357,15 +307,7 @@ public partial class SshTerminalControl : UserControl
     /// </summary>
     public void CopyToClipboard()
     {
-        try
-        {
-            // WebTerminalControl handles selection internally via xterm.js
-            _logger.LogDebug("Copy to clipboard requested");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to copy to clipboard");
-        }
+        _clipboardService.CopyToClipboard();
     }
 
     /// <summary>
@@ -373,23 +315,7 @@ public partial class SshTerminalControl : UserControl
     /// </summary>
     public void PasteFromClipboard()
     {
-        try
-        {
-            if (Clipboard.ContainsText())
-            {
-                var text = Clipboard.GetText();
-                if (!string.IsNullOrEmpty(text))
-                {
-                    // Send pasted text to SSH
-                    _bridge?.SendText(text);
-                    _logger.LogDebug("Pasted {CharCount} characters from clipboard", text.Length);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to paste from clipboard");
-        }
+        _clipboardService.PasteFromClipboard(text => _bridge?.SendText(text));
     }
 
     #endregion
@@ -436,9 +362,9 @@ public partial class SshTerminalControl : UserControl
             // Initialize WebTerminalControl
             await TerminalHost.InitializeAsync();
 
-            // Establish SSH connection
-            _logger.LogInformation("Connecting to {Host}:{Port}", connectionInfo.Hostname, connectionInfo.Port);
-            var sshConnection = await sshService.ConnectAsync(
+            // Establish SSH connection via handler
+            var result = await _connectionHandler.ConnectAsync(
+                sshService,
                 connectionInfo,
                 hostKeyCallback,
                 kbInteractiveCallback,
@@ -449,14 +375,14 @@ public partial class SshTerminalControl : UserControl
             // Update session with connection
             if (_session != null)
             {
-                _session.Connection = sshConnection;
+                _session.Connection = result.Connection;
             }
 
-            // Create SSH bridge and store in session for sharing with mirror panes
-            _bridge = new SshTerminalBridge(sshConnection.ShellStream);
+            // Wire up bridge
+            _bridge = result.Bridge;
             _bridge.DataReceived += OnSshDataReceived;
             _bridge.Disconnected += OnBridgeDisconnected;
-            _ownsBridge = true; // This control owns the bridge
+            _ownsBridge = true;
 
             // Store bridge in session for mirrored panes to reuse
             if (_session != null)
@@ -468,12 +394,7 @@ public partial class SshTerminalControl : UserControl
             _bridge.StartReading();
 
             HideStatus();
-            _statsTimer.Start();
-            if (_session != null)
-            {
-                StatusBar.Stats = _session.Stats;
-                StatusBar.Visibility = Visibility.Visible;
-            }
+            StartStatsCollection();
 
             _logger.LogInformation("Connected to {Host}", connectionInfo.Hostname);
         }
@@ -513,11 +434,9 @@ public partial class SshTerminalControl : UserControl
             // Initialize WebTerminalControl
             await TerminalHost.InitializeAsync();
 
-            // Establish SSH connection through proxy chain
-            var targetHost = connectionChain[^1];
-            _logger.LogInformation("Connecting to {Host} through proxy chain", targetHost.Hostname);
-
-            var sshConnection = await sshService.ConnectWithProxyChainAsync(
+            // Establish SSH connection through proxy chain via handler
+            var result = await _connectionHandler.ConnectWithProxyChainAsync(
+                sshService,
                 connectionChain,
                 hostKeyCallback,
                 kbInteractiveCallback,
@@ -528,14 +447,14 @@ public partial class SshTerminalControl : UserControl
             // Update session with connection
             if (_session != null)
             {
-                _session.Connection = sshConnection;
+                _session.Connection = result.Connection;
             }
 
-            // Create SSH bridge and store in session for sharing with mirror panes
-            _bridge = new SshTerminalBridge(sshConnection.ShellStream);
+            // Wire up bridge
+            _bridge = result.Bridge;
             _bridge.DataReceived += OnSshDataReceived;
             _bridge.Disconnected += OnBridgeDisconnected;
-            _ownsBridge = true; // This control owns the bridge
+            _ownsBridge = true;
 
             // Store bridge in session for mirrored panes to reuse
             if (_session != null)
@@ -547,12 +466,7 @@ public partial class SshTerminalControl : UserControl
             _bridge.StartReading();
 
             HideStatus();
-            _statsTimer.Start();
-            if (_session != null)
-            {
-                StatusBar.Stats = _session.Stats;
-                StatusBar.Visibility = Visibility.Visible;
-            }
+            StartStatsCollection();
 
             var hosts = string.Join(" → ", connectionChain.Select(c => c.Hostname));
             _logger.LogInformation("Connected through proxy chain: {Chain}", hosts);
@@ -579,47 +493,36 @@ public partial class SshTerminalControl : UserControl
             // Initialize WebTerminalControl first
             await TerminalHost.InitializeAsync();
 
-            // Reuse existing bridge from session if available (for mirroring)
-            // This prevents multiple readers from competing on the same ShellStream
-            if (_session.Bridge != null)
+            // Use handler to attach to session
+            var attachResult = _connectionHandler.AttachToSession(_session);
+
+            if (attachResult.Bridge != null)
             {
-                _bridge = _session.Bridge;
+                _bridge = attachResult.Bridge;
                 _bridge.DataReceived += OnSshDataReceived;
-                _ownsBridge = false; // This control is sharing the bridge
-                // Don't call StartReading - the bridge is already reading
-                _logger.LogDebug("Attached to existing bridge for mirrored session: {Title}", session.Title);
-            }
-            else if (_session.Connection?.ShellStream != null)
-            {
-                // Fallback: create new bridge if session doesn't have one
-                _bridge = new SshTerminalBridge(_session.Connection.ShellStream);
-                _bridge.DataReceived += OnSshDataReceived;
-                _bridge.Disconnected += OnBridgeDisconnected;
-                _session.Bridge = _bridge;
-                _ownsBridge = true; // This control owns the bridge
-                _bridge.StartReading();
-                _logger.LogDebug("Created new bridge for session: {Title}", session.Title);
+                _ownsBridge = attachResult.OwnsBridge;
+
+                if (attachResult.OwnsBridge)
+                {
+                    _bridge.Disconnected += OnBridgeDisconnected;
+                }
+
+                if (attachResult.NeedsStartReading)
+                {
+                    _bridge.StartReading();
+                }
+
+                _logger.LogDebug("Attached to session: {Title}", session.Title);
             }
 
             HideStatus();
-            _statsTimer.Start();
-            StatusBar.Stats = _session.Stats;
-            StatusBar.Visibility = Visibility.Visible;
+            StartStatsCollection();
         }
         else
         {
-            _statsTimer.Stop();
+            StopStatsCollection();
             ShowStatus("Disconnected");
         }
-    }
-
-    /// <summary>
-    /// Attaches to an existing session that is already connected (synchronous wrapper).
-    /// </summary>
-    [Obsolete("Use AttachToSessionAsync instead for proper WebView2 initialization")]
-    public void AttachToSession(TerminalSession session)
-    {
-        _ = AttachToSessionAsync(session);
     }
 
     /// <summary>
@@ -627,19 +530,14 @@ public partial class SshTerminalControl : UserControl
     /// </summary>
     public void Disconnect()
     {
-        _statsTimer.Stop();
+        StopStatsCollection();
 
         if (_bridge != null)
         {
             _bridge.DataReceived -= OnSshDataReceived;
             _bridge.Disconnected -= OnBridgeDisconnected;
 
-            // Only dispose the bridge if this control owns it
-            // Shared bridges are disposed when the session closes
-            if (_ownsBridge)
-            {
-                _bridge.Dispose();
-            }
+            _connectionHandler.Disconnect(_bridge, _ownsBridge);
             _bridge = null;
         }
 
@@ -650,7 +548,6 @@ public partial class SshTerminalControl : UserControl
         }
 
         // Clear the output buffer to free memory and cleanup temp files
-        // Note: We clear rather than dispose since the control may be reused
         _outputBuffer.Clear();
 
         ShowStatus("Disconnected");
@@ -660,7 +557,7 @@ public partial class SshTerminalControl : UserControl
     {
         Dispatcher.Invoke(() =>
         {
-            _statsTimer.Stop();
+            StopStatsCollection();
             ShowStatus("Disconnected");
         });
     }
@@ -669,7 +566,7 @@ public partial class SshTerminalControl : UserControl
     {
         Dispatcher.Invoke(() =>
         {
-            _statsTimer.Stop();
+            StopStatsCollection();
             ShowStatus("Disconnected");
             _logger.LogInformation("SSH connection disconnected for session: {Title}", _session?.Title);
 
@@ -684,60 +581,34 @@ public partial class SshTerminalControl : UserControl
 
     #endregion
 
-    #region Stats Timer
+    #region Stats Collection
 
-    private async void StatsTimer_Tick(object? sender, EventArgs e)
+    private void StartStatsCollection()
     {
-        try
+        if (_session == null || _bridge == null) return;
+
+        // Create stats collector if needed
+        _statsCollector ??= new TerminalStatsCollector(_serverStatsService);
+        _statsCollector.StatsUpdated += OnStatsUpdated;
+        _statsCollector.Start(_session, _bridge);
+
+        StatusBar.Stats = _session.Stats;
+        StatusBar.Visibility = Visibility.Visible;
+    }
+
+    private void StopStatsCollection()
+    {
+        if (_statsCollector != null)
         {
-            if (_session == null || _bridge == null) return;
-
-            var now = DateTimeOffset.UtcNow;
-
-            // Update uptime
-            _session.Stats.Uptime = now - _session.CreatedAt;
-
-            // Update throughput from bridge
-            _session.Stats.BytesSent = _bridge.TotalBytesSent;
-            _session.Stats.BytesReceived = _bridge.TotalBytesReceived;
-
-            // Calculate throughput per second
-            var elapsed = (now - _lastStatsTime).TotalSeconds;
-            if (elapsed > 0)
-            {
-                _session.Stats.BytesSentPerSecond = (_bridge.TotalBytesSent - _session.TotalBytesSent) / elapsed;
-                _session.Stats.BytesReceivedPerSecond = (_bridge.TotalBytesReceived - _session.TotalBytesReceived) / elapsed;
-            }
-
-            _session.TotalBytesSent = _bridge.TotalBytesSent;
-            _session.TotalBytesReceived = _bridge.TotalBytesReceived;
-            _lastStatsTime = now;
-
-            // Collect server stats via SSH (only every ~10 seconds)
-            if (_session.Connection?.IsConnected == true && _serverStatsService != null && now.Second % 10 == 0)
-            {
-                try
-                {
-                    var stats = await _serverStatsService.GetStatsAsync(_session.Connection);
-                    _session.Stats.CpuUsage = stats.CpuUsage;
-                    _session.Stats.MemoryUsage = stats.MemoryUsage;
-                    _session.Stats.DiskUsage = stats.DiskUsage;
-                    _session.Stats.ServerUptime = stats.ServerUptime;
-                }
-                catch
-                {
-                    // Ignore stats collection failures
-                }
-            }
-
-            StatusBar.Stats = _session.Stats;
-            StatusBar.UpdateDisplay();
+            _statsCollector.StatsUpdated -= OnStatsUpdated;
+            _statsCollector.Stop();
         }
-        catch (Exception ex)
-        {
-            // Catch all exceptions in async void event handler to prevent application crashes
-            _logger.LogError(ex, "Error updating terminal stats");
-        }
+    }
+
+    private void OnStatsUpdated(object? sender, TerminalStats stats)
+    {
+        StatusBar.Stats = stats;
+        StatusBar.UpdateDisplay();
     }
 
     #endregion
@@ -901,50 +772,8 @@ public partial class SshTerminalControl : UserControl
             : _fontFamily;
         var fontSize = _fontSize > 0 ? _fontSize : 14;
 
-        var fontStack = BuildFontStack(fontFamily);
+        var fontStack = FontStackBuilder.Build(fontFamily);
         TerminalHost.SetFont(fontStack, fontSize);
-    }
-
-    private static string BuildFontStack(string preferredFont)
-    {
-        var fonts = new List<string>(FontFallbacks.Length + 1)
-        {
-            QuoteIfNeeded(preferredFont)
-        };
-
-        foreach (var fallback in FontFallbacks)
-        {
-            if (fonts.Any(font => font.Equals(fallback, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            fonts.Add(QuoteIfNeeded(fallback));
-        }
-
-        return string.Join(", ", fonts);
-    }
-
-    private static string QuoteIfNeeded(string font)
-    {
-        var trimmed = font.Trim();
-        if (trimmed.Length == 0)
-        {
-            return trimmed;
-        }
-
-        if ((trimmed.StartsWith('"') && trimmed.EndsWith('"')) ||
-            (trimmed.StartsWith('\'') && trimmed.EndsWith('\'')))
-        {
-            return trimmed;
-        }
-
-        if (trimmed.Any(char.IsWhiteSpace) || trimmed.Contains(','))
-        {
-            return $"\"{trimmed.Replace("\"", "\\\"")}\"";
-        }
-
-        return trimmed;
     }
 
     /// <summary>

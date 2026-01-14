@@ -35,7 +35,7 @@ public sealed class DpapiSecretProtector : ISecretProtector
                 Entropy,
                 DataProtectionScope.CurrentUser);
 
-            _logger.LogDebug("Successfully protected {Length} bytes of data", plaintextBytes.Length);
+            _logger.LogDebug("Successfully protected secret data");
             return Convert.ToBase64String(protectedBytes);
         }
         catch (CryptographicException ex)
@@ -58,7 +58,7 @@ public sealed class DpapiSecretProtector : ISecretProtector
                 Entropy,
                 DataProtectionScope.CurrentUser);
 
-            _logger.LogDebug("Successfully unprotected {Length} bytes of data", plaintextBytes.Length);
+            _logger.LogDebug("Successfully unprotected secret data");
             return Encoding.UTF8.GetString(plaintextBytes);
         }
         catch (CryptographicException ex)
