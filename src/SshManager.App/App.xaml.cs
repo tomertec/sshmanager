@@ -12,6 +12,7 @@ using SshManager.Data.Repositories;
 using SshManager.Security;
 using SshManager.Terminal;
 using SshManager.Terminal.Services;
+using Velopack;
 
 namespace SshManager.App;
 
@@ -27,6 +28,21 @@ public partial class App : Application
         // Set up global exception handlers before anything else
         Bootstrapper.SetupGlobalExceptionHandlers(this);
 
+        // VELOPACK: Initialize Velopack before any other initialization
+        // This handles first install hooks, updates, and uninstall cleanup
+        try
+        {
+            VelopackApp.Build()
+                .WithFirstRun(v => OnFirstRun(v.ToString()))
+                .WithRestarted(v => OnAppRestarted(v.ToString()))
+                .Run();
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail app startup if Velopack fails (e.g., dev environment)
+            Log.Warning(ex, "Velopack initialization failed - this is normal in development");
+        }
+
         _host = Host.CreateDefaultBuilder()
             .UseSerilog()
             .ConfigureServices((context, services) =>
@@ -36,6 +52,34 @@ public partial class App : Application
             .Build();
 
         Log.Information("SshManager application initialized");
+    }
+
+    /// <summary>
+    /// Called on the first run after installation.
+    /// Use this for any one-time setup tasks.
+    /// </summary>
+    private static void OnFirstRun(string version)
+    {
+        Log.Information("First run after installation: v{Version}", version);
+
+        // TODO: Add any first-run setup here, such as:
+        // - Show welcome dialog
+        // - Create desktop shortcut
+        // - Register file associations
+        // - Import settings from previous version
+    }
+
+    /// <summary>
+    /// Called after the app has been restarted following an update.
+    /// </summary>
+    private static void OnAppRestarted(string version)
+    {
+        Log.Information("Application restarted after update to v{Version}", version);
+
+        // TODO: Add any post-update tasks here, such as:
+        // - Show "What's New" dialog
+        // - Run database migrations
+        // - Clean up old files
     }
 
     protected override async void OnStartup(StartupEventArgs e)

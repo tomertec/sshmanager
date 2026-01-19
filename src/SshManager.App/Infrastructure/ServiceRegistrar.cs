@@ -94,6 +94,7 @@ public static class ServiceRegistrar
         services.AddSingleton<IBackupService, BackupService>();
         services.AddSingleton<IPaneLayoutManager, PaneLayoutManager>();
         services.AddSingleton<ISessionConnectionService, SessionConnectionService>();
+        services.AddSingleton<IUpdateService, VelopackUpdateService>();
 
         // Cloud sync services
         services.AddSingleton<IOneDrivePathDetector, OneDrivePathDetector>();
@@ -127,6 +128,7 @@ public static class ServiceRegistrar
         services.AddTransient<PortForwardingProfileDialogViewModel>();
         services.AddSingleton<RecordingBrowserViewModel>();
         services.AddTransient<RecordingPlaybackViewModel>();
+        services.AddSingleton<UpdateViewModel>();
 
         // Windows
         services.AddSingleton<MainWindow>();
