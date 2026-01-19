@@ -116,6 +116,26 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+## Building and Releasing
+
+SshManager uses **Velopack** for installer creation and automatic updates.
+
+### Quick Build
+```bash
+# Install Velopack CLI
+dotnet tool install -g vpk
+
+# Build a release
+.\build-release.ps1 -Version "1.0.0"
+```
+
+### Publishing Updates
+See [VELOPACK_INTEGRATION.md](VELOPACK_INTEGRATION.md) for complete instructions on:
+- Building installers
+- Publishing releases to GitHub
+- Creating delta updates
+- Adding update UI to the app
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
