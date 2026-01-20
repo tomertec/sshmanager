@@ -21,6 +21,7 @@
         <converters:InverseBoolToPrimaryAppearanceConverter x:Key="InverseBoolToPrimaryAppearanceConverter" />
         <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter" />
         <converters:EnumToDescriptionConverter x:Key="EnumToDescriptionConverter" />
+        <converters:StringToBrushConverter x:Key="StringToBrushConverter" />
 
         <!-- Style for navigation items -->
         <Style x:Key="SettingsNavItemStyle" TargetType="ListBoxItem">
@@ -253,7 +254,7 @@
                                 <!-- Theme Preview -->
                                 <TextBlock Text="Preview" Margin="0,0,0,4" FontWeight="SemiBold" />
                                 <Border x:Name="ThemePreviewBorder"
-                                        Background="{Binding SelectedTerminalTheme.Background, FallbackValue=#1e1e1e, TargetNullValue=#1e1e1e}"
+                                        Background="{Binding SelectedTerminalTheme.Background, Converter={StaticResource StringToBrushConverter}, FallbackValue=#1e1e1e, TargetNullValue=#1e1e1e}"
                                         CornerRadius="6"
                                         Padding="12"
                                         Margin="0,0,0,12"
@@ -262,24 +263,24 @@
                                         <TextBlock Text="user@server:~$ ls -la"
                                                    FontFamily="Cascadia Mono"
                                                    FontSize="12"
-                                                   Foreground="{Binding SelectedTerminalTheme.Foreground, FallbackValue=#CCCCCC, TargetNullValue=#CCCCCC}" />
+                                                   Foreground="{Binding SelectedTerminalTheme.Foreground, Converter={StaticResource StringToBrushConverter}, FallbackValue=#CCCCCC, TargetNullValue=#CCCCCC}" />
                                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                                             <TextBlock Text="drwxr-xr-x  " FontFamily="Cascadia Mono" FontSize="12"
-                                                       Foreground="{Binding SelectedTerminalTheme.Blue, FallbackValue=#0037DA, TargetNullValue=#0037DA}" />
+                                                       Foreground="{Binding SelectedTerminalTheme.Blue, Converter={StaticResource StringToBrushConverter}, FallbackValue=#0037DA, TargetNullValue=#0037DA}" />
                                             <TextBlock Text="documents" FontFamily="Cascadia Mono" FontSize="12"
-                                                       Foreground="{Binding SelectedTerminalTheme.Blue, FallbackValue=#0037DA, TargetNullValue=#0037DA}" />
+                                                       Foreground="{Binding SelectedTerminalTheme.Blue, Converter={StaticResource StringToBrushConverter}, FallbackValue=#0037DA, TargetNullValue=#0037DA}" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                             <TextBlock Text="-rw-r--r--  " FontFamily="Cascadia Mono" FontSize="12"
-                                                       Foreground="{Binding SelectedTerminalTheme.Foreground, FallbackValue=#CCCCCC, TargetNullValue=#CCCCCC}" />
+                                                       Foreground="{Binding SelectedTerminalTheme.Foreground, Converter={StaticResource StringToBrushConverter}, FallbackValue=#CCCCCC, TargetNullValue=#CCCCCC}" />
                                             <TextBlock Text="config.yaml" FontFamily="Cascadia Mono" FontSize="12"
-                                                       Foreground="{Binding SelectedTerminalTheme.Green, FallbackValue=#13A10E, TargetNullValue=#13A10E}" />
+                                                       Foreground="{Binding SelectedTerminalTheme.Green, Converter={StaticResource StringToBrushConverter}, FallbackValue=#13A10E, TargetNullValue=#13A10E}" />
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                             <TextBlock Text="-rwxr-xr-x  " FontFamily="Cascadia Mono" FontSize="12"
-                                                       Foreground="{Binding SelectedTerminalTheme.Foreground, FallbackValue=#CCCCCC, TargetNullValue=#CCCCCC}" />
+                                                       Foreground="{Binding SelectedTerminalTheme.Foreground, Converter={StaticResource StringToBrushConverter}, FallbackValue=#CCCCCC, TargetNullValue=#CCCCCC}" />
                                             <TextBlock Text="script.sh" FontFamily="Cascadia Mono" FontSize="12"
-                                                       Foreground="{Binding SelectedTerminalTheme.Red, FallbackValue=#C50F1F, TargetNullValue=#C50F1F}" />
+                                                       Foreground="{Binding SelectedTerminalTheme.Red, Converter={StaticResource StringToBrushConverter}, FallbackValue=#C50F1F, TargetNullValue=#C50F1F}" />
                                         </StackPanel>
                                     </StackPanel>
                                 </Border>
