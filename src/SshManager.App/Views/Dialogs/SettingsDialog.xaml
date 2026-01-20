@@ -86,12 +86,12 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal">
-                                <ui:SymbolIcon Symbol="Terminal24" Margin="0,0,12,0" FontSize="16">
+                                <ui:SymbolIcon Symbol="WindowConsole20" Margin="0,0,12,0" FontSize="16">
                                     <ui:SymbolIcon.Style>
                                         <Style TargetType="ui:SymbolIcon">
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding}" Value="Terminal">
-                                                    <Setter Property="Symbol" Value="Terminal24" />
+                                                    <Setter Property="Symbol" Value="WindowConsole20" />
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding}" Value="Connection">
                                                     <Setter Property="Symbol" Value="PlugConnected24" />
