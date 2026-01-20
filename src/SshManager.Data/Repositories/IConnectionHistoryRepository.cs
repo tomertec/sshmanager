@@ -14,4 +14,15 @@ public interface IConnectionHistoryRepository
     Task UpdateAsync(ConnectionHistory entry, CancellationToken ct = default);
     Task ClearAllAsync(CancellationToken ct = default);
     Task ClearOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct = default);
+    Task<int> CountOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct = default);
+    
+    /// <summary>
+    /// Gets connection statistics for a specific host.
+    /// </summary>
+    Task<HostConnectionStats> GetHostStatsAsync(Guid hostId, CancellationToken ct = default);
+    
+    /// <summary>
+    /// Gets connection statistics for all hosts.
+    /// </summary>
+    Task<Dictionary<Guid, HostConnectionStats>> GetAllHostStatsAsync(CancellationToken ct = default);
 }

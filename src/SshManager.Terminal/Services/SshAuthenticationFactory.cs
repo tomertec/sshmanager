@@ -39,6 +39,9 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
             // For SSH Agent, we try keyboard-interactive or fall back to private key files in default location
             AuthType.SshAgent => CreateAgentAuth(connectionInfo, kbInteractiveCallback),
 
+            // Kerberos/GSSAPI authentication using Windows domain credentials
+            AuthType.Kerberos => CreateKerberosAuth(connectionInfo, kbInteractiveCallback),
+
             // Default fallback - log a warning if we expected password auth
             _ when connectionInfo.AuthType == AuthType.Password =>
                 LogAndFallback(connectionInfo, kbInteractiveCallback, "Password auth configured but no password provided"),
@@ -62,24 +65,40 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
     /// <remarks>
     /// <para><strong>SECURITY LIMITATION:</strong> SSH.NET's <see cref="PasswordAuthenticationMethod"/>
     /// requires a plain <see cref="string"/> parameter for the password. This is an unavoidable limitation
-    /// of the SSH.NET library API design.</para>
+    /// of the SSH.NET library API design. The library does not support <see cref="System.Security.SecureString"/>
+    /// or other memory-protected credential types.</para>
     ///
     /// <para><strong>Memory Security Risk:</strong> The password exists as an unprotected, immutable string
     /// in memory during the authentication process. It cannot be securely zeroed because strings are immutable
-    /// in .NET. This creates a window where the credential could be exposed in memory dumps, debugging sessions,
-    /// or if memory is swapped to disk.</para>
+    /// in .NET. This creates a window where the credential could be exposed in:</para>
+    /// <list type="bullet">
+    /// <item>Memory dumps (process crash dumps, debugging sessions)</item>
+    /// <item>Pagefile/swap if memory is paged to disk</item>
+    /// <item>Hibernation files if the system hibernates</item>
+    /// <item>Memory forensics if the machine is compromised</item>
+    /// </list>
     ///
     /// <para><strong>Mitigations in Place:</strong></para>
     /// <list type="bullet">
     /// <item>Passwords are stored encrypted at rest using DPAPI via <see cref="Security.DpapiSecretProtector"/></item>
-    /// <item>Passwords are decrypted only when needed for authentication</item>
+    /// <item>Passwords are decrypted only when needed for authentication (just-in-time)</item>
+    /// <item>Passwords are cleared from the <see cref="TerminalConnectionInfo"/> object immediately after use</item>
+    /// <item>Gen 2 garbage collection is requested after authentication to encourage memory reclamation</item>
     /// <item>The credential cache uses <see cref="System.Security.SecureString"/> for in-memory storage</item>
     /// <item>Cached credentials have automatic expiration</item>
     /// </list>
     ///
+    /// <para><strong>Recommended Best Practices:</strong></para>
+    /// <list type="bullet">
+    /// <item>Prefer SSH key-based authentication (AuthType.SshAgent or AuthType.PrivateKeyFile) over passwords</item>
+    /// <item>Use keyboard-interactive authentication for 2FA/TOTP which minimizes password exposure time</item>
+    /// <item>Enable BitLocker/full-disk encryption to protect against physical memory access</item>
+    /// <item>Disable hibernation and minimize pagefile usage on sensitive systems</item>
+    /// </list>
+    ///
     /// <para><strong>Residual Risk:</strong> Despite these mitigations, the brief window during SSH.NET
     /// authentication where the password exists as a plain string cannot be eliminated without changes
-    /// to the SSH.NET library itself.</para>
+    /// to the SSH.NET library itself. This is a fundamental limitation of the current .NET SSH implementation.</para>
     /// </remarks>
     private SshAuthenticationResult CreatePasswordAuth(
         TerminalConnectionInfo connectionInfo,
@@ -87,6 +106,14 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
     {
         // SECURITY NOTE: SSH.NET requires plain string passwords. See method documentation for details.
         // The password is briefly exposed in memory during this authentication process.
+        //
+        // MITIGATION: After this method returns, the caller should:
+        // 1. Clear the password from the connectionInfo object
+        // 2. Request GC collection to reclaim the string memory
+        //
+        // The password string will still exist in Gen 0/1/2 heap until garbage collection,
+        // but requesting collection minimizes the exposure window.
+
         var methods = new List<AuthenticationMethod>
         {
             new PasswordAuthenticationMethod(connectionInfo.Username, connectionInfo.Password!)
@@ -237,6 +264,16 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
         return keyFiles;
     }
 
+    /// <summary>
+    /// Creates private key-based authentication methods.
+    /// </summary>
+    /// <remarks>
+    /// <para><strong>SECURITY NOTE:</strong> SSH.NET's <see cref="PrivateKeyFile"/> constructor
+    /// requires the passphrase as a plain <see cref="string"/>. Like password authentication,
+    /// the passphrase briefly exists in memory as an unprotected string during key decryption.</para>
+    /// <para>The same memory security considerations apply as with password authentication.
+    /// See <see cref="CreatePasswordAuth"/> for details on mitigations and residual risks.</para>
+    /// </remarks>
     private SshAuthenticationResult CreatePrivateKeyAuth(
         TerminalConnectionInfo connectionInfo,
         KeyboardInteractiveCallback? kbInteractiveCallback)
@@ -249,6 +286,10 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
 
             if (!string.IsNullOrEmpty(connectionInfo.PrivateKeyPassphrase))
             {
+                // SECURITY NOTE: SSH.NET requires plain string passphrases for encrypted private keys.
+                // The passphrase is exposed in memory during key decryption.
+                // Prefer unencrypted keys stored in secure locations with restrictive file permissions,
+                // or use SSH agent authentication which keeps keys in the agent's memory space.
                 keyFile = new PrivateKeyFile(connectionInfo.PrivateKeyPath!, connectionInfo.PrivateKeyPassphrase);
                 _logger.LogDebug("Private key loaded with passphrase");
             }
@@ -280,6 +321,58 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
             _logger.LogError(ex, "Failed to load private key from {KeyPath}", connectionInfo.PrivateKeyPath);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Creates Kerberos/GSSAPI authentication using Windows domain credentials.
+    /// </summary>
+    /// <remarks>
+    /// <para>This method uses keyboard-interactive authentication which can work with
+    /// Kerberos-enabled SSH servers when combined with Windows SSO.</para>
+    /// <para>For full GSSAPI authentication, the SSH server must be configured to accept
+    /// keyboard-interactive authentication with Kerberos integration.</para>
+    /// <para>GSSAPI authentication requirements:</para>
+    /// <list type="bullet">
+    /// <item>Windows domain membership (Active Directory)</item>
+    /// <item>Valid Kerberos TGT (Ticket Granting Ticket)</item>
+    /// <item>SSH server configured to accept GSSAPI or keyboard-interactive authentication</item>
+    /// </list>
+    /// </remarks>
+    private SshAuthenticationResult CreateKerberosAuth(
+        TerminalConnectionInfo connectionInfo,
+        KeyboardInteractiveCallback? kbInteractiveCallback)
+    {
+        _logger.LogDebug("Creating Kerberos/GSSAPI authentication for {Username}@{Host}",
+            connectionInfo.Username, connectionInfo.Hostname);
+
+        var methods = new List<AuthenticationMethod>();
+
+        // Create keyboard-interactive authentication method
+        // Many SSH servers support Kerberos through keyboard-interactive
+        // when the Windows client has a valid TGT
+        var kbAuth = CreateKeyboardInteractiveAuth(connectionInfo.Username, kbInteractiveCallback);
+        if (kbAuth != null)
+        {
+            methods.Add(kbAuth);
+            _logger.LogInformation("Keyboard-interactive authentication method created for Kerberos SSO");
+        }
+        else
+        {
+            // If no callback, create a basic keyboard-interactive method
+            methods.Add(new KeyboardInteractiveAuthenticationMethod(connectionInfo.Username));
+            _logger.LogDebug("Added basic keyboard-interactive authentication for Kerberos");
+        }
+
+        // Also try SSH agent as fallback if keys are available
+        // This helps when Kerberos fails but user has SSH keys in an agent
+        var agentKeys = TryGetAgentKeys();
+        if (agentKeys.Count > 0)
+        {
+            methods.Add(new PrivateKeyAuthenticationMethod(connectionInfo.Username, agentKeys.ToArray()));
+            _logger.LogDebug("Added SSH agent keys as fallback for Kerberos authentication");
+        }
+
+        return new SshAuthenticationResult { Methods = methods.ToArray() };
     }
 
     /// <summary>

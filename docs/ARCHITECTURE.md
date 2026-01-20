@@ -230,14 +230,31 @@ sshmanager/
 **When to add a file:** When you need new security or key management functionality.
 
 #### SshManager.Terminal
-**Purpose:** SSH connections, terminal rendering, and SSH agent interaction.
+**Purpose:** SSH connections, serial connections, terminal rendering, and SSH agent interaction.
 
 **What goes here:**
 - SSH connection services (using SSH.NET)
+- Serial connection services (System.IO.Ports + RJCP)
 - Terminal WPF controls
-- Terminal bridges (SSH <-> UI)
+- Terminal bridges (SSH <-> UI, Serial <-> UI)
 - SSH agent services (diagnostics, key management)
 - SFTP and port forwarding services
+- Session recording and playback
+- Auto-reconnection and connection pooling
+- Kerberos/GSSAPI authentication
+- X11 forwarding
+- Terminal autocompletion
+- Tunnel builder logic
+
+**Service Organization (nested folders):**
+- `Connection/` - SSH connection abstractions and proxy chain building
+- `Display/` - Terminal theme and display management
+- `Lifecycle/` - Session lifecycle hooks and management
+- `Processing/` - Terminal output processing
+- `Recording/` - ASCIINEMA v2 session recording
+- `Playback/` - Session playback with speed control
+- `Search/` - Terminal text search services
+- `Stats/` - Terminal and server statistics collection
 
 **What doesn't go here:**
 - UI dialogs and windows (put in App)
@@ -245,7 +262,7 @@ sshmanager/
 - Non-terminal UI controls
 - Key format conversion (put in Security)
 
-**When to add a file:** When you need new SSH, terminal, or agent functionality.
+**When to add a file:** When you need new SSH, serial, terminal, or agent functionality.
 
 #### SshManager.App
 **Purpose:** WPF application with UI and orchestration.
@@ -282,16 +299,22 @@ SshConnectionService.ConnectAsync()
         │
         ├── Password Auth: ISecretProtector.Unprotect()
         ├── PrivateKey Auth: Load key file
-        └── SshAgent Auth: Use OpenSSH agent
+        ├── SshAgent Auth: Use Pageant/OpenSSH agent
+        └── Kerberos Auth: IKerberosAuthService.CreateAuth()
         │
         ▼
 SSH.NET SshClient.Connect()
+        │
+        ├── Host key verification callback
+        └── Keyboard-interactive callback (2FA)
         │
         ▼
 SshClient.CreateShellStream()
         │
         ▼
 SshTerminalBridge ←→ WebTerminalBridge ←→ xterm.js
+        │
+        └── (Optional) SessionRecorder captures output
 ```
 
 **Step-by-step:**
@@ -524,12 +547,15 @@ Core has no dependencies on other projects.
 |---------|---------|---------|---------|
 | Microsoft.EntityFrameworkCore.Sqlite | 9.0.0 | Data | Database access |
 | SSH.NET | 2024.2.0 | Terminal | SSH connections |
+| System.IO.Ports | Latest | Terminal | Serial port support (primary driver) |
+| RJCP.SerialPortStream | Latest | Terminal | Serial port support (fallback driver) |
 | Microsoft.Web.WebView2 | 1.0.2739.15 | Terminal | Terminal rendering |
 | WPF-UI | 4.1.0 | App | UI controls |
 | CommunityToolkit.Mvvm | 8.4.0 | App | MVVM framework |
 | Serilog | Various | App | Logging |
 | H.NotifyIcon.Wpf | 2.1.3 | App | System tray |
 | AvalonEdit | 6.3.0 | App | Text editor |
+| FuzzySharp | 2.0.2 | App | Fuzzy search for quick connect |
 
 ## Extension Points
 
@@ -566,6 +592,27 @@ Core has no dependencies on other projects.
 2. **For batch operations**: Use `ConvertBatchToOpenSshAsync` pattern
 3. **For agent integration**: Use `IAgentKeyService.AddKeyToAgentAsync()`
 4. **For UI wizard**: Follow `PpkImportWizardViewModel` multi-step pattern
+
+### Adding Auto-Reconnect Behavior
+
+1. **Configure retry policy** in `ConnectionRetryPolicy.cs`
+2. **Implement handler** in `IAutoReconnectManager`
+3. **Hook into session lifecycle** via `ITerminalSessionLifecycle`
+4. **Add per-host settings** in `HostEntry` model
+
+### Adding Tunnel Builder Node Types
+
+1. **Add node type** to `TunnelNodeType` enum in Core
+2. **Update `TunnelBuilderService`** to handle new node type
+3. **Add UI representation** in `TunnelCanvas.xaml.cs`
+4. **Update `TunnelNodeViewModel`** for new properties
+
+### Adding Terminal Autocompletion Sources
+
+1. **Implement completion provider** in `IAutocompletionService`
+2. **Add completion item type** to `CompletionItemType` enum
+3. **Update `TerminalAutocompletionHandler`** to use new source
+4. **Configure in `AppSettings`** for user preferences
 
 ## Security Architecture
 

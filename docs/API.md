@@ -11,11 +11,25 @@ This document provides detailed API documentation for developers who want to ext
   - [ISshConnectionService](#isshconnectionservice)
   - [ISshConnection](#isshconnection)
   - [TerminalConnectionInfo](#terminalconnectioninfo)
+- [Serial Connection Services](#serial-connection-services)
+  - [ISerialConnectionService](#iserialconnectionservice)
+  - [ISerialConnection](#iserialconnection)
+  - [SerialConnectionInfo](#serialconnectioninfo)
 - [Bridge Services](#bridge-services)
   - [SshTerminalBridge](#sshterminalbridge)
+  - [SerialTerminalBridge](#serialterminalbridge)
   - [WebTerminalBridge](#webterminalbridge)
 - [Terminal Control](#terminal-control)
   - [SshTerminalControl](#sshterminalcontrol)
+- [SSH Agent Services](#ssh-agent-services)
+  - [IAgentKeyService](#iagentkeyservice)
+  - [IAgentDiagnosticsService](#iagentdiagnosticsservice)
+- [Auto-Reconnect Services](#auto-reconnect-services)
+  - [IAutoReconnectManager](#iautoreconnectmanager)
+- [Autocompletion Services](#autocompletion-services)
+  - [IAutocompletionService](#iautocompletionservice)
+- [Tunnel Builder Services](#tunnel-builder-services)
+  - [ITunnelBuilderService](#itunnelbuilderservice)
 - [Recording Services](#recording-services)
   - [ISessionRecordingService](#isessionrecordingservice)
   - [SessionRecorder](#sessionrecorder)
@@ -291,6 +305,385 @@ static TerminalConnectionInfo FromHostEntry(
 ```
 
 Creates connection info from a stored `HostEntry` model.
+
+---
+
+## Serial Connection Services
+
+### ISerialConnectionService
+
+**Namespace:** `SshManager.Terminal.Services`
+
+Service for establishing serial port (COM) connections. Uses a dual-driver architecture with System.IO.Ports as primary and RJCP.SerialPortStream as fallback.
+
+#### Methods
+
+##### ConnectAsync
+
+```csharp
+Task<ISerialConnection> ConnectAsync(
+    SerialConnectionInfo connectionInfo,
+    CancellationToken ct = default);
+```
+
+Establishes a serial port connection.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `connectionInfo` | `SerialConnectionInfo` | Serial port configuration |
+| `ct` | `CancellationToken` | Cancellation token |
+
+**Returns:** `ISerialConnection` - An active serial connection
+
+**Throws:**
+- `ArgumentNullException` - If connectionInfo is null
+- `SerialConnectionException` - If connection fails
+
+##### GetAvailablePortsAsync
+
+```csharp
+Task<IReadOnlyList<string>> GetAvailablePortsAsync(CancellationToken ct = default);
+```
+
+Enumerates available COM ports on the system.
+
+**Returns:** List of port names (e.g., "COM1", "COM3")
+
+---
+
+### ISerialConnection
+
+**Namespace:** `SshManager.Terminal.Services`
+
+Represents an active serial port connection. Implements `IDisposable` and `IAsyncDisposable`.
+
+#### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `BaseStream` | `Stream` | The underlying serial port stream for I/O |
+| `IsConnected` | `bool` | Whether the connection is currently active |
+| `IsOpen` | `bool` | Whether the serial port is open |
+| `PortName` | `string` | The COM port name |
+
+#### Events
+
+| Event | Type | Description |
+|-------|------|-------------|
+| `Disconnected` | `EventHandler?` | Raised when the connection is closed |
+
+#### Methods
+
+##### SendBreak
+
+```csharp
+void SendBreak(int duration = 250);
+```
+
+Sends a break signal to the device for the specified duration in milliseconds.
+
+##### SetDtr / SetRts
+
+```csharp
+void SetDtr(bool enabled);
+void SetRts(bool enabled);
+```
+
+Controls Data Terminal Ready (DTR) and Request To Send (RTS) hardware signals.
+
+---
+
+### SerialConnectionInfo
+
+**Namespace:** `SshManager.Terminal.Models`
+
+Immutable record containing serial port connection parameters.
+
+#### Properties
+
+| Property | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `PortName` | `string` | Yes | - | COM port name (e.g., "COM1") |
+| `BaudRate` | `int` | No | 9600 | Communication speed |
+| `DataBits` | `int` | No | 8 | Data bits per byte (5-8) |
+| `StopBits` | `StopBits` | No | `One` | Stop bits configuration |
+| `Parity` | `Parity` | No | `None` | Parity checking mode |
+| `Handshake` | `Handshake` | No | `None` | Flow control method |
+| `DtrEnable` | `bool` | No | `true` | Enable DTR signal on connect |
+| `RtsEnable` | `bool` | No | `true` | Enable RTS signal on connect |
+| `LocalEcho` | `bool` | No | `false` | Echo typed characters locally |
+| `LineEnding` | `string` | No | `"\r\n"` | Line ending for sent commands |
+
+#### Factory Method
+
+```csharp
+static SerialConnectionInfo FromHostEntry(HostEntry host);
+```
+
+Creates connection info from a stored `HostEntry` model with `ConnectionType.Serial`.
+
+---
+
+## SSH Agent Services
+
+### IAgentKeyService
+
+**Namespace:** `SshManager.Terminal.Services`
+
+Service for programmatic management of SSH keys in SSH agents (Pageant and Windows OpenSSH Agent).
+
+#### Methods
+
+##### AddKeyToAgentAsync
+
+```csharp
+Task<bool> AddKeyToAgentAsync(
+    string keyFilePath,
+    string? passphrase = null,
+    CancellationToken ct = default);
+```
+
+Adds a private key file to the SSH agent.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `keyFilePath` | `string` | Path to the private key file |
+| `passphrase` | `string?` | Passphrase for encrypted keys |
+| `ct` | `CancellationToken` | Cancellation token |
+
+**Returns:** `true` if key was added successfully
+
+##### AddKeyContentToAgentAsync
+
+```csharp
+Task<bool> AddKeyContentToAgentAsync(
+    string keyContent,
+    string? passphrase = null,
+    CancellationToken ct = default);
+```
+
+Adds a private key from memory content to the SSH agent.
+
+##### RemoveKeyFromAgentAsync
+
+```csharp
+Task<bool> RemoveKeyFromAgentAsync(
+    string keyFilePath,
+    CancellationToken ct = default);
+```
+
+Removes a specific key from the SSH agent. (OpenSSH Agent only)
+
+##### RemoveAllKeysAsync
+
+```csharp
+Task<bool> RemoveAllKeysAsync(CancellationToken ct = default);
+```
+
+Removes all keys from the SSH agent. (OpenSSH Agent only)
+
+##### GetAgentAvailabilityAsync
+
+```csharp
+Task<AgentAvailability> GetAgentAvailabilityAsync(CancellationToken ct = default);
+```
+
+Checks which SSH agents are available.
+
+---
+
+### IAgentDiagnosticsService
+
+**Namespace:** `SshManager.Terminal.Services`
+
+Service for querying SSH agent status and loaded keys.
+
+#### Methods
+
+##### GetAgentStatusAsync
+
+```csharp
+Task<AgentStatus> GetAgentStatusAsync(CancellationToken ct = default);
+```
+
+Gets the current status of available SSH agents.
+
+**Returns:** `AgentStatus` containing:
+- `PageantAvailable` - Whether Pageant is running
+- `OpenSshAgentAvailable` - Whether Windows OpenSSH Agent is available
+- `PageantKeyCount` - Number of keys loaded in Pageant
+- `OpenSshAgentKeyCount` - Number of keys in OpenSSH Agent
+
+##### GetLoadedKeysAsync
+
+```csharp
+Task<IReadOnlyList<AgentKeyInfo>> GetLoadedKeysAsync(CancellationToken ct = default);
+```
+
+Enumerates all keys currently loaded in available agents.
+
+**Returns:** List of `AgentKeyInfo` with:
+- `Fingerprint` - SHA256 fingerprint
+- `Comment` - Key comment
+- `Type` - Key type (RSA, Ed25519, etc.)
+- `Agent` - Which agent holds the key
+
+---
+
+## Auto-Reconnect Services
+
+### IAutoReconnectManager
+
+**Namespace:** `SshManager.Terminal.Services`
+
+Manages automatic reconnection for disconnected SSH sessions.
+
+#### Methods
+
+##### EnableAutoReconnect
+
+```csharp
+void EnableAutoReconnect(
+    Guid sessionId,
+    ConnectionRetryPolicy? policy = null);
+```
+
+Enables auto-reconnect for a session with optional custom retry policy.
+
+##### DisableAutoReconnect
+
+```csharp
+void DisableAutoReconnect(Guid sessionId);
+```
+
+Disables auto-reconnect for a session.
+
+##### TriggerReconnect
+
+```csharp
+Task<bool> TriggerReconnect(
+    Guid sessionId,
+    CancellationToken ct = default);
+```
+
+Manually triggers a reconnection attempt.
+
+#### ConnectionRetryPolicy
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MaxRetries` | `int` | 5 | Maximum reconnection attempts |
+| `InitialDelay` | `TimeSpan` | 1s | Initial delay before first retry |
+| `MaxDelay` | `TimeSpan` | 30s | Maximum delay between retries |
+| `BackoffMultiplier` | `double` | 2.0 | Exponential backoff multiplier |
+
+---
+
+## Autocompletion Services
+
+### IAutocompletionService
+
+**Namespace:** `SshManager.Terminal.Services`
+
+Provides intelligent command completion for terminal input.
+
+#### Methods
+
+##### GetCompletionsAsync
+
+```csharp
+Task<IReadOnlyList<CompletionItem>> GetCompletionsAsync(
+    string input,
+    int cursorPosition,
+    Guid sessionId,
+    CancellationToken ct = default);
+```
+
+Gets completion suggestions for the current input.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `input` | `string` | Current command line input |
+| `cursorPosition` | `int` | Cursor position in input |
+| `sessionId` | `Guid` | Session ID for context |
+| `ct` | `CancellationToken` | Cancellation token |
+
+**Returns:** List of `CompletionItem` with:
+- `Text` - Completion text to insert
+- `DisplayText` - Text to show in popup
+- `Description` - Optional description
+- `Type` - Completion type (Command, File, History, etc.)
+
+#### AutocompletionMode Enum
+
+| Value | Description |
+|-------|-------------|
+| `Off` | Autocompletion disabled |
+| `Manual` | Trigger with Tab key |
+| `Automatic` | Show suggestions as you type |
+
+---
+
+## Tunnel Builder Services
+
+### ITunnelBuilderService
+
+**Namespace:** `SshManager.Terminal.Services`
+
+Service for building and executing complex SSH tunnel configurations.
+
+#### Methods
+
+##### BuildTunnelChainAsync
+
+```csharp
+Task<TunnelExecutionPlan> BuildTunnelChainAsync(
+    TunnelProfile profile,
+    CancellationToken ct = default);
+```
+
+Creates an execution plan from a tunnel profile.
+
+##### ExecuteTunnelPlanAsync
+
+```csharp
+Task<TunnelExecutionResult> ExecuteTunnelPlanAsync(
+    TunnelExecutionPlan plan,
+    HostKeyVerificationCallback? hostKeyCallback = null,
+    CancellationToken ct = default);
+```
+
+Executes a tunnel plan, establishing all connections in order.
+
+##### GetTunnelStatusAsync
+
+```csharp
+Task<TunnelStatus> GetTunnelStatusAsync(
+    Guid profileId,
+    CancellationToken ct = default);
+```
+
+Gets the current status of an active tunnel.
+
+#### TunnelProfile Model
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Id` | `Guid` | Unique profile identifier |
+| `Name` | `string` | Profile display name |
+| `Nodes` | `ICollection<TunnelNode>` | Hosts and gateways |
+| `Edges` | `ICollection<TunnelEdge>` | Connections between nodes |
+
+#### TunnelNodeType Enum
+
+| Value | Description |
+|-------|-------------|
+| `Source` | Starting point (local machine) |
+| `Intermediate` | Jump host / bastion / gateway |
+| `Destination` | Target server |
 
 ---
 

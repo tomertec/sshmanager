@@ -1,5 +1,6 @@
 using System.Windows;
-using System.Windows.Controls;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SshManager.App.ViewModels;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
@@ -16,6 +17,7 @@ public partial class HostEditDialog : FluentWindow
     private readonly IPortForwardingProfileRepository? _portForwardingRepo;
     private readonly IHostRepository? _hostRepo;
     private readonly IReadOnlyList<HostEntry>? _availableHosts;
+    private readonly ISshKeyManager? _keyManager;
 
     public HostEditDialog(HostDialogViewModel viewModel)
     {
@@ -27,6 +29,9 @@ public partial class HostEditDialog : FluentWindow
         // Subscribe to close request
         _viewModel.RequestClose += OnRequestClose;
 
+        // Wire up section events
+        WireSectionEvents();
+
         // Set initial password if available
         Loaded += OnLoaded;
     }
@@ -34,13 +39,21 @@ public partial class HostEditDialog : FluentWindow
     /// <summary>
     /// Constructor with repository dependencies for advanced features.
     /// </summary>
+    /// <param name="viewModel">The host dialog view model.</param>
+    /// <param name="hostProfileRepo">The host profile repository.</param>
+    /// <param name="proxyJumpRepo">The proxy jump profile repository.</param>
+    /// <param name="portForwardingRepo">The port forwarding profile repository.</param>
+    /// <param name="hostRepo">The host repository.</param>
+    /// <param name="availableHosts">Available hosts for proxy jump configuration.</param>
+    /// <param name="keyManager">The SSH key manager.</param>
     public HostEditDialog(
         HostDialogViewModel viewModel,
         IHostProfileRepository? hostProfileRepo,
         IProxyJumpProfileRepository? proxyJumpRepo,
         IPortForwardingProfileRepository? portForwardingRepo,
         IHostRepository? hostRepo,
-        IReadOnlyList<HostEntry>? availableHosts = null)
+        IReadOnlyList<HostEntry>? availableHosts = null,
+        ISshKeyManager? keyManager = null)
         : this(viewModel)
     {
         _hostProfileRepo = hostProfileRepo;
@@ -48,14 +61,32 @@ public partial class HostEditDialog : FluentWindow
         _portForwardingRepo = portForwardingRepo;
         _hostRepo = hostRepo;
         _availableHosts = availableHosts;
+        _keyManager = keyManager;
+    }
+
+    /// <summary>
+    /// Wire up events from section controls to dialog handlers.
+    /// </summary>
+    private void WireSectionEvents()
+    {
+        // SshConnectionSection events
+        SshConnectionSection.ManageHostProfilesRequested += (_, _) => ManageHostProfiles();
+
+        // AuthenticationSection events
+        AuthenticationSection.SelectKeyRequested += (_, _) => SelectKey();
+        AuthenticationSection.PasswordChanged += (_, password) => _viewModel.Password = password;
+
+        // AdvancedOptionsSection events
+        AdvancedOptionsSection.ManageProxyJumpProfilesRequested += (_, _) => ManageProxyJumpProfiles();
+        AdvancedOptionsSection.ManagePortForwardingRequested += (_, _) => ManagePortForwarding();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        // Set the password box content (can't bind to PasswordBox.Password directly)
+        // Set the password in the AuthenticationSection
         if (!string.IsNullOrEmpty(_viewModel.Password))
         {
-            PasswordBox.Password = _viewModel.Password;
+            AuthenticationSection.SetPassword(_viewModel.Password);
         }
 
         // Load host profiles, ProxyJump profiles and port forwarding count
@@ -73,24 +104,27 @@ public partial class HostEditDialog : FluentWindow
         Close();
     }
 
-    private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
-    {
-        if (sender is System.Windows.Controls.PasswordBox passwordBox)
-        {
-            _viewModel.Password = passwordBox.Password;
-        }
-    }
-
     protected override void OnClosed(EventArgs e)
     {
         _viewModel.RequestClose -= OnRequestClose;
         base.OnClosed(e);
     }
 
-    private async void SelectKeyButton_Click(object sender, RoutedEventArgs e)
+    #region Section Event Handlers
+
+    private async void SelectKey()
     {
-        var keyManager = App.GetService<ISshKeyManager>();
-        var keys = await keyManager.GetExistingKeysAsync();
+        if (_keyManager == null)
+        {
+            System.Windows.MessageBox.Show(
+                "SSH key manager is not available.",
+                "Feature Not Available",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var keys = await _keyManager.GetExistingKeysAsync();
 
         if (keys.Count == 0)
         {
@@ -114,7 +148,36 @@ public partial class HostEditDialog : FluentWindow
         }
     }
 
-    private async void ManageProxyJumpProfiles_Click(object sender, RoutedEventArgs e)
+    private async void ManageHostProfiles()
+    {
+        if (_hostProfileRepo == null || _proxyJumpRepo == null)
+        {
+            System.Windows.MessageBox.Show(
+                "Host profile management is not available.\n\nPlease ensure repositories are properly configured.",
+                "Feature Not Available",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        // Use null logger if view model doesn't expose a logger factory
+        var managerVm = new HostProfileManagerViewModel(_hostProfileRepo, _proxyJumpRepo, null);
+        var dialog = new HostProfileManagerDialog
+        {
+            DataContext = managerVm,
+            Owner = this
+        };
+
+        managerVm.RequestClose += () => dialog.Close();
+        await managerVm.LoadProfilesAsync();
+
+        dialog.ShowDialog();
+
+        // Reload profiles after management
+        await _viewModel.LoadHostProfilesAsync();
+    }
+
+    private async void ManageProxyJumpProfiles()
     {
         if (_proxyJumpRepo == null || _hostRepo == null)
         {
@@ -141,7 +204,7 @@ public partial class HostEditDialog : FluentWindow
         await _viewModel.LoadProxyJumpProfilesAsync();
     }
 
-    private async void ManagePortForwarding_Click(object sender, RoutedEventArgs e)
+    private async void ManagePortForwarding()
     {
         if (_portForwardingRepo == null || _hostRepo == null)
         {
@@ -168,32 +231,5 @@ public partial class HostEditDialog : FluentWindow
         await _viewModel.LoadPortForwardingCountAsync();
     }
 
-    private async void ManageHostProfiles_Click(object sender, RoutedEventArgs e)
-    {
-        if (_hostProfileRepo == null || _proxyJumpRepo == null)
-        {
-            System.Windows.MessageBox.Show(
-                "Host profile management is not available.\n\nPlease ensure repositories are properly configured.",
-                "Feature Not Available",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
-            return;
-        }
-
-        var logger = App.GetService<Microsoft.Extensions.Logging.ILogger<HostProfileManagerViewModel>>();
-        var managerVm = new HostProfileManagerViewModel(_hostProfileRepo, _proxyJumpRepo, logger);
-        var dialog = new HostProfileManagerDialog
-        {
-            DataContext = managerVm,
-            Owner = this
-        };
-
-        managerVm.RequestClose += () => dialog.Close();
-        await managerVm.LoadProfilesAsync();
-
-        dialog.ShowDialog();
-
-        // Reload profiles after management
-        await _viewModel.LoadHostProfilesAsync();
-    }
+    #endregion
 }

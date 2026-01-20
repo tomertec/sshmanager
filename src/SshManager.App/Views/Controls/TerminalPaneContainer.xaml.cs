@@ -12,7 +12,8 @@ namespace SshManager.App.Views.Controls;
 /// </summary>
 public partial class TerminalPaneContainer : UserControl
 {
-    private readonly IPaneLayoutManager _layoutManager;
+    private IPaneLayoutManager? _layoutManager;
+    private IServiceProvider? _serviceProvider;
     private readonly Dictionary<Guid, TerminalPane> _paneControls = new();
 
     /// <summary>
@@ -33,16 +34,40 @@ public partial class TerminalPaneContainer : UserControl
     public TerminalPaneContainer()
     {
         InitializeComponent();
-
-        _layoutManager = App.GetService<IPaneLayoutManager>();
-        _layoutManager.LayoutChanged += OnLayoutChanged;
-
         Loaded += OnLoaded;
+    }
+
+    /// <summary>
+    /// Sets the pane layout manager. Must be called before the control is loaded.
+    /// </summary>
+    /// <param name="layoutManager">The pane layout manager.</param>
+    public void SetLayoutManager(IPaneLayoutManager layoutManager)
+    {
+        if (_layoutManager != null)
+        {
+            _layoutManager.LayoutChanged -= OnLayoutChanged;
+        }
+
+        _layoutManager = layoutManager;
+        _layoutManager.LayoutChanged += OnLayoutChanged;
+    }
+
+    /// <summary>
+    /// Sets the service provider for resolving dependencies.
+    /// Must be called before the control is loaded.
+    /// </summary>
+    /// <param name="serviceProvider">The service provider.</param>
+    public void SetServiceProvider(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        RebuildLayout();
+        if (_layoutManager != null)
+        {
+            RebuildLayout();
+        }
     }
 
     private void OnLayoutChanged(object? sender, EventArgs e)
@@ -54,6 +79,9 @@ public partial class TerminalPaneContainer : UserControl
 
     private void RebuildLayout()
     {
+        if (_layoutManager == null)
+            return;
+
         var tabbedPanes = _layoutManager.GetTabbedPanes().ToList();
 
         if (tabbedPanes.Count == 0 && _layoutManager.RootNode == null)
@@ -250,6 +278,12 @@ public partial class TerminalPaneContainer : UserControl
         {
             DataContext = leaf
         };
+
+        // Set the service provider so the pane can resolve dependencies
+        if (_serviceProvider != null)
+        {
+            pane.SetServiceProvider(_serviceProvider);
+        }
 
         pane.SplitRequested += (s, e) =>
         {

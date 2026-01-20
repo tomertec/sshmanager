@@ -20,6 +20,8 @@ public partial class ImportExportViewModel : ObservableObject
     private readonly IExportImportService _exportImportService;
     private readonly ISshConfigExportService _sshConfigExportService;
     private readonly HostManagementViewModel _hostManagement;
+    private readonly ISshConfigParser _sshConfigParser;
+    private readonly IPuttySessionImporter _puttyImporter;
     private readonly ILogger<ImportExportViewModel> _logger;
 
     /// <summary>
@@ -31,11 +33,15 @@ public partial class ImportExportViewModel : ObservableObject
         IExportImportService exportImportService,
         ISshConfigExportService sshConfigExportService,
         HostManagementViewModel hostManagement,
+        ISshConfigParser sshConfigParser,
+        IPuttySessionImporter puttyImporter,
         ILogger<ImportExportViewModel>? logger = null)
     {
         _exportImportService = exportImportService;
         _sshConfigExportService = sshConfigExportService;
         _hostManagement = hostManagement;
+        _sshConfigParser = sshConfigParser;
+        _puttyImporter = puttyImporter;
         _logger = logger ?? NullLogger<ImportExportViewModel>.Instance;
 
         _logger.LogDebug("ImportExportViewModel initialized");
@@ -223,7 +229,8 @@ public partial class ImportExportViewModel : ObservableObject
     /// <returns>Selected import items, or null if cancelled.</returns>
     private async Task<List<SshConfigImportItem>?> PromptForSshConfigImportSelectionAsync()
     {
-        var dialog = new SshConfigImportDialog();
+        var viewModel = new SshConfigImportViewModel(_sshConfigParser);
+        var dialog = new SshConfigImportDialog(viewModel);
         dialog.Owner = Application.Current.MainWindow;
 
         if (dialog.ShowDialog() != true)
@@ -560,7 +567,8 @@ public partial class ImportExportViewModel : ObservableObject
     {
         _logger.LogInformation("Opening PuTTY import dialog");
 
-        var dialog = new PuttyImportDialog();
+        var viewModel = new PuttyImportViewModel(_puttyImporter);
+        var dialog = new PuttyImportDialog(viewModel);
         dialog.Owner = Application.Current.MainWindow;
 
         if (dialog.ShowDialog() == true)

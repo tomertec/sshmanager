@@ -17,6 +17,7 @@ public partial class SftpFileOperationsViewModel : ObservableObject
     private readonly ILogger<SftpFileOperationsViewModel> _logger;
     private readonly ISftpSession _session;
     private readonly string _hostname;
+    private readonly IEditorThemeService _editorThemeService;
 
     /// <summary>
     /// Callback to get the selected local item.
@@ -91,10 +92,12 @@ public partial class SftpFileOperationsViewModel : ObservableObject
     public SftpFileOperationsViewModel(
         ISftpSession session,
         string hostname,
+        IEditorThemeService editorThemeService,
         ILogger<SftpFileOperationsViewModel>? logger = null)
     {
         _session = session;
         _hostname = hostname;
+        _editorThemeService = editorThemeService;
         _logger = logger ?? NullLogger<SftpFileOperationsViewModel>.Instance;
     }
 
@@ -257,8 +260,7 @@ public partial class SftpFileOperationsViewModel : ObservableObject
         {
             _logger.LogInformation("Opening remote file for editing: {Path}", item.FullPath);
 
-            var themeService = App.GetService<IEditorThemeService>();
-            var viewModel = new TextEditorViewModel(themeService);
+            var viewModel = new TextEditorViewModel(_editorThemeService);
 
             // Get the SFTP session from the remote browser
             var session = GetRemoteBrowserSessionCallback?.Invoke();
@@ -272,7 +274,7 @@ public partial class SftpFileOperationsViewModel : ObservableObject
             await viewModel.LoadRemoteFileAsync(session, item.FullPath, _hostname);
 
             // Show the editor window
-            var editorWindow = new TextEditorWindow(viewModel, themeService)
+            var editorWindow = new TextEditorWindow(viewModel, _editorThemeService)
             {
                 Owner = ownerWindow
             };
@@ -312,14 +314,13 @@ public partial class SftpFileOperationsViewModel : ObservableObject
         {
             _logger.LogInformation("Opening local file for editing: {Path}", item.FullPath);
 
-            var themeService = App.GetService<IEditorThemeService>();
-            var viewModel = new TextEditorViewModel(themeService);
+            var viewModel = new TextEditorViewModel(_editorThemeService);
 
             // Load the local file
             await viewModel.LoadLocalFileAsync(item.FullPath);
 
             // Show the editor window
-            var editorWindow = new TextEditorWindow(viewModel, themeService)
+            var editorWindow = new TextEditorWindow(viewModel, _editorThemeService)
             {
                 Owner = ownerWindow
             };

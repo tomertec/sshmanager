@@ -83,6 +83,54 @@ public sealed class AppSettings
     /// </summary>
     public int MaxReconnectAttempts { get; set; } = 3;
 
+    /// <summary>
+    /// Base delay for reconnection attempts in milliseconds.
+    /// Used with exponential backoff: delay = baseDelay * 2^attemptNumber.
+    /// Default: 1000ms (1 second).
+    /// </summary>
+    [Range(100, 10000)]
+    public int ReconnectBaseDelayMs { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum delay between reconnection attempts in milliseconds.
+    /// Caps the exponential backoff to prevent excessively long waits.
+    /// Default: 30000ms (30 seconds).
+    /// </summary>
+    [Range(1000, 120000)]
+    public int ReconnectMaxDelayMs { get; set; } = 30000;
+
+    /// <summary>
+    /// Monitor network connectivity and auto-reconnect when network is restored.
+    /// When enabled, reconnection attempts pause when network is unavailable
+    /// and resume automatically when connectivity is detected.
+    /// Default: true.
+    /// </summary>
+    public bool EnableNetworkMonitoring { get; set; } = true;
+
+    // ===== Connection Pooling Settings =====
+
+    /// <summary>
+    /// Enable connection pooling to reuse SSH connections for multiple sessions to the same host.
+    /// When enabled, connections are maintained in a pool and reused for subsequent terminal sessions.
+    /// </summary>
+    public bool EnableConnectionPooling { get; set; } = false;
+
+    /// <summary>
+    /// Maximum number of pooled connections per host.
+    /// Each unique host (hostname + port + username + auth type) can have up to this many connections in the pool.
+    /// Range: 1-10 (default: 3)
+    /// </summary>
+    [Range(1, 10)]
+    public int ConnectionPoolMaxPerHost { get; set; } = 3;
+
+    /// <summary>
+    /// Idle timeout in seconds for pooled connections.
+    /// Connections unused for this duration are automatically closed and removed from the pool.
+    /// Range: 30-3600 seconds (default: 300 = 5 minutes)
+    /// </summary>
+    [Range(30, 3600)]
+    public int ConnectionPoolIdleTimeoutSeconds { get; set; } = 300;
+
     // ===== Security Settings =====
 
     /// <summary>
@@ -94,6 +142,20 @@ public sealed class AppSettings
     /// Preferred authentication method (SshAgent, PrivateKeyFile, Password).
     /// </summary>
     public string PreferredAuthMethod { get; set; } = "SshAgent";
+
+    // ===== Kerberos/GSSAPI Settings =====
+
+    /// <summary>
+    /// Enable Kerberos/GSSAPI authentication support for SSH connections.
+    /// When enabled, the Kerberos auth type becomes available in the UI.
+    /// </summary>
+    public bool EnableKerberosAuth { get; set; } = false;
+
+    /// <summary>
+    /// Default setting for Kerberos credential delegation (ticket forwarding).
+    /// When enabled, new hosts using Kerberos auth will have delegation enabled by default.
+    /// </summary>
+    public bool DefaultKerberosDelegation { get; set; } = false;
 
     // ===== Credential Caching Settings =====
 
@@ -133,6 +195,12 @@ public sealed class AppSettings
     /// Application theme: System, Light, or Dark.
     /// </summary>
     public string Theme { get; set; } = "Dark";
+
+    /// <summary>
+    /// Enable session crash recovery.
+    /// When enabled, active sessions are saved on shutdown and can be restored after a crash.
+    /// </summary>
+    public bool EnableSessionRecovery { get; set; } = true;
 
     /// <summary>
     /// Start the application minimized.
@@ -189,9 +257,11 @@ public sealed class AppSettings
     public int MaxHistoryEntries { get; set; } = 100;
 
     /// <summary>
-    /// Auto-delete history older than this many days (0 to disable).
+    /// Auto-delete connection history older than this many days (0 = keep forever, default: 90 days).
+    /// On application startup, entries older than this threshold are automatically removed.
     /// </summary>
-    public int HistoryRetentionDays { get; set; } = 0;
+    [Range(0, 3650)]
+    public int ConnectionHistoryRetentionDays { get; set; } = 90;
 
     // ===== Window Position =====
 
@@ -303,6 +373,29 @@ public sealed class AppSettings
     /// </summary>
     public bool EnableHostListAnimations { get; set; } = true;
 
+    /// <summary>
+    /// Terminal output flush interval in milliseconds.
+    /// Lower values provide smoother output but increase CPU usage.
+    /// Default: 16ms (~60fps). Range: 8-100ms.
+    /// </summary>
+    [Range(8, 100)]
+    public int TerminalOutputFlushIntervalMs { get; set; } = 16;
+
+    /// <summary>
+    /// Maximum batch size in bytes before forcing a terminal output flush.
+    /// Larger values reduce message overhead but may cause visible chunking.
+    /// Default: 8192 bytes. Range: 1024-65536 bytes.
+    /// </summary>
+    [Range(1024, 65536)]
+    public int TerminalOutputMaxBatchSize { get; set; } = 8192;
+
+    /// <summary>
+    /// Enable output batching for smoother terminal rendering.
+    /// When disabled, each chunk of output is sent immediately to the terminal.
+    /// Default: true.
+    /// </summary>
+    public bool EnableTerminalOutputBatching { get; set; } = true;
+
     // ===== SFTP Browser Settings =====
 
     /// <summary>
@@ -322,4 +415,62 @@ public sealed class AppSettings
     /// Window opacity for the Snippet Manager dialog (0.2 to 1.0).
     /// </summary>
     public double SnippetManagerOpacity { get; set; } = 1.0;
+
+    // ===== X11 Forwarding Settings =====
+
+    /// <summary>
+    /// Default setting for X11 forwarding on new connections.
+    /// </summary>
+    public bool DefaultX11ForwardingEnabled { get; set; }
+
+    /// <summary>
+    /// Path to X server executable (VcXsrv, Xming, X410, etc.)
+    /// </summary>
+    public string? X11ServerPath { get; set; }
+
+    /// <summary>
+    /// Whether to automatically launch X server when X11 forwarding is enabled.
+    /// </summary>
+    public bool AutoLaunchXServer { get; set; }
+
+    // ===== Autocompletion Settings =====
+
+    /// <summary>
+    /// Whether terminal autocompletion is enabled.
+    /// </summary>
+    public bool EnableAutocompletion { get; set; } = false;
+
+    /// <summary>
+    /// The mode for autocompletion (RemoteShell, LocalHistory, or Hybrid).
+    /// </summary>
+    public AutocompletionMode AutocompletionMode { get; set; } = AutocompletionMode.RemoteShell;
+
+    /// <summary>
+    /// Debounce delay in milliseconds before requesting completions.
+    /// </summary>
+    [Range(50, 1000)]
+    public int AutocompletionDebounceMs { get; set; } = 150;
+
+    /// <summary>
+    /// Maximum number of completion suggestions to show.
+    /// </summary>
+    [Range(5, 50)]
+    public int MaxCompletionSuggestions { get; set; } = 10;
+
+    // ===== Host List Settings =====
+
+    /// <summary>
+    /// View mode for the host list (Compact, Normal, or Detailed).
+    /// </summary>
+    public HostListViewMode HostListViewMode { get; set; } = HostListViewMode.Normal;
+
+    /// <summary>
+    /// Show connection statistics in host list (last connected, success rate).
+    /// </summary>
+    public bool ShowHostConnectionStats { get; set; } = true;
+
+    /// <summary>
+    /// Show favorite hosts at the top of the list.
+    /// </summary>
+    public bool PinFavoritesToTop { get; set; } = true;
 }

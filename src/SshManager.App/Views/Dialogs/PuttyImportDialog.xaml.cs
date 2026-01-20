@@ -13,10 +13,13 @@ public partial class PuttyImportDialog : FluentWindow
 {
     private readonly PuttyImportViewModel _viewModel;
 
-    public PuttyImportDialog()
+    /// <summary>
+    /// Initializes a new instance of the PuttyImportDialog with dependency injection.
+    /// </summary>
+    /// <param name="viewModel">The PuTTY import view model.</param>
+    public PuttyImportDialog(PuttyImportViewModel viewModel)
     {
-        var importer = App.GetService<IPuttySessionImporter>();
-        _viewModel = new PuttyImportViewModel(importer);
+        _viewModel = viewModel;
         DataContext = _viewModel;
 
         InitializeComponent();

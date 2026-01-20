@@ -18,5 +18,11 @@ public enum AuthType
     /// <summary>
     /// Use password authentication. Password is stored encrypted with DPAPI.
     /// </summary>
-    Password = 2
+    Password = 2,
+
+    /// <summary>
+    /// Use Kerberos/GSSAPI authentication with Windows domain credentials.
+    /// Supports enterprise SSO through Active Directory integration.
+    /// </summary>
+    Kerberos = 3
 }

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
+using SshManager.Data.Services;
 using SshManager.Security;
 using SshManager.Terminal.Services;
 using SshManager.App.Views.Dialogs;
@@ -32,6 +33,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
     private readonly ISecretProtector _secretProtector;
     private readonly ISerialConnectionService _serialConnectionService;
     private readonly IAgentDiagnosticsService? _agentDiagnosticsService;
+    private readonly IHostCacheService _hostCacheService;
     private readonly ILogger<HostManagementViewModel> _logger;
 
     private CancellationTokenSource? _searchCancellationTokenSource;
@@ -74,6 +76,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         ITagRepository tagRepo,
         ISecretProtector secretProtector,
         ISerialConnectionService serialConnectionService,
+        IHostCacheService hostCacheService,
         IAgentDiagnosticsService? agentDiagnosticsService = null,
         ILogger<HostManagementViewModel>? logger = null)
     {
@@ -85,6 +88,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         _tagRepo = tagRepo;
         _secretProtector = secretProtector;
         _serialConnectionService = serialConnectionService;
+        _hostCacheService = hostCacheService;
         _agentDiagnosticsService = agentDiagnosticsService;
         _logger = logger ?? NullLogger<HostManagementViewModel>.Instance;
 
@@ -123,13 +127,15 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            
-            var hosts = await _hostRepo.GetAllAsync(cancellationToken);
+
+            // Use cache for hosts (reduces database queries on repeated loads)
+            var hosts = await _hostCacheService.GetAllHostsAsync(cancellationToken);
             Hosts = new ObservableCollection<HostEntry>(hosts);
-            _logger.LogInformation("Loaded {HostCount} hosts from database", hosts.Count);
+            _logger.LogInformation("Loaded {HostCount} hosts (cache valid: {CacheValid})",
+                hosts.Count, _hostCacheService.IsCacheValid);
 
             cancellationToken.ThrowIfCancellationRequested();
-            
+
             var groups = await _groupRepo.GetAllAsync(cancellationToken);
             Groups = new ObservableCollection<HostGroup>(groups);
             _logger.LogInformation("Loaded {GroupCount} groups from database", groups.Count);
@@ -312,12 +318,13 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Gets the total host count for each group from the database (unfiltered).
+    /// Gets the total host count for each group from cache (unfiltered).
     /// Returns a dictionary mapping group ID to host count.
     /// </summary>
     public async Task<(int totalCount, Dictionary<Guid, int> countsByGroup)> GetTotalHostCountsAsync()
     {
-        var allHosts = await _hostRepo.GetAllAsync();
+        // Use cache for host counts (avoids repeated database queries)
+        var allHosts = await _hostCacheService.GetAllHostsAsync();
         var totalCount = allHosts.Count;
         var countsByGroup = allHosts
             .Where(h => h.GroupId.HasValue)
@@ -358,6 +365,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         {
             var host = viewModel.GetHost();
             await _hostRepo.AddAsync(host);
+            _hostCacheService.Invalidate(); // Invalidate cache after add
             Hosts.Add(host);
             SelectedHost = host;
         }
@@ -398,6 +406,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         {
             var updatedHost = viewModel.GetHost();
             await _hostRepo.UpdateAsync(updatedHost);
+            _hostCacheService.Invalidate(); // Invalidate cache after update
 
             // Refresh the host in the list
             var index = Hosts.IndexOf(host);
@@ -422,6 +431,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         if (result != MessageBoxResult.Yes) return;
 
         await _hostRepo.DeleteAsync(host.Id);
+        _hostCacheService.Invalidate(); // Invalidate cache after delete
         Hosts.Remove(host);
 
         if (SelectedHost == host)
@@ -519,6 +529,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
             };
 
             await _hostRepo.AddAsync(duplicatedHost);
+            _hostCacheService.Invalidate(); // Invalidate cache after duplicate
             Hosts.Add(duplicatedHost);
             SelectedHost = duplicatedHost;
 
@@ -542,6 +553,25 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         if (host == null) return;
 
         await _hostRepo.UpdateAsync(host);
+        _hostCacheService.Invalidate(); // Invalidate cache after save
+    }
+
+    /// <summary>
+    /// Toggles the favorite status of a host.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleFavoriteAsync(HostEntry? host)
+    {
+        if (host == null) return;
+
+        host.IsFavorite = !host.IsFavorite;
+        host.UpdatedAt = DateTimeOffset.UtcNow;
+        
+        await _hostRepo.UpdateAsync(host);
+        _hostCacheService.Invalidate(); // Invalidate cache after update
+        
+        _logger.LogDebug("Toggled favorite status for host {HostId} to {IsFavorite}", 
+            host.Id, host.IsFavorite);
     }
 
     /// <summary>
@@ -553,6 +583,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         if (host == null) return;
 
         await _hostRepo.AddAsync(host);
+        _hostCacheService.Invalidate(); // Invalidate cache after save
         Hosts.Add(host);
         _logger.LogInformation("Saved transient host {DisplayName}", host.DisplayName);
     }
@@ -735,6 +766,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
             if (reorderList.Count > 0)
             {
                 await _hostRepo.ReorderHostsAsync(reorderList);
+                _hostCacheService.Invalidate(); // Invalidate cache after reorder
                 _logger.LogInformation("Successfully reordered {Count} hosts in group {GroupId}",
                     reorderList.Count, targetGroupId);
             }

@@ -1,10 +1,12 @@
 using System.Windows;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using SshManager.App.Services;
 using SshManager.App.ViewModels;
 using SshManager.Data.Repositories;
 using SshManager.Security;
 using SshManager.Terminal.Services;
 using Wpf.Ui.Controls;
-using Microsoft.Extensions.Logging;
 
 namespace SshManager.App.Views.Dialogs;
 
@@ -12,17 +14,22 @@ public partial class SettingsDialog : FluentWindow
 {
     private readonly SettingsViewModel _viewModel;
     private readonly MainWindowViewModel _mainViewModel;
+    private readonly IServiceProvider _serviceProvider;
 
-    public SettingsDialog()
+    /// <summary>
+    /// Initializes a new instance of the SettingsDialog with dependency injection.
+    /// </summary>
+    /// <param name="viewModel">The settings view model.</param>
+    /// <param name="mainViewModel">The main window view model.</param>
+    /// <param name="serviceProvider">The service provider for resolving additional dependencies.</param>
+    public SettingsDialog(
+        SettingsViewModel viewModel,
+        MainWindowViewModel mainViewModel,
+        IServiceProvider serviceProvider)
     {
-        // Get services from DI
-        var settingsRepo = App.GetService<ISettingsRepository>();
-        var historyRepo = App.GetService<IConnectionHistoryRepository>();
-        var credentialCache = App.GetService<ICredentialCache>();
-        var themeService = App.GetService<ITerminalThemeService>();
-        _mainViewModel = App.GetService<MainWindowViewModel>();
-
-        _viewModel = new SettingsViewModel(settingsRepo, historyRepo, credentialCache, themeService);
+        _viewModel = viewModel;
+        _mainViewModel = mainViewModel;
+        _serviceProvider = serviceProvider;
         DataContext = _viewModel;
 
         InitializeComponent();
@@ -78,12 +85,12 @@ public partial class SettingsDialog : FluentWindow
 
     private void ManageSshKeysButton_Click(object sender, RoutedEventArgs e)
     {
-        var keyManager = App.GetService<ISshKeyManager>();
-        var managedKeyRepo = App.GetService<IManagedKeyRepository>();
-        var ppkConverter = App.GetService<IPpkConverter>();
-        var logger = App.GetLogger<SshKeyManagerViewModel>();
+        var keyManager = _serviceProvider.GetRequiredService<ISshKeyManager>();
+        var managedKeyRepo = _serviceProvider.GetRequiredService<IManagedKeyRepository>();
+        var ppkConverter = _serviceProvider.GetRequiredService<IPpkConverter>();
+        var logger = _serviceProvider.GetRequiredService<ILogger<SshKeyManagerViewModel>>();
         var viewModel = new SshKeyManagerViewModel(keyManager, managedKeyRepo, ppkConverter, logger);
-        var dialog = new SshKeyManagerDialog(viewModel)
+        var dialog = new SshKeyManagerDialog(viewModel, _serviceProvider)
         {
             Owner = this
         };
@@ -92,7 +99,9 @@ public partial class SettingsDialog : FluentWindow
 
     private void BackupManagerButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new BackupRestoreDialog
+        var backupService = _serviceProvider.GetRequiredService<IBackupService>();
+        var viewModel = new BackupRestoreViewModel(backupService);
+        var dialog = new BackupRestoreDialog(viewModel)
         {
             Owner = this
         };
@@ -106,7 +115,18 @@ public partial class SettingsDialog : FluentWindow
 
     private void CloudSyncButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new CloudSyncSetupDialog
+        var cloudSyncService = _serviceProvider.GetRequiredService<ICloudSyncService>();
+        var cloudSyncHostedService = _serviceProvider.GetRequiredService<CloudSyncHostedService>();
+        var settingsRepo = _serviceProvider.GetRequiredService<ISettingsRepository>();
+        var oneDriveDetector = _serviceProvider.GetRequiredService<IOneDrivePathDetector>();
+
+        var viewModel = new CloudSyncSetupViewModel(
+            cloudSyncService,
+            cloudSyncHostedService,
+            settingsRepo,
+            oneDriveDetector);
+
+        var dialog = new CloudSyncSetupDialog(viewModel)
         {
             Owner = this
         };

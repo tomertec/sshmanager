@@ -1,0 +1,113 @@
+<UserControl x:Class="SshManager.App.Views.Controls.HostEdit.GroupAndTagsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             mc:Ignorable="d"
+             d:DesignHeight="300" d:DesignWidth="400">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="HostEditResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <!-- Group -->
+        <TextBlock Text="Group"
+                   Style="{StaticResource SectionLabelStyle}" />
+        <ComboBox ItemsSource="{Binding AvailableGroups}"
+                  SelectedItem="{Binding SelectedGroup}"
+                  DisplayMemberPath="Name"
+                  Margin="0,0,0,16" />
+
+        <!-- Tags -->
+        <TextBlock Text="Tags"
+                   Style="{StaticResource SectionLabelStyle}" />
+
+        <!-- Selected Tags -->
+        <ItemsControl ItemsSource="{Binding SelectedTags}"
+                      Margin="0,0,0,4"
+                      Visibility="{Binding SelectedTags.Count, Converter={StaticResource BoolToVisibilityConverter}}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <ui:Button Command="{Binding DataContext.ToggleTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}"
+                               Appearance="Primary"
+                               Margin="0,0,4,4"
+                               Padding="8,4"
+                               Height="28">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="8" Height="8"
+                                    CornerRadius="4"
+                                    Background="{Binding Color}"
+                                    Margin="0,0,6,0"
+                                    VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}"
+                                       VerticalAlignment="Center" />
+                            <ui:SymbolIcon Symbol="Dismiss12"
+                                           Margin="6,0,0,0"
+                                           FontSize="10" />
+                        </StackPanel>
+                    </ui:Button>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Available Tags -->
+        <ItemsControl ItemsSource="{Binding AllTags}"
+                      Margin="0,0,0,8">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <ui:Button Command="{Binding DataContext.ToggleTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}"
+                               Appearance="Secondary"
+                               Margin="0,0,4,4"
+                               Padding="8,4"
+                               Height="28">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="8" Height="8"
+                                    CornerRadius="4"
+                                    Background="{Binding Color}"
+                                    Margin="0,0,6,0"
+                                    VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Name}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </ui:Button>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Add New Tag -->
+        <Grid Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ui:TextBox Grid.Column="0"
+                        Text="{Binding NewTagName, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="Add new tag..."
+                        Margin="0,0,8,0" />
+            <ui:Button Grid.Column="1"
+                       Icon="{ui:SymbolIcon Add16}"
+                       ToolTip="Create new tag"
+                       Command="{Binding CreateTagAsyncCommand}"
+                       Width="32" Height="32"
+                       Padding="0" />
+        </Grid>
+    </StackPanel>
+</UserControl>

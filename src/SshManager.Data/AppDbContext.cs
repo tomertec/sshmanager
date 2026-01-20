@@ -23,6 +23,11 @@ public sealed class AppDbContext : DbContext
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<HostEnvironmentVariable> HostEnvironmentVariables => Set<HostEnvironmentVariable>();
     public DbSet<SessionRecording> SessionRecordings => Set<SessionRecording>();
+    public DbSet<SavedSession> SavedSessions => Set<SavedSession>();
+    public DbSet<TunnelProfile> TunnelProfiles => Set<TunnelProfile>();
+    public DbSet<TunnelNode> TunnelNodes => Set<TunnelNode>();
+    public DbSet<TunnelEdge> TunnelEdges => Set<TunnelEdge>();
+    public DbSet<CommandHistoryEntry> CommandHistory => Set<CommandHistoryEntry>();
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -88,6 +93,12 @@ public sealed class AppDbContext : DbContext
             // Keep-alive configuration
             e.Property(x => x.KeepAliveIntervalSeconds)
                 .IsRequired(false);
+
+            // Kerberos/GSSAPI authentication configuration
+            e.Property(x => x.KerberosServicePrincipal)
+                .HasMaxLength(400);
+            e.Property(x => x.KerberosDelegateCredentials)
+                .HasDefaultValue(false);
         });
 
         // HostGroup configuration
@@ -254,6 +265,69 @@ public sealed class AppDbContext : DbContext
             e.HasIndex(x => x.StartedAt);
             e.HasIndex(x => x.HostId);
             e.HasIndex(x => x.IsArchived);
+        });
+
+        // SavedSession configuration (for crash recovery)
+        modelBuilder.Entity<SavedSession>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Title).HasMaxLength(200).IsRequired();
+            e.HasIndex(x => x.HostEntryId);
+            e.HasIndex(x => x.WasGracefulShutdown);
+        });
+
+        // TunnelProfile configuration
+        modelBuilder.Entity<TunnelProfile>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.DisplayName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(1000);
+            e.HasIndex(x => x.DisplayName);
+        });
+
+        // TunnelNode configuration
+        modelBuilder.Entity<TunnelNode>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Label).HasMaxLength(100).IsRequired();
+            e.Property(x => x.RemoteHost).HasMaxLength(400);
+            e.Property(x => x.BindAddress).HasMaxLength(100);
+            e.Property(x => x.NodeType).HasConversion<int>();
+            e.HasOne(x => x.TunnelProfile)
+             .WithMany(p => p.Nodes)
+             .HasForeignKey(x => x.TunnelProfileId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.TunnelProfileId);
+        });
+
+        // TunnelEdge configuration
+        modelBuilder.Entity<TunnelEdge>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.TunnelProfile)
+             .WithMany(p => p.Edges)
+             .HasForeignKey(x => x.TunnelProfileId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.SourceNode)
+             .WithMany()
+             .HasForeignKey(x => x.SourceNodeId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.TargetNode)
+             .WithMany()
+             .HasForeignKey(x => x.TargetNodeId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.TunnelProfileId);
+            e.HasIndex(x => new { x.SourceNodeId, x.TargetNodeId });
+        });
+
+        // CommandHistoryEntry configuration
+        modelBuilder.Entity<CommandHistoryEntry>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Command).HasMaxLength(4000).IsRequired();
+            e.HasIndex(x => x.HostId);
+            e.HasIndex(x => new { x.HostId, x.Command }).IsUnique();
+            e.HasIndex(x => x.ExecutedAt);
         });
     }
 }

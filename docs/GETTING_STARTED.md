@@ -63,11 +63,12 @@ Your new host appears in the host list.
 
 | Type | When to Use | How It Works |
 |------|-------------|--------------|
-| **SSH Agent** | You have SSH keys set up in `~/.ssh/` | Automatically uses your existing keys |
-| **Private Key File** | You have a key file in a custom location | You specify the path to the private key |
-| **Password** | The server uses password authentication | Password is encrypted and stored locally |
+| **SSH Agent** | You have SSH keys set up in `~/.ssh/` | Automatically uses existing keys from Pageant or Windows OpenSSH Agent |
+| **Private Key File** | You have a key file in a custom location | You specify the path to the private key (with optional passphrase) |
+| **Password** | The server uses password authentication | Password is encrypted with Windows DPAPI and stored locally |
+| **Kerberos** | Your organization uses Active Directory | Uses Windows domain credentials for authentication |
 
-**Tip**: SSH Agent is the most secure option as it doesn't store credentials in the app.
+**Tip**: SSH Agent is the most secure option as it doesn't store credentials in the app. If you're using Windows OpenSSH Agent or Pageant, your keys are automatically detected.
 
 ## Step 3: Connect to Your Host
 
@@ -246,6 +247,8 @@ To use a snippet:
 - Check network stability
 - Consider using `tmux` or `screen` on the server for persistent sessions
 - Check if the server has an SSH timeout configured
+- Enable **Auto-Reconnect** in Settings to automatically reconnect on drops
+- Adjust the **Keep-Alive Interval** in host settings to prevent idle disconnections
 
 ## Next Steps
 
@@ -254,7 +257,10 @@ Now that you're connected, explore more features:
 - **[SFTP Browser](./README.md#sftp-browser)**: Transfer files graphically
 - **[Port Forwarding](./README.md#port-forwarding)**: Tunnel ports through SSH
 - **[ProxyJump](./README.md#proxyjump--jump-hosts)**: Connect through bastion hosts
+- **[Visual Tunnel Builder](./README.md#using-the-visual-tunnel-builder)**: Create complex tunnel configurations visually
+- **[Session Recording](./README.md#recording-a-terminal-session)**: Record and playback terminal sessions
 - **[Backup & Sync](./README.md#importexport)**: Backup your hosts or sync across devices
+- **[Serial Ports](./README.md#serial-port-quick-connect)**: Connect to COM ports for embedded devices
 
 ## Quick Reference Card
 
@@ -262,6 +268,7 @@ Now that you're connected, explore more features:
 |--------|-----------------|
 | Add host | Toolbar + or right-click > Add Host |
 | Connect | Double-click or Enter |
+| Quick Connect | Ctrl+K |
 | New tab | Ctrl+T |
 | Close tab | Ctrl+W or click X |
 | Switch tabs | Ctrl+Tab or click |
@@ -270,8 +277,13 @@ Now that you're connected, explore more features:
 | Paste | Ctrl+V |
 | Split horizontal | Ctrl+Shift+H |
 | Split vertical | Ctrl+Shift+V |
+| Zoom in | Ctrl+Plus |
+| Zoom out | Ctrl+Minus |
+| Reset zoom | Ctrl+0 |
 | Settings | Toolbar gear icon |
 | Snippets | Ctrl+Shift+S |
+| Start recording | Right-click > Record Session |
+| Toggle broadcast | Right-click > Broadcast Input |
 
 ## Getting Help
 

@@ -171,6 +171,13 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
     public TimeSpan ConnectedDuration => DateTimeOffset.UtcNow - CreatedAt;
 
     /// <summary>
+    /// Gets the formatted duration string (e.g., "1:23:45" or "23:45").
+    /// </summary>
+    public string DurationFormatted => ConnectedDuration.TotalHours >= 1 
+        ? ConnectedDuration.ToString(@"h\:mm\:ss") 
+        : ConnectedDuration.ToString(@"m\:ss");
+
+    /// <summary>
     /// Event raised when the session is closed.
     /// </summary>
     public event EventHandler? SessionClosed;

@@ -11,167 +11,101 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.Core.Models;
 using SshManager.Terminal.Models;
 using SshManager.Terminal.Services;
+using SshManager.Terminal.Services.Connection;
+using SshManager.Terminal.Services.Lifecycle;
+using SshManager.Terminal.Services.Stats;
 using SshManager.Terminal.Utilities;
 
 namespace SshManager.Terminal.Controls;
 
 /// <summary>
-/// WPF terminal control for SSH sessions using WebTerminalControl (xterm.js + WebView2).
-/// Uses xterm.js rendering for proper VT100/ANSI escape sequence support.
-/// This includes full support for alternate screen buffer (mode 1049) used by docker, vim, etc.
+/// WPF terminal control for SSH and serial sessions using WebTerminalControl (xterm.js + WebView2).
+/// This control delegates to extracted services for lifecycle, connection, stats, and theming.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Architecture Overview:</b> This control orchestrates the terminal session by connecting
-/// multiple components:
-/// </para>
-/// <code>
-/// ┌─────────────────────────────────────────────────────────────────┐
-/// │                    SshTerminalControl                           │
-/// │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-/// │  │TerminalHost │  │ StatusBar   │  │ FindOverlay             │  │
-/// │  │(WebTerminal │  │             │  │ (Search UI)             │  │
-/// │  │ Control)    │  │             │  │                         │  │
-/// │  └──────┬──────┘  └─────────────┘  └─────────────────────────┘  │
-/// │         │                                                       │
-/// │  ┌──────┴──────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-/// │  │ WebTerminal │  │ SshTerminal │  │ TerminalOutput          │  │
-/// │  │ Bridge      │  │ Bridge      │  │ Buffer                  │  │
-/// │  │ (C# ↔ JS)   │  │ (SSH ↔ C#)  │  │ (Search/Export)         │  │
-/// │  └─────────────┘  └─────────────┘  └─────────────────────────┘  │
-/// └─────────────────────────────────────────────────────────────────┘
-/// </code>
-/// <para>
-/// <b>Session Ownership:</b> When created via ConnectAsync(), this control owns the bridge
-/// and connection. When attached via AttachToSessionAsync() (for split panes), the control
-/// shares the bridge with the original pane. The _ownsBridge flag tracks ownership for
-/// proper cleanup.
-/// </para>
-/// <para>
-/// <b>Thread Safety:</b> All public methods must be called on the UI thread. Internal
-/// event handlers from bridges may fire on background threads and are marshaled via
-/// Dispatcher.Invoke where needed.
-/// </para>
-/// </remarks>
 public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, INotifyPropertyChanged
 {
-    private TerminalSession? _session;
-    private SshTerminalBridge? _bridge;
-    private SerialTerminalBridge? _serialBridge;
-
-    // Serial control commands
-    private ICommand? _toggleDtrCommand;
-    private ICommand? _toggleRtsCommand;
-    private ICommand? _sendBreakCommand;
-    private ICommand? _toggleLocalEchoCommand;
-
-    // OWNERSHIP TRACKING: Critical for cleanup. When we create a connection (ConnectAsync),
-    // we own the bridge and must dispose it. When we attach to an existing session
-    // (AttachToSessionAsync for split panes), we share the bridge and must NOT dispose it.
-    private bool _ownsBridge;
-
     private ILogger<SshTerminalControl> _logger = NullLogger<SshTerminalControl>.Instance;
 
-    // EXTRACTED SERVICES: These were refactored out of this control to reduce complexity.
-    // Each handles a specific concern: keyboard input, clipboard operations, connection logic.
+    // Extracted services for single responsibility
     private readonly ITerminalKeyboardHandler _keyboardHandler;
     private readonly ITerminalClipboardService _clipboardService;
-    private ITerminalStatsCollector? _statsCollector;
     private readonly ITerminalConnectionHandler _connectionHandler;
+    private readonly ISshSessionConnector _sshConnector;
+    private readonly ISerialSessionConnector _serialConnector;
+    private readonly ITerminalSessionLifecycle _sessionLifecycle;
+    private readonly ITerminalStatsCoordinator _statsCoordinator;
+    private readonly ITerminalThemeManager _themeManager;
 
     // Optional services injected at runtime
     private IBroadcastInputService? _broadcastService;
-    private IServerStatsService? _serverStatsService;
     private ITerminalFocusTracker? _focusTracker;
 
-    // Serial connection service stored for reconnection
+    // Serial reconnection state
     private ISerialConnectionService? _serialService;
     private SerialConnectionInfo? _lastSerialConnectionInfo;
-
-    // Auto-reconnect configuration
     private bool _autoReconnectEnabled;
     private int _maxReconnectAttempts = 3;
     private int _reconnectAttemptCount;
     private readonly TimeSpan _reconnectDelay = TimeSpan.FromSeconds(2);
     private bool _isReconnecting;
 
-    // OUTPUT BUFFER: Captures all terminal output for search functionality and session export.
-    // Uses a tiered storage strategy: recent lines in memory, older lines compressed to disk.
+    // Output buffer for search
     private readonly TerminalOutputBuffer _outputBuffer;
     private TerminalTextSearchService? _searchService;
 
-    // UTF-8 DECODING: SSH data arrives as raw bytes. We need stateful decoding because
-    // multi-byte UTF-8 sequences may be split across TCP packets. The Decoder maintains
-    // state between calls to handle partial sequences correctly.
+    // UTF-8 stateful decoding for multi-byte sequences split across packets
     private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
     private readonly object _decoderLock = new();
 
-    // Settings
-    private string _fontFamily = "Cascadia Mono";
-    private double _fontSize = 14;
-    private bool _isPrimaryPane = true;
-    private TerminalTheme? _currentTheme;
-
-    // RESIZE TRACKING: We track the last sent dimensions to avoid spamming the server
-    // with redundant resize requests when the user drags the window edge.
+    // Resize tracking to avoid spamming server
     private int _lastColumns = 80;
     private int _lastRows = 24;
 
-    // DISCONNECT TRACKING: Prevents firing the Disconnected event multiple times when
-    // both the bridge and connection signal disconnect (e.g., server closes connection).
+    // Disconnect tracking to prevent duplicate events
     private bool _disconnectedRaised;
+    private bool _isPrimaryPane = true;
 
-    /// <summary>
-    /// Occurs when a property value changes.
-    /// </summary>
+    // Serial control commands (lazy initialized)
+    private ICommand? _toggleDtrCommand;
+    private ICommand? _toggleRtsCommand;
+    private ICommand? _sendBreakCommand;
+    private ICommand? _toggleLocalEchoCommand;
+
     public event PropertyChangedEventHandler? PropertyChanged;
+    public event EventHandler? Disconnected;
+    public event EventHandler? FocusReceived;
+    public event EventHandler? ReconnectSucceeded;
+#pragma warning disable CS0067
+    public event EventHandler<string>? TitleChanged;
+#pragma warning restore CS0067
 
-    /// <summary>
-    /// Raises the <see cref="PropertyChanged"/> event.
-    /// </summary>
-    /// <param name="propertyName">The name of the property that changed.</param>
-    protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
-    public SshTerminalControl()
-        : this(null, null, null)
-    {
-    }
+    public SshTerminalControl() : this(null, null, null, null, null, null, null, null) { }
 
     public SshTerminalControl(
         ITerminalKeyboardHandler? keyboardHandler,
         ITerminalClipboardService? clipboardService,
-        ITerminalConnectionHandler? connectionHandler)
+        ITerminalConnectionHandler? connectionHandler,
+        ISshSessionConnector? sshConnector = null,
+        ISerialSessionConnector? serialConnector = null,
+        ITerminalSessionLifecycle? sessionLifecycle = null,
+        ITerminalStatsCoordinator? statsCoordinator = null,
+        ITerminalThemeManager? themeManager = null)
     {
         InitializeComponent();
 
-        // Initialize services (use defaults if not injected)
         _keyboardHandler = keyboardHandler ?? new TerminalKeyboardHandler();
         _clipboardService = clipboardService ?? new TerminalClipboardService();
         _connectionHandler = connectionHandler ?? new TerminalConnectionHandler();
+        _sshConnector = sshConnector ?? new SshSessionConnector();
+        _serialConnector = serialConnector ?? new SerialSessionConnector();
+        _sessionLifecycle = sessionLifecycle ?? new TerminalSessionLifecycle();
+        _statsCoordinator = statsCoordinator ?? new TerminalStatsCoordinator();
+        _themeManager = themeManager ?? new TerminalThemeManager();
 
-        // Initialize output buffer for search with default values
         _outputBuffer = new TerminalOutputBuffer(maxLines: 10000, maxLinesInMemory: 5000);
 
-        // Try to get logger from DI if available
         TryInitializeLogger();
-
-        // Wire up find overlay events
-        FindOverlay.CloseRequested += FindOverlay_CloseRequested;
-        FindOverlay.NavigateToLine += FindOverlay_NavigateToLine;
-        FindOverlay.SearchResultsChanged += FindOverlay_SearchResultsChanged;
-
-        // Wire up terminal events
-        TerminalHost.TerminalReady += OnTerminalReady;
-        TerminalHost.InputReceived += OnTerminalInputReceived;
-        TerminalHost.TerminalResized += OnTerminalResized;
-        TerminalHost.FocusChanged += OnTerminalFocusChanged;
-        TerminalHost.DataWritten += OnTerminalDataWritten;
-
-        Loaded += OnLoaded;
-        Unloaded += OnUnloaded;
+        WireEvents();
     }
 
     private void TryInitializeLogger()
@@ -180,331 +114,172 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
         {
             var loggerFactory = Application.Current?.TryFindResource("ILoggerFactory") as ILoggerFactory;
             if (loggerFactory != null)
-            {
                 _logger = loggerFactory.CreateLogger<SshTerminalControl>();
-            }
         }
-        catch
-        {
-            // Logger not available, use null logger
-        }
-
+        catch { }
     }
+
+    private void WireEvents()
+    {
+        FindOverlay.CloseRequested += (_, _) => HideFindOverlay();
+        FindOverlay.NavigateToLine += (_, lineIndex) => _logger.LogDebug("Navigate to line {LineIndex}", lineIndex);
+        FindOverlay.SearchResultsChanged += (_, _) => { };
+
+        TerminalHost.TerminalReady += OnTerminalReady;
+        TerminalHost.InputReceived += OnTerminalInputReceived;
+        TerminalHost.TerminalResized += OnTerminalResized;
+        TerminalHost.FocusChanged += OnTerminalFocusChanged;
+        TerminalHost.DataWritten += OnTerminalDataWritten;
+
+        _sshConnector.Disconnected += OnConnectorDisconnected;
+        _serialConnector.Disconnected += OnConnectorDisconnected;
+
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+    }
+
+    #region Lifecycle Events
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        // Initialize search service with output buffer
         _searchService ??= new TerminalTextSearchService(_outputBuffer);
         FindOverlay.SetSearchService(_searchService);
 
-        // Restart stats collector if we have an active session
-        if (_session?.IsConnected == true && _statsCollector != null && !_statsCollector.IsRunning)
-        {
-            if (_bridge != null)
-            {
-                _statsCollector.Start(_session, _bridge);
-            }
-        }
+        if (_sessionLifecycle.IsConnected && !_statsCoordinator.IsCollecting)
+            _statsCoordinator.Resume();
 
         _logger.LogDebug("SshTerminalControl loaded");
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        // Pause stats updates while not visible (saves resources)
-        _statsCollector?.Stop();
-        _logger.LogDebug("SshTerminalControl unloaded (pausing stats)");
+        _statsCoordinator.Pause();
+        _logger.LogDebug("SshTerminalControl unloaded");
     }
+
+    #endregion
+
+    #region Terminal Events
 
     private void OnTerminalReady()
     {
         _logger.LogDebug("WebTerminalControl ready");
-
-        // Apply theme if available
-        if (_currentTheme != null)
-        {
-            ApplyTheme(_currentTheme);
-        }
-
-        ApplyFontSettings();
-
-        // Auto-focus the terminal when it becomes ready
+        if (_themeManager.CurrentTheme != null)
+            _themeManager.ApplyTheme(_themeManager.CurrentTheme, TerminalHost);
+        _themeManager.ApplyFontSettings(TerminalHost);
         TerminalHost.Focus();
     }
 
     private void OnTerminalInputReceived(string input)
     {
         if (string.IsNullOrEmpty(input)) return;
-
-        // Record user input to session recorder (if recording is active)
-        _session?.SessionRecorder?.RecordInput(input);
-
-        // If broadcast mode is enabled, send to all selected sessions
+        _sessionLifecycle.CurrentSession?.SessionRecorder?.RecordInput(input);
         if (_broadcastService?.IsEnabled == true)
-        {
-            var bytes = Encoding.UTF8.GetBytes(input);
-            _broadcastService.SendToSelected(bytes);
-        }
-        else if (_serialBridge != null)
-        {
-            // Send to serial bridge if this is a serial connection
-            _serialBridge.SendText(input);
-        }
+            _broadcastService.SendToSelected(Encoding.UTF8.GetBytes(input));
         else
-        {
-            // Send to SSH bridge for SSH connections
-            _bridge?.SendText(input);
-        }
+            SendTextToBridge(input);
     }
 
     private void OnTerminalResized(int cols, int rows)
     {
-        if (cols <= 0 || rows <= 0) return;
-        if (cols == _lastColumns && rows == _lastRows) return;
+        if (cols <= 0 || rows <= 0 || (cols == _lastColumns && rows == _lastRows)) return;
 
         _lastColumns = cols;
         _lastRows = rows;
+        _sessionLifecycle.CurrentSession?.SessionRecorder?.RecordResize(cols, rows);
 
-        // Record terminal resize to session recorder (if recording is active)
-        _session?.SessionRecorder?.RecordResize(cols, rows);
-
-        // Resize SSH terminal
-        if (_session?.Connection != null)
-        {
-            bool success = _session.Connection.ResizeTerminal((uint)cols, (uint)rows);
-            if (success)
-            {
-                _logger.LogDebug("Terminal resized to {Cols}x{Rows}", cols, rows);
-            }
-            else
-            {
-                _logger.LogWarning("Terminal resize to {Cols}x{Rows} failed", cols, rows);
-            }
-        }
+        var connection = _sessionLifecycle.CurrentSession?.Connection;
+        if (connection?.ResizeTerminal((uint)cols, (uint)rows) == true)
+            _logger.LogDebug("Terminal resized to {Cols}x{Rows}", cols, rows);
     }
 
     private void OnTerminalFocusChanged(bool hasFocus)
     {
-        // Notify focus tracker if available
-        if (_focusTracker != null && _session != null)
+        var session = _sessionLifecycle.CurrentSession;
+        if (_focusTracker != null && session != null)
         {
-            var sessionId = _session.Id.ToString();
+            var sessionId = session.Id.ToString();
             if (hasFocus)
-            {
                 _focusTracker.NotifyFocusGained(sessionId);
-                _logger.LogDebug("Terminal focus gained for session {SessionId}", sessionId);
-            }
             else
-            {
                 _focusTracker.NotifyFocusLost(sessionId);
-                _logger.LogDebug("Terminal focus lost for session {SessionId}", sessionId);
-            }
         }
 
-        // Raise FocusReceived event so parent controls can update pane focus state
-        // This is more reliable than WPF's routed GotFocus event for WebView2-based controls
         if (hasFocus)
-        {
             FocusReceived?.Invoke(this, EventArgs.Empty);
-        }
     }
 
     private void OnTerminalDataWritten(string preview)
     {
-        // Update session's last output preview for tooltip display
-        if (_session != null)
+        if (_sessionLifecycle.CurrentSession != null)
+            _sessionLifecycle.CurrentSession.LastOutputPreview = preview;
+    }
+
+    private void OnConnectorDisconnected(object? sender, EventArgs e)
+    {
+        Dispatcher.Invoke(async () =>
         {
-            _session.LastOutputPreview = preview;
-        }
-    }
+            _statsCoordinator.Stop();
+            HideSerialControls();
+            ShowStatus("Disconnected");
+            _logger.LogInformation("Connection disconnected for session: {Title}", _sessionLifecycle.CurrentSession?.Title);
 
-    /// <summary>
-    /// Handles data received from SSH and displays it in the terminal.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Data flow:</b> SSH.NET ShellStream → SshTerminalBridge.DataReceived → here → WebTerminalBridge → xterm.js
-    /// </para>
-    /// <para>
-    /// This method is called on a background thread from SshTerminalBridge's read loop.
-    /// However, we don't need to dispatch to the UI thread here because:
-    /// 1. TerminalOutputBuffer is thread-safe
-    /// 2. WebTerminalBridge.WriteData handles UI dispatch internally
-    /// </para>
-    /// </remarks>
-    private void OnSshDataReceived(byte[] data)
-    {
-        if (data.Length == 0) return;
-
-        // Record raw SSH output to session recorder (if recording is active)
-        _session?.SessionRecorder?.RecordOutput(data);
-
-        // CRITICAL: Use stateful decoder to handle multi-byte UTF-8 sequences correctly.
-        // SSH data arrives in arbitrary chunks that may split UTF-8 characters.
-        // Example: Chinese character 中 (U+4E2D) = bytes E4 B8 AD
-        // If packet 1 contains [E4 B8] and packet 2 contains [AD ...], a stateless
-        // decoder would produce garbage. The stateful decoder remembers partial sequences.
-        var text = DecodeUtf8(data);
-
-        if (string.IsNullOrEmpty(text)) return;
-
-        // Capture output for search and session export functionality
-        _outputBuffer.AppendOutput(text);
-
-        // Write to WebTerminal - the bridge handles batching and UI thread dispatch
-        TerminalHost.WriteData(text);
-    }
-
-    #region Keyboard Handling
-
-    private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (_keyboardHandler.HandleKeyDown(e, this))
-        {
-            e.Handled = true;
-        }
-    }
-
-    #endregion
-
-    #region IKeyboardHandlerContext Implementation
-
-    void IKeyboardHandlerContext.SendText(string text)
-    {
-        if (_serialBridge != null)
-        {
-            _serialBridge.SendText(text);
-        }
-        else
-        {
-            _bridge?.SendText(text);
-        }
-    }
-
-    void IKeyboardHandlerContext.ShowFindOverlay() => ShowFindOverlay();
-
-    void IKeyboardHandlerContext.HideFindOverlay() => HideFindOverlay();
-
-    bool IKeyboardHandlerContext.IsFindOverlayVisible => FindOverlay.Visibility == Visibility.Visible;
-
-    void IKeyboardHandlerContext.CopyToClipboard() => CopyToClipboard();
-
-    void IKeyboardHandlerContext.PasteFromClipboard() => PasteFromClipboard();
-
-    void IKeyboardHandlerContext.ZoomIn() => TerminalHost.ZoomIn();
-
-    void IKeyboardHandlerContext.ZoomOut() => TerminalHost.ZoomOut();
-
-    void IKeyboardHandlerContext.ResetZoom() => TerminalHost.ResetZoom();
-
-    #endregion
-
-    #region Find Overlay
-
-    /// <summary>
-    /// Shows the find overlay for searching terminal output.
-    /// </summary>
-    public void ShowFindOverlay()
-    {
-        FindOverlay.Show();
-    }
-
-    /// <summary>
-    /// Hides the find overlay.
-    /// </summary>
-    public void HideFindOverlay()
-    {
-        FindOverlay.Hide();
-        TerminalHost.Focus();
-    }
-
-    private void FindOverlay_CloseRequested(object? sender, EventArgs e)
-    {
-        HideFindOverlay();
-    }
-
-    private void FindOverlay_NavigateToLine(object? sender, int lineIndex)
-    {
-        // Note: xterm.js manages its own scrollback.
-        // The search match is indicated in the overlay.
-        _logger.LogDebug("Navigate to line {LineIndex} requested", lineIndex);
-    }
-
-    private void FindOverlay_SearchResultsChanged(object? sender, EventArgs e)
-    {
-        // Search results changed - terminal automatically highlights matches
-    }
-
-    #endregion
-
-    #region UTF-8 Decoding
-
-    private string DecodeUtf8(byte[] data)
-    {
-        lock (_decoderLock)
-        {
-            var charBuffer = ArrayPool<char>.Shared.Rent(data.Length + 4);
-            try
+            if (_autoReconnectEnabled && !_isReconnecting && _reconnectAttemptCount < _maxReconnectAttempts &&
+                _sessionLifecycle.CurrentSession?.Host?.ConnectionType == ConnectionType.Serial)
             {
-                var charCount = _decoder.GetChars(data, 0, data.Length, charBuffer, 0, flush: false);
-                return charCount > 0 ? new string(charBuffer, 0, charCount) : string.Empty;
+                _reconnectAttemptCount++;
+                await Task.Delay(_reconnectDelay);
+                await TryAutoReconnectSerialAsync();
+                return;
             }
-            finally
+
+            if (!_disconnectedRaised)
             {
-                ArrayPool<char>.Shared.Return(charBuffer);
-            }
-        }
-    }
-
-    #endregion
-
-    #region Clipboard Operations
-
-    /// <summary>
-    /// Copies selected text to the clipboard.
-    /// </summary>
-    public void CopyToClipboard()
-    {
-        _clipboardService.CopyToClipboard();
-    }
-
-    /// <summary>
-    /// Pastes text from the clipboard to the terminal.
-    /// </summary>
-    public void PasteFromClipboard()
-    {
-        _clipboardService.PasteFromClipboard(text =>
-        {
-            if (_serialBridge != null)
-            {
-                _serialBridge.SendText(text);
-            }
-            else
-            {
-                _bridge?.SendText(text);
+                _disconnectedRaised = true;
+                Disconnected?.Invoke(this, EventArgs.Empty);
             }
         });
     }
 
     #endregion
 
+    #region Data Handling
+
+    private void OnSshDataReceived(byte[] data) => HandleDataReceived(data);
+    private void OnSerialDataReceived(byte[] data) => HandleDataReceived(data);
+
+    private void HandleDataReceived(byte[] data)
+    {
+        if (data.Length == 0) return;
+        _sessionLifecycle.CurrentSession?.SessionRecorder?.RecordOutput(data);
+        lock (_decoderLock)
+        {
+            var charBuffer = ArrayPool<char>.Shared.Rent(data.Length + 4);
+            try
+            {
+                var charCount = _decoder.GetChars(data, 0, data.Length, charBuffer, 0, flush: false);
+                if (charCount > 0)
+                {
+                    var text = new string(charBuffer, 0, charCount);
+                    _outputBuffer.AppendOutput(text);
+                    TerminalHost.WriteData(text);
+                }
+            }
+            finally { ArrayPool<char>.Shared.Return(charBuffer); }
+        }
+    }
+
+    #endregion
+
     #region Connection Management
 
-    /// <summary>
-    /// Connects to an SSH server using the provided connection info.
-    /// </summary>
     public Task ConnectAsync(
         ISshConnectionService sshService,
         TerminalConnectionInfo connectionInfo,
         HostKeyVerificationCallback? hostKeyCallback = null,
         CancellationToken cancellationToken = default)
-    {
-        return ConnectAsync(sshService, connectionInfo, hostKeyCallback, null, cancellationToken);
-    }
+        => ConnectAsync(sshService, connectionInfo, hostKeyCallback, null, cancellationToken);
 
-    /// <summary>
-    /// Connects to an SSH server using direct SSH.NET connection.
-    /// </summary>
     public async Task ConnectAsync(
         ISshConnectionService sshService,
         TerminalConnectionInfo connectionInfo,
@@ -512,60 +287,45 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
         KeyboardInteractiveCallback? kbInteractiveCallback,
         CancellationToken cancellationToken = default)
     {
-        if (connectionInfo == null)
-        {
-            throw new ArgumentNullException(nameof(connectionInfo));
-        }
+        ArgumentNullException.ThrowIfNull(connectionInfo);
 
-        // Reset disconnect tracking for new connection
         _disconnectedRaised = false;
-
-        var newSession = DataContext as TerminalSession;
-        _session = newSession;
+        var session = DataContext as TerminalSession;
 
         try
         {
             ShowStatus("Connecting...");
-
-            // Initialize WebTerminalControl
             await TerminalHost.InitializeAsync();
 
-            // Establish SSH connection via handler
-            var result = await _connectionHandler.ConnectAsync(
-                sshService,
-                connectionInfo,
-                hostKeyCallback,
-                kbInteractiveCallback,
-                (uint)_lastColumns,
-                (uint)_lastRows,
-                cancellationToken);
+            var result = await _sshConnector.ConnectAsync(
+                sshService, connectionInfo, hostKeyCallback, kbInteractiveCallback,
+                (uint)_lastColumns, (uint)_lastRows, cancellationToken);
 
-            // Update session with connection
-            if (_session != null)
+            _sessionLifecycle.SetSession(session, result.Bridge, true);
+
+            if (session != null)
             {
-                _session.Connection = result.Connection;
-                // Subscribe to connection-level disconnection for faster detection when host shuts down
-                result.Connection.Disconnected += OnConnectionDisconnected;
+                session.Connection = result.Connection;
+                session.Bridge = result.Bridge;
             }
 
-            // Wire up bridge
-            _bridge = result.Bridge;
-            _bridge.DataReceived += OnSshDataReceived;
-            _bridge.Disconnected += OnBridgeDisconnected;
-            _ownsBridge = true;
+            _sshConnector.WireBridgeEvents(result.Bridge, OnSshDataReceived);
+            result.Bridge.StartReading();
 
-            // Store bridge in session for mirrored panes to reuse
-            if (_session != null)
+            // Diagnostic: Check if the WebTerminalBridge is ready
+            // If not ready, data will be buffered and terminal will appear black
+            if (!TerminalHost.IsTerminalReady)
             {
-                _session.Bridge = _bridge;
+                _logger.LogWarning("Terminal WebView2 bridge not ready yet - SSH data may be buffered. " +
+                    "If terminal shows black screen, check: 1) Network/firewall (xterm.js CDN), 2) JavaScript console errors");
             }
-
-            // Start reading SSH data
-            _bridge.StartReading();
+            else
+            {
+                _logger.LogDebug("Terminal WebView2 bridge is ready - data will flow to xterm.js");
+            }
 
             HideStatus();
-            StartStatsCollection();
-
+            _statsCoordinator.StartForSshSession(session!, result.Bridge, StatusBar);
             _logger.LogInformation("Connected to {Host}", connectionInfo.Hostname);
         }
         catch (Exception ex)
@@ -576,9 +336,6 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
         }
     }
 
-    /// <summary>
-    /// Connects to an SSH server through a proxy chain.
-    /// </summary>
     public async Task ConnectWithProxyChainAsync(
         ISshConnectionService sshService,
         IReadOnlyList<TerminalConnectionInfo> connectionChain,
@@ -587,142 +344,76 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
         CancellationToken cancellationToken = default)
     {
         if (connectionChain == null || connectionChain.Count == 0)
-        {
             throw new ArgumentException("Connection chain cannot be empty", nameof(connectionChain));
-        }
 
-        // Reset disconnect tracking for new connection
         _disconnectedRaised = false;
-
-        var newSession = DataContext as TerminalSession;
-        _session = newSession;
+        var session = DataContext as TerminalSession;
 
         try
         {
             ShowStatus("Connecting through proxy chain...");
-
-            // Initialize WebTerminalControl
             await TerminalHost.InitializeAsync();
 
-            // Establish SSH connection through proxy chain via handler
-            var result = await _connectionHandler.ConnectWithProxyChainAsync(
-                sshService,
-                connectionChain,
-                hostKeyCallback,
-                kbInteractiveCallback,
-                (uint)_lastColumns,
-                (uint)_lastRows,
-                cancellationToken);
+            var result = await _sshConnector.ConnectWithProxyChainAsync(
+                sshService, connectionChain, hostKeyCallback, kbInteractiveCallback,
+                (uint)_lastColumns, (uint)_lastRows, cancellationToken);
 
-            // Update session with connection
-            if (_session != null)
+            _sessionLifecycle.SetSession(session, result.Bridge, true);
+
+            if (session != null)
             {
-                _session.Connection = result.Connection;
-                // Subscribe to connection-level disconnection for faster detection when host shuts down
-                result.Connection.Disconnected += OnConnectionDisconnected;
+                session.Connection = result.Connection;
+                session.Bridge = result.Bridge;
             }
 
-            // Wire up bridge
-            _bridge = result.Bridge;
-            _bridge.DataReceived += OnSshDataReceived;
-            _bridge.Disconnected += OnBridgeDisconnected;
-            _ownsBridge = true;
-
-            // Store bridge in session for mirrored panes to reuse
-            if (_session != null)
-            {
-                _session.Bridge = _bridge;
-            }
-
-            // Start reading SSH data
-            _bridge.StartReading();
+            _sshConnector.WireBridgeEvents(result.Bridge, OnSshDataReceived);
+            result.Bridge.StartReading();
 
             HideStatus();
-            StartStatsCollection();
-
-            var hosts = string.Join(" → ", connectionChain.Select(c => c.Hostname));
-            _logger.LogInformation("Connected through proxy chain: {Chain}", hosts);
+            _statsCoordinator.StartForSshSession(session!, result.Bridge, StatusBar);
+            _logger.LogInformation("Connected through proxy chain: {Chain}",
+                string.Join(" -> ", connectionChain.Select(c => c.Hostname)));
         }
         catch (Exception ex)
         {
-            var chainHosts = string.Join(" → ", connectionChain.Select(c => c.Hostname));
-            _logger.LogError(ex, "Failed to connect through proxy chain: {Chain}", chainHosts);
+            _logger.LogError(ex, "Failed to connect through proxy chain");
             ShowStatus($"Connection failed: {ex.Message}");
             throw;
         }
     }
 
-    /// <summary>
-    /// Connects to a serial port and initializes the terminal.
-    /// </summary>
-    /// <param name="serialService">The serial connection service.</param>
-    /// <param name="connectionInfo">Serial port connection parameters.</param>
-    /// <param name="session">The terminal session to associate with the connection.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task ConnectSerialAsync(
         ISerialConnectionService serialService,
         SerialConnectionInfo connectionInfo,
         TerminalSession session,
         CancellationToken cancellationToken = default)
     {
-        if (serialService == null)
-        {
-            throw new ArgumentNullException(nameof(serialService));
-        }
+        ArgumentNullException.ThrowIfNull(serialService);
+        ArgumentNullException.ThrowIfNull(connectionInfo);
+        ArgumentNullException.ThrowIfNull(session);
 
-        if (connectionInfo == null)
-        {
-            throw new ArgumentNullException(nameof(connectionInfo));
-        }
-
-        if (session == null)
-        {
-            throw new ArgumentNullException(nameof(session));
-        }
-
-        // Reset disconnect tracking for new connection
         _disconnectedRaised = false;
         _reconnectAttemptCount = 0;
-
-        _session = session;
-
-        // Store for reconnection
         _serialService = serialService;
         _lastSerialConnectionInfo = connectionInfo;
 
         try
         {
             ShowStatus("Connecting to serial port...");
-
-            // Initialize WebTerminalControl
             await TerminalHost.InitializeAsync();
 
-            // Connect to serial port
-            var connection = await serialService.ConnectAsync(connectionInfo, cancellationToken);
+            var result = await _serialConnector.ConnectAsync(serialService, connectionInfo, cancellationToken);
 
-            // Create bridge
-            _serialBridge = new SerialTerminalBridge(
-                connection.BaseStream,
-                logger: null,
-                localEcho: connectionInfo.LocalEcho,
-                lineEnding: connectionInfo.LineEnding);
+            _sessionLifecycle.SetSerialSession(session, result.Bridge, true);
+            session.SerialConnection = result.Connection;
+            session.SerialBridge = result.Bridge;
 
-            // Store in session
-            session.SerialConnection = connection;
-            session.SerialBridge = _serialBridge;
-
-            // Wire up events
-            _serialBridge.DataReceived += OnSerialDataReceived;
-            _serialBridge.Disconnected += OnSerialBridgeDisconnected;
-
-            // Start reading
-            _serialBridge.StartReading();
-
-            _ownsBridge = true;
+            _serialConnector.WireBridgeEvents(result.Bridge, OnSerialDataReceived);
+            result.Bridge.StartReading();
 
             HideStatus();
             ShowSerialControls();
-            StartSerialStatsCollection();
+            _statsCoordinator.StartForSerialSession(session, connectionInfo, StatusBar);
             _logger.LogInformation("Connected to serial port {Port}", connectionInfo.PortName);
         }
         catch (Exception ex)
@@ -733,67 +424,52 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
         }
     }
 
-    /// <summary>
-    /// Handles data received from serial port and displays it in the terminal.
-    /// </summary>
-    private void OnSerialDataReceived(byte[] data)
+    public async Task AttachToSessionAsync(TerminalSession session)
     {
-        if (data.Length == 0) return;
+        await _sessionLifecycle.AttachToSessionAsync(session, TerminalHost, _connectionHandler, OnSshDataReceived);
 
-        // Record raw serial output to session recorder (if recording is active)
-        _session?.SessionRecorder?.RecordOutput(data);
-
-        // Decode UTF-8 using the stateful decoder (same as SSH data handling)
-        var text = DecodeUtf8(data);
-
-        if (string.IsNullOrEmpty(text)) return;
-
-        // Capture output for search and session export functionality
-        _outputBuffer.AppendOutput(text);
-
-        // Write to WebTerminal - the bridge handles batching and UI thread dispatch
-        TerminalHost.WriteData(text);
-    }
-
-    /// <summary>
-    /// Handles serial bridge disconnection.
-    /// </summary>
-    private void OnSerialBridgeDisconnected()
-    {
-        Dispatcher.Invoke(async () =>
+        if (_sessionLifecycle.IsConnected)
         {
-            StopStatsCollection();
-            HideSerialControls();
+            HideStatus();
+            _statsCoordinator.StartForSshSession(session, _sessionLifecycle.SshBridge, StatusBar);
+        }
+        else
+        {
+            _statsCoordinator.Stop();
             ShowStatus("Disconnected");
-            _logger.LogInformation("Serial connection disconnected for session: {Title}", _session?.Title);
-
-            // Attempt auto-reconnect if enabled
-            if (_autoReconnectEnabled && !_isReconnecting && _reconnectAttemptCount < _maxReconnectAttempts)
-            {
-                _reconnectAttemptCount++;
-                _logger.LogInformation("Auto-reconnecting to serial port (attempt {Attempt}/{Max})",
-                    _reconnectAttemptCount, _maxReconnectAttempts);
-
-                await Task.Delay(_reconnectDelay);
-                await TryAutoReconnectSerialAsync();
-                return;
-            }
-
-            // Raise the Disconnected event to notify parent controls (only once)
-            if (!_disconnectedRaised)
-            {
-                _disconnectedRaised = true;
-                Disconnected?.Invoke(this, EventArgs.Empty);
-            }
-        });
+        }
     }
 
-    /// <summary>
-    /// Attempts to auto-reconnect to the serial port.
-    /// </summary>
+    public void Disconnect()
+    {
+        _statsCoordinator.Stop();
+        HideSerialControls();
+
+        // Unwire and cleanup bridges via connectors
+        if (_sessionLifecycle.SshBridge != null)
+            _sshConnector.Disconnect(_sessionLifecycle.SshBridge, _sessionLifecycle.OwnsBridge);
+
+        if (_sessionLifecycle.SerialBridge != null)
+            _serialConnector.Disconnect(_sessionLifecycle.SerialBridge, _sessionLifecycle.OwnsBridge,
+                _sessionLifecycle.CurrentSession?.SerialConnection);
+
+        // Cleanup SSH connection
+        var session = _sessionLifecycle.CurrentSession;
+        if (session?.Connection != null)
+            session.Connection.Dispose();
+
+        _sessionLifecycle.Disconnect();
+        _outputBuffer.Clear();
+        ShowStatus("Disconnected");
+    }
+
+    #endregion
+
+    #region Serial Reconnection
+
     private async Task TryAutoReconnectSerialAsync()
     {
-        if (_serialService == null || _lastSerialConnectionInfo == null || _session == null)
+        if (_serialService == null || _lastSerialConnectionInfo == null || _sessionLifecycle.CurrentSession == null)
         {
             _logger.LogWarning("Cannot auto-reconnect: missing service or connection info");
             return;
@@ -807,7 +483,6 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
         {
             _logger.LogWarning(ex, "Auto-reconnect attempt {Attempt} failed", _reconnectAttemptCount);
 
-            // If we have more attempts remaining, the next disconnect will trigger another try
             if (_reconnectAttemptCount >= _maxReconnectAttempts)
             {
                 ShowStatus($"Reconnection failed after {_maxReconnectAttempts} attempts");
@@ -820,68 +495,48 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
         }
     }
 
-    /// <summary>
-    /// Reconnects to the serial port using stored connection info.
-    /// </summary>
     public async Task ReconnectSerialAsync()
     {
-        if (_serialService == null || _lastSerialConnectionInfo == null || _session == null)
-        {
+        var session = _sessionLifecycle.CurrentSession;
+        if (_serialService == null || _lastSerialConnectionInfo == null || session == null)
             throw new InvalidOperationException("Cannot reconnect: missing service, connection info, or session");
-        }
 
         _isReconnecting = true;
         try
         {
             ShowStatus("Reconnecting to serial port...");
 
-            // Cleanup old bridge if present
-            if (_serialBridge != null)
+            // Cleanup old bridge
+            if (_sessionLifecycle.SerialBridge != null)
             {
-                _serialBridge.DataReceived -= OnSerialDataReceived;
-                _serialBridge.Disconnected -= OnSerialBridgeDisconnected;
-                _serialBridge.Dispose();
-                _serialBridge = null;
+                _serialConnector.UnwireBridgeEvents(_sessionLifecycle.SerialBridge);
+                _sessionLifecycle.SerialBridge.Dispose();
             }
 
-            // Cleanup old connection if present
-            if (_session.SerialConnection != null)
-            {
-                _session.SerialConnection.Dispose();
-                _session.SerialConnection = null;
-            }
+            session.SerialConnection?.Dispose();
+            session.SerialConnection = null;
 
-            // Connect to serial port
             var connection = await _serialService.ConnectAsync(_lastSerialConnectionInfo, CancellationToken.None);
-
-            // Create bridge
-            _serialBridge = new SerialTerminalBridge(
-                connection.BaseStream,
-                logger: null,
+            var bridge = new SerialTerminalBridge(
+                connection.BaseStream, logger: null,
                 localEcho: _lastSerialConnectionInfo.LocalEcho,
                 lineEnding: _lastSerialConnectionInfo.LineEnding);
 
-            // Store in session
-            _session.SerialConnection = connection;
-            _session.SerialBridge = _serialBridge;
+            session.SerialConnection = connection;
+            session.SerialBridge = bridge;
+            _sessionLifecycle.SetSerialSession(session, bridge, true);
 
-            // Wire up events
-            _serialBridge.DataReceived += OnSerialDataReceived;
-            _serialBridge.Disconnected += OnSerialBridgeDisconnected;
+            _serialConnector.WireBridgeEvents(bridge, OnSerialDataReceived);
+            bridge.StartReading();
 
-            // Start reading
-            _serialBridge.StartReading();
-
-            _ownsBridge = true;
             _reconnectAttemptCount = 0;
             _disconnectedRaised = false;
 
             HideStatus();
             ShowSerialControls();
-            StartSerialStatsCollection();
+            _statsCoordinator.StartForSerialSession(session, _lastSerialConnectionInfo, StatusBar);
             _logger.LogInformation("Reconnected to serial port {Port}", _lastSerialConnectionInfo.PortName);
 
-            // Raise reconnect success event
             ReconnectSucceeded?.Invoke(this, EventArgs.Empty);
         }
         finally
@@ -890,304 +545,175 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
         }
     }
 
-    /// <summary>
-    /// Attaches to an existing session that is already connected.
-    /// Used when mirroring a session into a split pane.
-    /// </summary>
-    public async Task AttachToSessionAsync(TerminalSession session)
-    {
-        _session = session;
-
-        if (_session.IsConnected)
-        {
-            // Initialize WebTerminalControl first
-            await TerminalHost.InitializeAsync();
-
-            // Use handler to attach to session
-            var attachResult = _connectionHandler.AttachToSession(_session);
-
-            if (attachResult.Bridge != null)
-            {
-                _bridge = attachResult.Bridge;
-                _bridge.DataReceived += OnSshDataReceived;
-                _ownsBridge = attachResult.OwnsBridge;
-
-                if (attachResult.OwnsBridge)
-                {
-                    _bridge.Disconnected += OnBridgeDisconnected;
-
-                    // Subscribe to connection-level disconnection for faster detection when host shuts down
-                    if (_session.Connection != null)
-                    {
-                        _session.Connection.Disconnected += OnConnectionDisconnected;
-                    }
-                }
-
-                if (attachResult.NeedsStartReading)
-                {
-                    _bridge.StartReading();
-                }
-
-                _logger.LogDebug("Attached to session: {Title}", session.Title);
-            }
-
-            HideStatus();
-            StartStatsCollection();
-        }
-        else
-        {
-            StopStatsCollection();
-            ShowStatus("Disconnected");
-        }
-    }
-
-    /// <summary>
-    /// Disconnects from the SSH server and cleans up resources.
-    /// </summary>
-    public void Disconnect()
-    {
-        StopStatsCollection();
-        HideSerialControls();
-
-        if (_bridge != null)
-        {
-            _bridge.DataReceived -= OnSshDataReceived;
-            _bridge.Disconnected -= OnBridgeDisconnected;
-
-            _connectionHandler.Disconnect(_bridge, _ownsBridge);
-            _bridge = null;
-        }
-
-        // Dispose serial bridge if present
-        if (_serialBridge != null)
-        {
-            _serialBridge.DataReceived -= OnSerialDataReceived;
-            _serialBridge.Disconnected -= OnSerialBridgeDisconnected;
-
-            if (_ownsBridge)
-            {
-                _serialBridge.Dispose();
-            }
-            _serialBridge = null;
-        }
-
-        // Dispose serial connection if present
-        if (_session?.SerialConnection != null)
-        {
-            _session.SerialConnection.Dispose();
-        }
-
-        if (_session?.Connection != null)
-        {
-            _session.Connection.Disconnected -= OnConnectionDisconnected;
-            _session.Connection.Dispose();
-        }
-
-        // Clear the output buffer to free memory and cleanup temp files
-        _outputBuffer.Clear();
-
-        ShowStatus("Disconnected");
-    }
-
-    private void OnConnectionDisconnected(object? sender, EventArgs e)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            StopStatsCollection();
-            ShowStatus("Disconnected");
-            _logger.LogInformation("SSH connection disconnected (connection-level) for session: {Title}", _session?.Title);
-
-            // Raise the Disconnected event to notify parent controls (only once)
-            if (!_disconnectedRaised)
-            {
-                _disconnectedRaised = true;
-                Disconnected?.Invoke(this, EventArgs.Empty);
-            }
-        });
-    }
-
-    private void OnBridgeDisconnected(object? sender, EventArgs e)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            StopStatsCollection();
-            ShowStatus("Disconnected");
-            _logger.LogInformation("SSH connection disconnected for session: {Title}", _session?.Title);
-
-            // Raise the Disconnected event to notify parent controls (only once)
-            if (!_disconnectedRaised)
-            {
-                _disconnectedRaised = true;
-                Disconnected?.Invoke(this, EventArgs.Empty);
-            }
-        });
-    }
-
-    #endregion
-
-    #region Stats Collection
-
-    private void StartStatsCollection()
-    {
-        if (_session == null) return;
-
-        // For SSH connections, require a bridge
-        if (_bridge == null && _serialBridge == null) return;
-
-        // Create stats collector if needed
-        _statsCollector ??= new TerminalStatsCollector(_serverStatsService);
-        _statsCollector.StatsUpdated += OnStatsUpdated;
-
-        // Start stats collection - for SSH, use the bridge; for serial, pass null bridge
-        if (_bridge != null)
-        {
-            _statsCollector.Start(_session, _bridge);
-        }
-        else
-        {
-            // For serial connections, start stats without SSH bridge
-            _statsCollector.Start(_session, null);
-        }
-
-        // Configure status bar based on connection type
-        StatusBar.Stats = _session.Stats;
-        StatusBar.IsSerialSession = _session.IsSerialSession;
-
-        if (_session.IsSerialSession && _lastSerialConnectionInfo != null)
-        {
-            StatusBar.SerialConnectionInfo = _lastSerialConnectionInfo;
-        }
-
-        StatusBar.Visibility = Visibility.Visible;
-    }
-
-    /// <summary>
-    /// Starts stats collection specifically for serial sessions.
-    /// Call this after successful serial connection.
-    /// </summary>
-    private void StartSerialStatsCollection()
-    {
-        if (_session == null || _serialBridge == null) return;
-
-        // Create stats collector if needed
-        _statsCollector ??= new TerminalStatsCollector(_serverStatsService);
-        _statsCollector.StatsUpdated += OnStatsUpdated;
-
-        // Start stats without SSH bridge (serial doesn't use SSH)
-        _statsCollector.Start(_session, null);
-
-        // Configure status bar for serial connection
-        StatusBar.Stats = _session.Stats;
-        StatusBar.IsSerialSession = true;
-
-        if (_lastSerialConnectionInfo != null)
-        {
-            StatusBar.SerialConnectionInfo = _lastSerialConnectionInfo;
-        }
-
-        StatusBar.Visibility = Visibility.Visible;
-    }
-
-    private void StopStatsCollection()
-    {
-        if (_statsCollector != null)
-        {
-            _statsCollector.StatsUpdated -= OnStatsUpdated;
-            _statsCollector.Stop();
-        }
-    }
-
-    private void OnStatsUpdated(object? sender, TerminalStats stats)
-    {
-        StatusBar.Stats = stats;
-        StatusBar.UpdateDisplay();
-    }
-
-    #endregion
-
-    #region Reconnection Properties
-
-    /// <summary>
-    /// Gets whether reconnection is possible for the current session.
-    /// </summary>
     public bool CanReconnect =>
-        _session?.Host != null &&
-        !IsConnected &&
-        !_isReconnecting &&
-        (_session.Host.ConnectionType == ConnectionType.Serial
+        _sessionLifecycle.CurrentSession?.Host != null &&
+        !IsConnected && !_isReconnecting &&
+        (_sessionLifecycle.CurrentSession.Host.ConnectionType == ConnectionType.Serial
             ? _serialService != null && _lastSerialConnectionInfo != null
-            : true); // SSH reconnection would have its own check
+            : true);
 
-    /// <summary>
-    /// Gets or sets whether auto-reconnect is enabled for this terminal.
-    /// When enabled, the terminal will automatically attempt to reconnect after disconnection.
-    /// </summary>
     public bool AutoReconnectEnabled
     {
         get => _autoReconnectEnabled;
-        set
-        {
-            if (_autoReconnectEnabled != value)
-            {
-                _autoReconnectEnabled = value;
-                OnPropertyChanged();
-                _logger.LogDebug("Auto-reconnect {State}", value ? "enabled" : "disabled");
-            }
-        }
+        set { if (_autoReconnectEnabled != value) { _autoReconnectEnabled = value; OnPropertyChanged(); } }
     }
 
-    /// <summary>
-    /// Gets or sets the maximum number of reconnection attempts.
-    /// </summary>
     public int MaxReconnectAttempts
     {
         get => _maxReconnectAttempts;
-        set
-        {
-            if (value < 0) throw new ArgumentOutOfRangeException(nameof(value), "Must be non-negative");
-            if (_maxReconnectAttempts != value)
-            {
-                _maxReconnectAttempts = value;
-                OnPropertyChanged();
-            }
-        }
+        set { if (value < 0) throw new ArgumentOutOfRangeException(nameof(value)); if (_maxReconnectAttempts != value) { _maxReconnectAttempts = value; OnPropertyChanged(); } }
     }
 
-    /// <summary>
-    /// Gets the number of reconnection attempts made since the last successful connection.
-    /// </summary>
     public int ReconnectAttemptCount => _reconnectAttemptCount;
-
-    /// <summary>
-    /// Gets whether a reconnection attempt is currently in progress.
-    /// </summary>
     public bool IsReconnecting => _isReconnecting;
+    public void ResetReconnectAttempts() => _reconnectAttemptCount = 0;
 
-    /// <summary>
-    /// Resets the reconnection attempt counter.
-    /// </summary>
-    public void ResetReconnectAttempts()
-    {
-        _reconnectAttemptCount = 0;
-    }
-
-    /// <summary>
-    /// Event raised when reconnection succeeds.
-    /// </summary>
-    public event EventHandler? ReconnectSucceeded;
-
-    /// <summary>
-    /// Configures auto-reconnect settings from application settings.
-    /// </summary>
-    /// <param name="enabled">Whether auto-reconnect is enabled.</param>
-    /// <param name="maxAttempts">Maximum number of reconnection attempts.</param>
     public void ConfigureAutoReconnect(bool enabled, int maxAttempts = 3)
     {
         _autoReconnectEnabled = enabled;
         _maxReconnectAttempts = maxAttempts;
-        _logger.LogDebug("Auto-reconnect configured: enabled={Enabled}, maxAttempts={MaxAttempts}",
-            enabled, maxAttempts);
     }
+
+    #endregion
+
+    #region Keyboard & Clipboard
+
+    private void UserControl_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_keyboardHandler.HandleKeyDown(e, this)) e.Handled = true;
+    }
+
+    private void SendTextToBridge(string text)
+    {
+        if (_sessionLifecycle.SerialBridge != null) _sessionLifecycle.SerialBridge.SendText(text);
+        else _sessionLifecycle.SshBridge?.SendText(text);
+    }
+
+    void IKeyboardHandlerContext.SendText(string text) => SendTextToBridge(text);
+    void IKeyboardHandlerContext.ShowFindOverlay() => ShowFindOverlay();
+    void IKeyboardHandlerContext.HideFindOverlay() => HideFindOverlay();
+    bool IKeyboardHandlerContext.IsFindOverlayVisible => FindOverlay.Visibility == Visibility.Visible;
+    void IKeyboardHandlerContext.CopyToClipboard() => CopyToClipboard();
+    void IKeyboardHandlerContext.PasteFromClipboard() => PasteFromClipboard();
+    void IKeyboardHandlerContext.ZoomIn() => TerminalHost.ZoomIn();
+    void IKeyboardHandlerContext.ZoomOut() => TerminalHost.ZoomOut();
+    void IKeyboardHandlerContext.ResetZoom() => TerminalHost.ResetZoom();
+    bool IKeyboardHandlerContext.IsCompletionPopupVisible => false;
+    string IKeyboardHandlerContext.GetCurrentInputLine() => string.Empty;
+    int IKeyboardHandlerContext.GetCursorPosition() => 0;
+    void IKeyboardHandlerContext.RequestCompletions() { }
+    void IKeyboardHandlerContext.InsertCompletion(string text) { }
+    void IKeyboardHandlerContext.CompletionSelectPrevious() { }
+    void IKeyboardHandlerContext.CompletionSelectNext() { }
+    void IKeyboardHandlerContext.AcceptCompletion() { }
+    void IKeyboardHandlerContext.HideCompletionPopup() { }
+
+    public void CopyToClipboard() => _clipboardService.CopyToClipboard();
+    public void PasteFromClipboard() => _clipboardService.PasteFromClipboard(SendTextToBridge);
+    public void ShowFindOverlay() => FindOverlay.Show();
+    public void HideFindOverlay() { FindOverlay.Hide(); TerminalHost.Focus(); }
+
+    #endregion
+
+    #region Serial Controls
+
+    public bool IsDtrEnabled => _sessionLifecycle.CurrentSession?.Host?.SerialDtrEnable ?? true;
+    public bool IsRtsEnabled => _sessionLifecycle.CurrentSession?.Host?.SerialRtsEnable ?? true;
+
+    public ICommand ToggleDtrCommand => _toggleDtrCommand ??= new RelayCommand(
+        () => SetDtr(!IsDtrEnabled),
+        () => _sessionLifecycle.CurrentSession?.SerialConnection?.IsConnected == true);
+
+    public ICommand ToggleRtsCommand => _toggleRtsCommand ??= new RelayCommand(
+        () => SetRts(!IsRtsEnabled),
+        () => _sessionLifecycle.CurrentSession?.SerialConnection?.IsConnected == true);
+
+    public ICommand SendBreakCommand => _sendBreakCommand ??= new RelayCommand(
+        SendBreak,
+        () => _sessionLifecycle.CurrentSession?.SerialConnection?.IsConnected == true);
+
+    public ICommand ToggleLocalEchoCommand => _toggleLocalEchoCommand ??= new RelayCommand(
+        ToggleLocalEcho,
+        () => _sessionLifecycle.CurrentSession?.SerialConnection?.IsConnected == true);
+
+    public void SetDtr(bool enabled)
+    {
+        var session = _sessionLifecycle.CurrentSession;
+        if (session?.SerialConnection == null) return;
+        try
+        {
+            session.SerialConnection.SetDtr(enabled);
+            if (session.Host != null) session.Host.SerialDtrEnable = enabled;
+            OnPropertyChanged(nameof(IsDtrEnabled));
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to set DTR signal"); }
+    }
+
+    public void SetRts(bool enabled)
+    {
+        var session = _sessionLifecycle.CurrentSession;
+        if (session?.SerialConnection == null) return;
+        try
+        {
+            session.SerialConnection.SetRts(enabled);
+            if (session.Host != null) session.Host.SerialRtsEnable = enabled;
+            OnPropertyChanged(nameof(IsRtsEnabled));
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to set RTS signal"); }
+    }
+
+    public void SendBreak()
+    {
+        try { _sessionLifecycle.CurrentSession?.SerialConnection?.SendBreak(250); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to send break signal"); }
+    }
+
+    public bool IsLocalEchoEnabled
+    {
+        get => _sessionLifecycle.SerialBridge?.LocalEcho ?? _sessionLifecycle.CurrentSession?.Host?.SerialLocalEcho ?? false;
+        set { if (_sessionLifecycle.SerialBridge != null) { _sessionLifecycle.SerialBridge.LocalEcho = value; OnPropertyChanged(); } }
+    }
+
+    public void ToggleLocalEcho()
+    {
+        if (_sessionLifecycle.SerialBridge != null)
+            IsLocalEchoEnabled = !IsLocalEchoEnabled;
+    }
+
+    public void NotifySerialStateChanged()
+    {
+        OnPropertyChanged(nameof(IsSerialConnected));
+        OnPropertyChanged(nameof(IsDtrEnabled));
+        OnPropertyChanged(nameof(IsRtsEnabled));
+        OnPropertyChanged(nameof(IsLocalEchoEnabled));
+        (_toggleDtrCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (_toggleRtsCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (_sendBreakCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (_toggleLocalEchoCommand as RelayCommand)?.NotifyCanExecuteChanged();
+    }
+
+    private void LocalEchoCheckBox_Checked(object sender, RoutedEventArgs e) => IsLocalEchoEnabled = true;
+    private void LocalEchoCheckBox_Unchecked(object sender, RoutedEventArgs e) => IsLocalEchoEnabled = false;
+    private void DtrToggleButton_Checked(object sender, RoutedEventArgs e) => SetDtr(true);
+    private void DtrToggleButton_Unchecked(object sender, RoutedEventArgs e) => SetDtr(false);
+    private void RtsToggleButton_Checked(object sender, RoutedEventArgs e) => SetRts(true);
+    private void RtsToggleButton_Unchecked(object sender, RoutedEventArgs e) => SetRts(false);
+    private void SendBreakButton_Click(object sender, RoutedEventArgs e) => SendBreak();
+
+    private void ShowSerialControls()
+    {
+        SerialControlsPanel.Visibility = Visibility.Visible;
+        LocalEchoCheckBox.IsChecked = IsLocalEchoEnabled;
+        var host = _sessionLifecycle.CurrentSession?.Host;
+        if (host != null)
+        {
+            DtrToggleButton.IsChecked = host.SerialDtrEnable;
+            RtsToggleButton.IsChecked = host.SerialRtsEnable;
+        }
+        NotifySerialStateChanged();
+    }
+
+    private void HideSerialControls() => SerialControlsPanel.Visibility = Visibility.Collapsed;
 
     #endregion
 
@@ -1196,453 +722,65 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
     private void ShowStatus(string message)
     {
         StatusText.Text = message;
-        StatusProgress.Visibility = message.Contains("Connecting")
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        StatusProgress.Visibility = message.Contains("Connecting") ? Visibility.Visible : Visibility.Collapsed;
         StatusOverlay.Visibility = Visibility.Visible;
     }
 
-    private void HideStatus()
-    {
-        StatusOverlay.Visibility = Visibility.Collapsed;
-    }
+    private void HideStatus() => StatusOverlay.Visibility = Visibility.Collapsed;
 
     #endregion
 
-    #region Serial Controls
+    #region Public Properties
 
-    /// <summary>
-    /// Gets whether DTR (Data Terminal Ready) signal is currently enabled.
-    /// </summary>
-    public bool IsDtrEnabled => _session?.Host?.SerialDtrEnable ?? true;
-
-    /// <summary>
-    /// Gets whether RTS (Request To Send) signal is currently enabled.
-    /// </summary>
-    public bool IsRtsEnabled => _session?.Host?.SerialRtsEnable ?? true;
-
-    /// <summary>
-    /// Command to toggle the DTR signal on serial connections.
-    /// </summary>
-    public ICommand ToggleDtrCommand => _toggleDtrCommand ??= new RelayCommand(
-        () => SetDtr(!IsDtrEnabled),
-        () => _session?.SerialConnection?.IsConnected == true);
-
-    /// <summary>
-    /// Command to toggle the RTS signal on serial connections.
-    /// </summary>
-    public ICommand ToggleRtsCommand => _toggleRtsCommand ??= new RelayCommand(
-        () => SetRts(!IsRtsEnabled),
-        () => _session?.SerialConnection?.IsConnected == true);
-
-    /// <summary>
-    /// Command to send a break signal on serial connections.
-    /// </summary>
-    public ICommand SendBreakCommand => _sendBreakCommand ??= new RelayCommand(
-        SendBreak,
-        () => _session?.SerialConnection?.IsConnected == true);
-
-    /// <summary>
-    /// Command to toggle local echo for serial connections.
-    /// </summary>
-    public ICommand ToggleLocalEchoCommand => _toggleLocalEchoCommand ??= new RelayCommand(
-        ToggleLocalEcho,
-        () => _session?.SerialConnection?.IsConnected == true);
-
-    /// <summary>
-    /// Sets the DTR (Data Terminal Ready) signal state.
-    /// </summary>
-    /// <param name="enabled">True to enable DTR, false to disable.</param>
-    public void SetDtr(bool enabled)
-    {
-        if (_session?.SerialConnection != null)
-        {
-            try
-            {
-                _session.SerialConnection.SetDtr(enabled);
-                if (_session.Host != null)
-                {
-                    _session.Host.SerialDtrEnable = enabled;
-                }
-                OnPropertyChanged(nameof(IsDtrEnabled));
-                _logger.LogInformation("DTR signal set to {State}", enabled ? "enabled" : "disabled");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to set DTR signal");
-            }
-        }
-    }
-
-    /// <summary>
-    /// Sets the RTS (Request To Send) signal state.
-    /// </summary>
-    /// <param name="enabled">True to enable RTS, false to disable.</param>
-    public void SetRts(bool enabled)
-    {
-        if (_session?.SerialConnection != null)
-        {
-            try
-            {
-                _session.SerialConnection.SetRts(enabled);
-                if (_session.Host != null)
-                {
-                    _session.Host.SerialRtsEnable = enabled;
-                }
-                OnPropertyChanged(nameof(IsRtsEnabled));
-                _logger.LogInformation("RTS signal set to {State}", enabled ? "enabled" : "disabled");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to set RTS signal");
-            }
-        }
-    }
-
-    /// <summary>
-    /// Sends a break signal on the serial connection (250ms duration).
-    /// </summary>
-    public void SendBreak()
-    {
-        if (_session?.SerialConnection != null)
-        {
-            try
-            {
-                _session.SerialConnection.SendBreak(250);
-                _logger.LogInformation("Sent break signal (250ms)");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send break signal");
-            }
-        }
-    }
-
-    /// <summary>
-    /// Notifies the UI that serial connection state has changed.
-    /// Call this after connecting or disconnecting to update command states.
-    /// </summary>
-    public void NotifySerialStateChanged()
-    {
-        OnPropertyChanged(nameof(IsSerialConnected));
-        OnPropertyChanged(nameof(IsDtrEnabled));
-        OnPropertyChanged(nameof(IsRtsEnabled));
-        OnPropertyChanged(nameof(IsLocalEchoEnabled));
-
-        // Re-evaluate command CanExecute states
-        (_toggleDtrCommand as RelayCommand)?.NotifyCanExecuteChanged();
-        (_toggleRtsCommand as RelayCommand)?.NotifyCanExecuteChanged();
-        (_sendBreakCommand as RelayCommand)?.NotifyCanExecuteChanged();
-        (_toggleLocalEchoCommand as RelayCommand)?.NotifyCanExecuteChanged();
-    }
-
-    private void LocalEchoCheckBox_Checked(object sender, RoutedEventArgs e)
-    {
-        IsLocalEchoEnabled = true;
-    }
-
-    private void LocalEchoCheckBox_Unchecked(object sender, RoutedEventArgs e)
-    {
-        IsLocalEchoEnabled = false;
-    }
-
-    private void DtrToggleButton_Checked(object sender, RoutedEventArgs e)
-    {
-        SetDtr(true);
-    }
-
-    private void DtrToggleButton_Unchecked(object sender, RoutedEventArgs e)
-    {
-        SetDtr(false);
-    }
-
-    private void RtsToggleButton_Checked(object sender, RoutedEventArgs e)
-    {
-        SetRts(true);
-    }
-
-    private void RtsToggleButton_Unchecked(object sender, RoutedEventArgs e)
-    {
-        SetRts(false);
-    }
-
-    private void SendBreakButton_Click(object sender, RoutedEventArgs e)
-    {
-        SendBreak();
-    }
-
-    private void ShowSerialControls()
-    {
-        SerialControlsPanel.Visibility = Visibility.Visible;
-        LocalEchoCheckBox.IsChecked = IsLocalEchoEnabled;
-
-        // Initialize DTR/RTS toggle states from host settings
-        if (_session?.Host != null)
-        {
-            DtrToggleButton.IsChecked = _session.Host.SerialDtrEnable;
-            RtsToggleButton.IsChecked = _session.Host.SerialRtsEnable;
-        }
-
-        NotifySerialStateChanged();
-    }
-
-    private void HideSerialControls()
-    {
-        SerialControlsPanel.Visibility = Visibility.Collapsed;
-    }
-
-    #endregion
-
-    #region Public Properties and Methods
-
-    /// <summary>
-    /// Gets or sets the terminal font family.
-    /// </summary>
     public string TerminalFontFamily
     {
-        get => _fontFamily;
-        set
-        {
-            _fontFamily = value;
-            ApplyFontSettings();
-        }
+        get => _themeManager.FontFamily;
+        set { _themeManager.FontFamily = value; _themeManager.ApplyFontSettings(TerminalHost); }
     }
 
-    /// <summary>
-    /// Gets or sets the terminal font size.
-    /// </summary>
     public double TerminalFontSize
     {
-        get => _fontSize;
-        set
-        {
-            _fontSize = value;
-            ApplyFontSettings();
-        }
+        get => _themeManager.FontSize;
+        set { _themeManager.FontSize = value; _themeManager.ApplyFontSettings(TerminalHost); }
     }
 
-    /// <summary>
-    /// Gets whether the terminal is connected.
-    /// </summary>
-    public bool IsConnected => _session?.Connection?.IsConnected == true || _session?.SerialConnection?.IsConnected == true;
+    public bool IsConnected => _sessionLifecycle.IsConnected;
+    public bool IsSerialConnected => _sessionLifecycle.SerialBridge != null &&
+        _sessionLifecycle.CurrentSession?.SerialConnection?.IsConnected == true;
 
-    /// <summary>
-    /// Gets whether this is an active serial connection.
-    /// </summary>
-    public bool IsSerialConnected => _serialBridge != null && _session?.SerialConnection?.IsConnected == true;
-
-    /// <summary>
-    /// Gets or sets whether local echo is enabled for serial connections.
-    /// When enabled, typed characters are echoed back locally instead of waiting for the remote device.
-    /// </summary>
-    public bool IsLocalEchoEnabled
-    {
-        get => _serialBridge?.LocalEcho ?? _session?.Host?.SerialLocalEcho ?? false;
-        set
-        {
-            if (_serialBridge != null)
-            {
-                _serialBridge.LocalEcho = value;
-                OnPropertyChanged();
-                _logger.LogDebug("Local echo {State} for serial connection", value ? "enabled" : "disabled");
-            }
-        }
-    }
-
-    /// <summary>
-    /// Toggles local echo for serial connections.
-    /// </summary>
-    public void ToggleLocalEcho()
-    {
-        if (_serialBridge != null)
-        {
-            IsLocalEchoEnabled = !IsLocalEchoEnabled;
-        }
-    }
-
-    /// <summary>
-    /// Gets or sets the scrollback buffer size (total lines across all segments).
-    /// </summary>
-    public int ScrollbackBufferSize
-    {
-        get => _outputBuffer.MaxLines;
-        set => _outputBuffer.MaxLines = value;
-    }
-
-    /// <summary>
-    /// Gets or sets the maximum number of lines to keep in memory.
-    /// Older lines are compressed and archived to disk.
-    /// </summary>
-    public int MaxLinesInMemory
-    {
-        get => _outputBuffer.MaxLinesInMemory;
-        set => _outputBuffer.MaxLinesInMemory = value;
-    }
-
-    /// <summary>
-    /// Event raised when the terminal title changes.
-    /// </summary>
-#pragma warning disable CS0067 // Event is never used - public API for future use
-    public event EventHandler<string>? TitleChanged;
-#pragma warning restore CS0067
-
-    /// <summary>
-    /// Event raised when the SSH connection is disconnected (either by remote or error).
-    /// </summary>
-    public event EventHandler? Disconnected;
-
-    /// <summary>
-    /// Event raised when the terminal receives focus (e.g., user clicks on the terminal).
-    /// This is more reliable than WPF's GotFocus event for WebView2-based controls.
-    /// </summary>
-    public event EventHandler? FocusReceived;
-
-    /// <summary>
-    /// Focuses the terminal input.
-    /// </summary>
-    public void FocusInput()
-    {
-        // Explicitly call the WebTerminalControl's custom Focus method
-        // which handles WebView2 focus properly
-        ((WebTerminalControl)TerminalHost).Focus();
-    }
-
-    /// <summary>
-    /// Sends a command string to the terminal, followed by a carriage return.
-    /// </summary>
-    public void SendCommand(string command)
-    {
-        if (_serialBridge != null)
-        {
-            _serialBridge.SendCommand(command);
-        }
-        else
-        {
-            _bridge?.SendCommand(command);
-        }
-    }
-
-    /// <summary>
-    /// Gets or sets whether this control is the primary pane for its session.
-    /// </summary>
-    public bool IsPrimaryPane
-    {
-        get => _isPrimaryPane;
-        set => _isPrimaryPane = value;
-    }
-
-    /// <summary>
-    /// Sets the broadcast service for sending input to multiple sessions.
-    /// </summary>
-    public void SetBroadcastService(IBroadcastInputService? service)
-    {
-        _broadcastService = service;
-    }
-
-    /// <summary>
-    /// Sets the server stats service for collecting CPU/memory/disk usage.
-    /// </summary>
-    public void SetServerStatsService(IServerStatsService? service)
-    {
-        _serverStatsService = service;
-    }
-
-    /// <summary>
-    /// Sets the terminal focus tracker service for reliable keyboard shortcut handling.
-    /// When set, the control will notify the tracker when it gains/loses focus,
-    /// allowing the main window to correctly route keyboard shortcuts.
-    /// </summary>
-    public void SetFocusTracker(ITerminalFocusTracker? tracker)
-    {
-        _focusTracker = tracker;
-    }
-
-    /// <summary>
-    /// Applies a terminal color theme.
-    /// </summary>
-    public void ApplyTheme(TerminalTheme theme)
-    {
-        if (theme == null)
-        {
-            _logger.LogWarning("ApplyTheme called with null theme");
-            return;
-        }
-
-        try
-        {
-            _currentTheme = theme;
-
-            // Convert to xterm.js theme format
-            var xtermTheme = ThemeAdapter.ToXtermTheme(theme);
-
-            // Apply to WebTerminalControl
-            TerminalHost.SetTheme(xtermTheme);
-
-            _logger.LogDebug("Applied theme: {ThemeName}", theme.Name);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to apply theme: {ThemeName}", theme.Name);
-        }
-    }
-
-    private void ApplyFontSettings()
-    {
-        var fontFamily = string.IsNullOrWhiteSpace(_fontFamily)
-            ? "Cascadia Mono"
-            : _fontFamily;
-        var fontSize = _fontSize > 0 ? _fontSize : 14;
-
-        var fontStack = FontStackBuilder.Build(fontFamily);
-        TerminalHost.SetFont(fontStack, fontSize);
-    }
-
-    /// <summary>
-    /// Gets the currently applied theme.
-    /// </summary>
-    public TerminalTheme? CurrentTheme => _currentTheme;
-
-    /// <summary>
-    /// Gets or sets the broadcast input service.
-    /// </summary>
-    public IBroadcastInputService? BroadcastService
-    {
-        get => _broadcastService;
-        set => _broadcastService = value;
-    }
-
-    /// <summary>
-    /// Gets the terminal output buffer for search/export.
-    /// </summary>
+    public int ScrollbackBufferSize { get => _outputBuffer.MaxLines; set => _outputBuffer.MaxLines = value; }
+    public int MaxLinesInMemory { get => _outputBuffer.MaxLinesInMemory; set => _outputBuffer.MaxLinesInMemory = value; }
+    public bool IsPrimaryPane { get => _isPrimaryPane; set => _isPrimaryPane = value; }
+    public TerminalTheme? CurrentTheme => _themeManager.CurrentTheme;
+    public IBroadcastInputService? BroadcastService { get => _broadcastService; set => _broadcastService = value; }
     public TerminalOutputBuffer OutputBuffer => _outputBuffer;
 
-    /// <summary>
-    /// Gets the text content of the terminal output buffer.
-    /// Useful for exporting session logs.
-    /// </summary>
-    public string GetOutputText()
+    public void SetBroadcastService(IBroadcastInputService? service) => _broadcastService = service;
+    public void SetServerStatsService(IServerStatsService? service) { }
+    public void SetFocusTracker(ITerminalFocusTracker? tracker) => _focusTracker = tracker;
+
+    public void ApplyTheme(TerminalTheme theme)
     {
-        return _outputBuffer.GetAllText();
+        if (theme == null) return;
+        _themeManager.ApplyTheme(theme, TerminalHost);
     }
 
-    /// <summary>
-    /// Requests a terminal fit/refresh operation.
-    /// Call this when the terminal becomes visible after being hidden,
-    /// as WebView2 controls may not properly repaint after visibility changes.
-    /// </summary>
-    public void RefreshTerminal()
+    public void FocusInput() => ((WebTerminalControl)TerminalHost).Focus();
+
+    public void SendCommand(string command)
     {
-        // Use RefreshVisual which invalidates and triggers a fit for proper repaint
-        TerminalHost.RefreshVisual();
+        if (_sessionLifecycle.SerialBridge != null)
+            _sessionLifecycle.SerialBridge.SendCommand(command);
+        else
+            _sessionLifecycle.SshBridge?.SendCommand(command);
     }
 
-    /// <summary>
-    /// Clears the output buffer.
-    /// </summary>
-    public void ClearOutputBuffer()
-    {
-        _outputBuffer.Clear();
-    }
+    public string GetOutputText() => _outputBuffer.GetAllText();
+    public void RefreshTerminal() => TerminalHost.RefreshVisual();
+    public void ClearOutputBuffer() => _outputBuffer.Clear();
 
     #endregion
+
+    protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }

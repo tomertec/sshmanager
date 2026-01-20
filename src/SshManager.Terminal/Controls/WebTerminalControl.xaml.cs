@@ -349,6 +349,21 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// </summary>
     public double CurrentFontSize => _bridge?.FontSize ?? WebTerminalBridge.DefaultFontSize;
 
+    /// <summary>
+    /// Sets the terminal scrollback buffer size (number of lines to keep in history).
+    /// </summary>
+    /// <param name="lines">Number of lines to retain in scrollback buffer.</param>
+    public void SetScrollback(int lines)
+    {
+        if (_disposed)
+        {
+            _logger.LogWarning("SetScrollback called on disposed control");
+            return;
+        }
+
+        _bridge?.SetScrollback(lines);
+    }
+
     private async Task LoadTerminalHtmlAsync()
     {
         try
@@ -358,6 +373,28 @@ public partial class WebTerminalControl : UserControl, IDisposable
             // Debug: List all embedded resources to verify the correct name
             var resourceNames = assembly.GetManifestResourceNames();
             _logger.LogDebug("Available embedded resources: {Resources}", string.Join(", ", resourceNames));
+
+            // Enable DevTools console logging to capture JavaScript errors
+            WebViewControl.CoreWebView2.Settings.AreDevToolsEnabled = true;
+            WebViewControl.CoreWebView2.GetDevToolsProtocolEventReceiver("Console.messageAdded")
+                .DevToolsProtocolEventReceived += (s, e) =>
+                {
+                    _logger.LogDebug("JS Console: {Message}", e.ParameterObjectAsJson);
+                };
+            await WebViewControl.CoreWebView2.CallDevToolsProtocolMethodAsync("Console.enable", "{}");
+
+            // Log navigation errors
+            WebViewControl.CoreWebView2.NavigationCompleted += (s, e) =>
+            {
+                if (!e.IsSuccess)
+                {
+                    _logger.LogError("WebView2 navigation failed: {Status}", e.WebErrorStatus);
+                }
+                else
+                {
+                    _logger.LogDebug("WebView2 navigation completed successfully");
+                }
+            };
 
             // Find the terminal.html resource (case-insensitive search)
             var actualResourceName = FindResourceName(resourceNames, "terminal.html");

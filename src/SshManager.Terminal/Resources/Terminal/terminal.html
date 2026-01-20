@@ -4,7 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SSH Terminal</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+    <!--
+        SECURITY: CDN resources use Subresource Integrity (SRI) to prevent supply chain attacks.
+        SRI hashes were generated using: https://www.srihash.org/
+
+        To update these hashes when upgrading xterm.js:
+        1. Visit https://www.srihash.org/
+        2. Enter the CDN URL for each resource
+        3. Copy the generated integrity hash
+        4. Update the integrity attribute below
+
+        Alternative: Use openssl to generate SRI hash locally:
+        $ curl -s https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css | openssl dgst -sha384 -binary | openssl base64 -A
+    -->
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css"
+          integrity="sha384-8Xk9wy/gzEDUKrXtrmCFa2bBuK3BpjpDuL/p0SeKQX19Khl/M+lHOgD/CyYf7efP"
+          crossorigin="anonymous">
     <style>
         * {
             margin: 0;
@@ -77,8 +93,18 @@
 </head>
 <body>
     <div id="terminal-container"></div>
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+    <!--
+        SECURITY: Script tags include SRI integrity hashes to verify CDN content hasn't been tampered with.
+        The crossorigin="anonymous" attribute is required for SRI to work with cross-origin resources.
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"
+            integrity="sha384-M169f14mRZOXm3hD/v2Ti0ThIT/RnAQagXA9nlE15yHAtrW19gdePJh/HaTzUOe/"
+            crossorigin="anonymous"
+            onerror="console.error('Failed to load xterm.js from CDN'); document.body.innerHTML='<p style=color:red>ERROR: Failed to load xterm.js. Check network/firewall.</p>';"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"
+            integrity="sha384-iF+jqbuti4XlB64clWgFWYEscb+UnSRv3VgVikGYZu+otNFnSHr7y7NcKfBnGizn"
+            crossorigin="anonymous"
+            onerror="console.error('Failed to load xterm addon-fit from CDN');"></script>
     <script>
         (function() {
             'use strict';
@@ -91,13 +117,31 @@
 
             // Initialize terminal when DOM is ready
             function init() {
+                console.log('Terminal init() called');
+
+                // Check if xterm.js loaded successfully
+                if (typeof Terminal === 'undefined') {
+                    console.error('xterm.js Terminal class not available - CDN load may have failed');
+                    document.body.innerHTML = '<p style="color:red;padding:20px;">ERROR: xterm.js failed to load. Check network connection and firewall settings.</p>';
+                    return;
+                }
+
+                if (typeof FitAddon === 'undefined') {
+                    console.error('xterm.js FitAddon not available - CDN load may have failed');
+                    document.body.innerHTML = '<p style="color:red;padding:20px;">ERROR: xterm.js addon-fit failed to load. Check network connection.</p>';
+                    return;
+                }
+
                 const container = document.getElementById('terminal-container');
                 if (!container) {
                     console.error('Terminal container not found');
                     return;
                 }
 
+                console.log('Creating xterm.js Terminal instance');
+
                 // Create terminal instance
+                try {
                 terminal = new Terminal({
                     cursorBlink: true,
                     cursorStyle: 'block',
@@ -210,10 +254,17 @@
                 }
 
                 // Send ready message
+                console.log('Sending ready message to C#');
                 postMessageToHost({ type: 'ready' });
 
                 // Send initial size
                 postMessageToHost({ type: 'resized', cols: terminal.cols, rows: terminal.rows });
+                console.log('Terminal initialization complete');
+
+                } catch (e) {
+                    console.error('Error during terminal initialization:', e);
+                    document.body.innerHTML = '<p style="color:red;padding:20px;">ERROR: Terminal initialization failed: ' + e.message + '</p>';
+                }
             }
 
             // Debounced window resize handler
@@ -300,6 +351,12 @@
                     case 'clear':
                         if (terminal) {
                             terminal.clear();
+                        }
+                        break;
+
+                    case 'setScrollback':
+                        if (terminal && typeof message.scrollback === 'number') {
+                            terminal.options.scrollback = message.scrollback;
                         }
                         break;
 

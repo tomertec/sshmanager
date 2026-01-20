@@ -10,19 +10,13 @@ public partial class CloudSyncSetupDialog : FluentWindow
 {
     private readonly CloudSyncSetupViewModel _viewModel;
 
-    public CloudSyncSetupDialog()
+    /// <summary>
+    /// Initializes a new instance of the CloudSyncSetupDialog with dependency injection.
+    /// </summary>
+    /// <param name="viewModel">The cloud sync setup view model.</param>
+    public CloudSyncSetupDialog(CloudSyncSetupViewModel viewModel)
     {
-        var cloudSyncService = App.GetService<ICloudSyncService>();
-        var cloudSyncHostedService = App.GetService<CloudSyncHostedService>();
-        var settingsRepo = App.GetService<ISettingsRepository>();
-        var oneDriveDetector = App.GetService<IOneDrivePathDetector>();
-
-        _viewModel = new CloudSyncSetupViewModel(
-            cloudSyncService,
-            cloudSyncHostedService,
-            settingsRepo,
-            oneDriveDetector);
-
+        _viewModel = viewModel;
         DataContext = _viewModel;
 
         InitializeComponent();

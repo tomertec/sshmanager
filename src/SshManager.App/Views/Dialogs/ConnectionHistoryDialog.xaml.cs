@@ -12,13 +12,13 @@ public partial class ConnectionHistoryDialog : FluentWindow
 
     public event Func<HostEntry, Task>? OnConnectRequested;
 
-    public ConnectionHistoryDialog()
+    /// <summary>
+    /// Initializes a new instance of the ConnectionHistoryDialog with dependency injection.
+    /// </summary>
+    /// <param name="viewModel">The connection history view model.</param>
+    public ConnectionHistoryDialog(ConnectionHistoryViewModel viewModel)
     {
-        // Get services from DI
-        var historyRepo = App.GetService<IConnectionHistoryRepository>();
-        var hostRepo = App.GetService<IHostRepository>();
-
-        _viewModel = new ConnectionHistoryViewModel(historyRepo, hostRepo);
+        _viewModel = viewModel;
         DataContext = _viewModel;
 
         InitializeComponent();

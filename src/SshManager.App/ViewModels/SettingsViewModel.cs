@@ -13,6 +13,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly IConnectionHistoryRepository _historyRepo;
     private readonly ICredentialCache _credentialCache;
     private readonly ITerminalThemeService _themeService;
+    private readonly IX11ForwardingService _x11ForwardingService;
     private AppSettings? _settings;
 
     // ===== Terminal Settings =====
@@ -31,6 +32,9 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private TerminalTheme? _selectedTerminalTheme;
 
+    [ObservableProperty]
+    private int _scrollbackBufferSize = 10000;
+
     // ===== Connection Settings =====
     [ObservableProperty]
     private int _defaultPort = 22;
@@ -46,6 +50,16 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private int _maxReconnectAttempts = 3;
+
+    // ===== Connection Pooling Settings =====
+    [ObservableProperty]
+    private bool _enableConnectionPooling = false;
+
+    [ObservableProperty]
+    private int _connectionPoolMaxPerHost = 3;
+
+    [ObservableProperty]
+    private int _connectionPoolIdleTimeoutSeconds = 300;
 
     // ===== Security Settings =====
     [ObservableProperty]
@@ -110,7 +124,7 @@ public partial class SettingsViewModel : ObservableObject
     private int _maxHistoryEntries = 100;
 
     [ObservableProperty]
-    private int _historyRetentionDays = 0;
+    private int _historyRetentionDays = 90;
 
     // ===== Backup Settings =====
     [ObservableProperty]
@@ -124,6 +138,46 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _backupDirectory = "";
+
+    // ===== X11 Forwarding Settings =====
+    [ObservableProperty]
+    private bool _defaultX11ForwardingEnabled = false;
+
+    [ObservableProperty]
+    private string _x11ServerPath = "";
+
+    [ObservableProperty]
+    private bool _autoLaunchXServer = false;
+
+    [ObservableProperty]
+    private string? _x11ServerStatus;
+
+    // ===== Autocompletion Settings =====
+    [ObservableProperty]
+    private bool _enableAutocompletion;
+
+    [ObservableProperty]
+    private AutocompletionMode _autocompletionMode;
+
+    [ObservableProperty]
+    private int _autocompletionDebounceMs;
+
+    [ObservableProperty]
+    private int _maxCompletionSuggestions;
+
+    // ===== Host List Settings =====
+    [ObservableProperty]
+    private HostListViewMode _hostListViewMode = HostListViewMode.Normal;
+
+    [ObservableProperty]
+    private bool _showHostConnectionStats = true;
+
+    [ObservableProperty]
+    private bool _pinFavoritesToTop = true;
+
+    // ===== Settings Navigation =====
+    [ObservableProperty]
+    private string _selectedSettingsCategory = "Terminal";
 
     // ===== UI State =====
     [ObservableProperty]
@@ -177,6 +231,26 @@ public partial class SettingsViewModel : ObservableObject
         "ErrorsOnly"
     };
 
+    // Available autocompletion modes
+    public static IReadOnlyList<AutocompletionMode> AutocompletionModes { get; } =
+        Enum.GetValues<AutocompletionMode>().ToList();
+
+    // Available host list view modes
+    public static IReadOnlyList<HostListViewMode> HostListViewModes { get; } =
+        Enum.GetValues<HostListViewMode>().ToList();
+
+    // Settings categories for navigation
+    public IReadOnlyList<string> SettingsCategories { get; } = new[]
+    {
+        "Terminal",
+        "Connection",
+        "Security",
+        "Appearance",
+        "Behavior",
+        "Data",
+        "Backup & Sync"
+    };
+
     // Available terminal themes from theme service
     public IReadOnlyList<TerminalTheme> AvailableTerminalThemes => _themeService.GetAllThemes();
 
@@ -187,12 +261,14 @@ public partial class SettingsViewModel : ObservableObject
         ISettingsRepository settingsRepo,
         IConnectionHistoryRepository historyRepo,
         ICredentialCache credentialCache,
-        ITerminalThemeService themeService)
+        ITerminalThemeService themeService,
+        IX11ForwardingService x11ForwardingService)
     {
         _settingsRepo = settingsRepo;
         _historyRepo = historyRepo;
         _credentialCache = credentialCache;
         _themeService = themeService;
+        _x11ForwardingService = x11ForwardingService;
     }
 
     public async Task LoadAsync()
@@ -205,6 +281,7 @@ public partial class SettingsViewModel : ObservableObject
         TerminalFontSize = _settings.TerminalFontSize;
         TerminalThemeId = _settings.TerminalThemeId;
         SelectedTerminalTheme = _themeService.GetTheme(TerminalThemeId) ?? _themeService.GetTheme("default");
+        ScrollbackBufferSize = _settings.ScrollbackBufferSize;
 
         // Connection settings
         DefaultPort = _settings.DefaultPort;
@@ -212,6 +289,11 @@ public partial class SettingsViewModel : ObservableObject
         KeepAliveIntervalSeconds = _settings.KeepAliveIntervalSeconds;
         AutoReconnect = _settings.AutoReconnect;
         MaxReconnectAttempts = _settings.MaxReconnectAttempts;
+
+        // Connection pooling settings
+        EnableConnectionPooling = _settings.EnableConnectionPooling;
+        ConnectionPoolMaxPerHost = _settings.ConnectionPoolMaxPerHost;
+        ConnectionPoolIdleTimeoutSeconds = _settings.ConnectionPoolIdleTimeoutSeconds;
 
         // Security settings
         DefaultKeyPath = _settings.DefaultKeyPath;
@@ -241,13 +323,29 @@ public partial class SettingsViewModel : ObservableObject
 
         // History settings
         MaxHistoryEntries = _settings.MaxHistoryEntries;
-        HistoryRetentionDays = _settings.HistoryRetentionDays;
+        HistoryRetentionDays = _settings.ConnectionHistoryRetentionDays;
 
         // Backup settings
         EnableAutoBackup = _settings.EnableAutoBackup;
         BackupIntervalMinutes = _settings.BackupIntervalMinutes;
         MaxBackupCount = _settings.MaxBackupCount;
         BackupDirectory = _settings.BackupDirectory ?? "";
+
+        // X11 forwarding settings
+        DefaultX11ForwardingEnabled = _settings.DefaultX11ForwardingEnabled;
+        X11ServerPath = _settings.X11ServerPath ?? "";
+        AutoLaunchXServer = _settings.AutoLaunchXServer;
+
+        // Autocompletion settings
+        EnableAutocompletion = _settings.EnableAutocompletion;
+        AutocompletionMode = _settings.AutocompletionMode;
+        AutocompletionDebounceMs = _settings.AutocompletionDebounceMs;
+        MaxCompletionSuggestions = _settings.MaxCompletionSuggestions;
+
+        // Host list settings
+        HostListViewMode = _settings.HostListViewMode;
+        ShowHostConnectionStats = _settings.ShowHostConnectionStats;
+        PinFavoritesToTop = _settings.PinFavoritesToTop;
     }
 
     [RelayCommand]
@@ -263,6 +361,7 @@ public partial class SettingsViewModel : ObservableObject
             _settings.TerminalFontFamily = TerminalFontFamily;
             _settings.TerminalFontSize = TerminalFontSize;
             _settings.TerminalThemeId = SelectedTerminalTheme?.Id ?? "default";
+            _settings.ScrollbackBufferSize = ScrollbackBufferSize;
 
             // Connection settings
             _settings.DefaultPort = DefaultPort;
@@ -270,6 +369,11 @@ public partial class SettingsViewModel : ObservableObject
             _settings.KeepAliveIntervalSeconds = KeepAliveIntervalSeconds;
             _settings.AutoReconnect = AutoReconnect;
             _settings.MaxReconnectAttempts = MaxReconnectAttempts;
+
+            // Connection pooling settings
+            _settings.EnableConnectionPooling = EnableConnectionPooling;
+            _settings.ConnectionPoolMaxPerHost = ConnectionPoolMaxPerHost;
+            _settings.ConnectionPoolIdleTimeoutSeconds = ConnectionPoolIdleTimeoutSeconds;
 
             // Security settings
             _settings.DefaultKeyPath = DefaultKeyPath;
@@ -305,13 +409,29 @@ public partial class SettingsViewModel : ObservableObject
 
             // History settings
             _settings.MaxHistoryEntries = MaxHistoryEntries;
-            _settings.HistoryRetentionDays = HistoryRetentionDays;
+            _settings.ConnectionHistoryRetentionDays = HistoryRetentionDays;
 
             // Backup settings
             _settings.EnableAutoBackup = EnableAutoBackup;
             _settings.BackupIntervalMinutes = BackupIntervalMinutes;
             _settings.MaxBackupCount = MaxBackupCount;
             _settings.BackupDirectory = string.IsNullOrWhiteSpace(BackupDirectory) ? null : BackupDirectory;
+
+            // X11 forwarding settings
+            _settings.DefaultX11ForwardingEnabled = DefaultX11ForwardingEnabled;
+            _settings.X11ServerPath = string.IsNullOrWhiteSpace(X11ServerPath) ? null : X11ServerPath;
+            _settings.AutoLaunchXServer = AutoLaunchXServer;
+
+            // Autocompletion settings
+            _settings.EnableAutocompletion = EnableAutocompletion;
+            _settings.AutocompletionMode = AutocompletionMode;
+            _settings.AutocompletionDebounceMs = AutocompletionDebounceMs;
+            _settings.MaxCompletionSuggestions = MaxCompletionSuggestions;
+
+            // Host list settings
+            _settings.HostListViewMode = HostListViewMode;
+            _settings.ShowHostConnectionStats = ShowHostConnectionStats;
+            _settings.PinFavoritesToTop = PinFavoritesToTop;
 
             await _settingsRepo.UpdateAsync(_settings);
 
@@ -493,6 +613,12 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
+    partial void OnThemeChanged(string value)
+    {
+        // Apply theme immediately when user changes selection (live preview)
+        App.ApplyApplicationTheme(value);
+    }
+
     [RelayCommand]
     private async Task ImportTerminalThemeAsync()
     {
@@ -637,5 +763,74 @@ public partial class SettingsViewModel : ObservableObject
     private void OpenCloudSync()
     {
         RequestCloudSync?.Invoke();
+    }
+
+    [RelayCommand]
+    private void BrowseX11ServerPath()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select X Server Executable",
+            Filter = "Executable Files (*.exe)|*.exe|All Files (*.*)|*.*",
+            DefaultExt = ".exe"
+        };
+
+        if (!string.IsNullOrEmpty(X11ServerPath) && System.IO.File.Exists(X11ServerPath))
+        {
+            dialog.InitialDirectory = System.IO.Path.GetDirectoryName(X11ServerPath);
+            dialog.FileName = System.IO.Path.GetFileName(X11ServerPath);
+        }
+        else
+        {
+            // Try common X server installation paths
+            var commonPaths = new[]
+            {
+                @"C:\Program Files\VcXsrv",
+                @"C:\Program Files (x86)\VcXsrv",
+                @"C:\Program Files\Xming",
+                @"C:\Program Files (x86)\Xming"
+            };
+
+            foreach (var path in commonPaths)
+            {
+                if (System.IO.Directory.Exists(path))
+                {
+                    dialog.InitialDirectory = path;
+                    break;
+                }
+            }
+        }
+
+        if (dialog.ShowDialog() == true)
+        {
+            X11ServerPath = dialog.FileName;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DetectX11ServerAsync()
+    {
+        try
+        {
+            X11ServerStatus = null;
+            var status = await _x11ForwardingService.DetectXServerAsync();
+
+            if (status.IsAvailable)
+            {
+                X11ServerStatus = $"✓ X Server is running\n" +
+                                 $"Server: {status.ServerName ?? "Unknown"}\n" +
+                                 $"Display: {status.DisplayAddress} (:{status.DisplayNumber})";
+            }
+            else
+            {
+                X11ServerStatus = "✗ No X Server detected\n" +
+                                 "Please ensure VcXsrv, Xming, or X410 is running.\n" +
+                                 "Check that the X server is configured to accept connections.";
+            }
+        }
+        catch (Exception ex)
+        {
+            X11ServerStatus = $"✗ Error detecting X Server:\n{ex.Message}";
+        }
     }
 }

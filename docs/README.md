@@ -62,8 +62,14 @@ dotnet run --project src/SshManager.App/SshManager.App.csproj
 ### Authentication
 
 - **SSH Agent**: Use keys from your SSH agent or `~/.ssh/` directory
+  - Supports Pageant (PuTTY's SSH agent)
+  - Supports Windows OpenSSH Agent (Windows 10+)
+  - Automatic fallback to loading keys from `~/.ssh/` directory
 - **Private Key File**: Specify a path to a private key file
 - **Password**: DPAPI-encrypted password storage (Windows user-specific)
+- **Kerberos/GSSAPI**: Windows domain authentication with GSSAPI support
+  - Credential delegation for accessing additional resources
+  - Seamless integration with Active Directory environments
 - **Keyboard Interactive**: Support for 2FA and other interactive prompts
 
 ### Security
@@ -76,15 +82,33 @@ dotnet run --project src/SshManager.App/SshManager.App.csproj
 ### Advanced Features
 
 - **ProxyJump / Jump Hosts**: Configure multi-hop SSH connections through bastion hosts
-- **Port Forwarding**: Local and remote port forwarding profiles
+- **Port Forwarding**: Local, remote, and dynamic (SOCKS) port forwarding profiles
+- **Visual Tunnel Builder**: Graph-based visual editor for complex tunnel configurations
+  - Drag-and-drop node placement for hosts and gateways
+  - Visual connection mapping between nodes
+  - Save and reuse tunnel profiles
 - **SFTP Browser**: Graphical file browser for remote systems
-- **Remote File Editor**: Edit remote files with syntax highlighting
-- **Command Snippets**: Save and reuse frequently used commands
+  - Dual-pane local/remote file view
+  - Drag-and-drop file transfers
+  - File property viewer
+- **Remote File Editor**: Edit remote files with syntax highlighting (AvalonEdit)
+- **Command Snippets**: Save and reuse frequently used commands with categories
+- **Terminal Autocompletion**: Intelligent command completion with multiple modes
 - **Session Recording**: Record terminal sessions in ASCIINEMA v2 format for playback
-- **Session Playback**: Replay recorded sessions with speed control and seeking
+- **Session Playback**: Replay recorded sessions with speed control (0.5x to 4x) and seeking
 - **Session Logging**: Log terminal sessions to files
+- **Session Recovery**: Restore disconnected sessions automatically
+  - Tracks session state for recovery on connection drops
+  - Session recovery dialog for manual restoration
 - **Broadcast Input**: Send input to multiple terminals simultaneously
 - **Connection History**: Track when and to which hosts you've connected
+- **Auto-Reconnect**: Automatic reconnection with configurable retry policies
+  - Exponential backoff for retry attempts
+  - Per-host reconnection settings
+- **Connection Pooling**: Reuse SSH connections for SFTP operations
+- **X11 Forwarding**: Forward X11 display for graphical applications
+- **Terminal Statistics**: Real-time bytes sent/received tracking
+- **Server Stats**: View server resource information (uptime, disk usage)
 
 ### Import/Export
 
@@ -107,35 +131,59 @@ dotnet run --project src/SshManager.App/SshManager.App.csproj
 sshmanager/
 ├── src/
 │   ├── SshManager.Core/           # Domain models and shared types
-│   │   └── Models/                # HostEntry, HostGroup, AuthType, ConnectionType,
-│   │                              # SerialPortSettings, etc.
+│   │   ├── Models/                # HostEntry, HostGroup, AuthType, ConnectionType,
+│   │   │                          # SerialPortSettings, TunnelProfile, SavedSession, etc.
+│   │   └── Exceptions/            # Custom exceptions (SshConnectionException, etc.)
 │   │
 │   ├── SshManager.Data/           # Data access layer (EF Core + SQLite)
-│   │   ├── AppDbContext.cs        # EF Core database context
-│   │   └── Repositories/          # Repository implementations
+│   │   ├── AppDbContext.cs        # EF Core database context (17 DbSets)
+│   │   ├── Repositories/          # Repository implementations
+│   │   └── Services/              # Data services (cleanup, caching)
 │   │
 │   ├── SshManager.Security/       # Password encryption and key management
 │   │   ├── DpapiSecretProtector.cs    # DPAPI encryption
-│   │   └── SecureCredentialCache.cs   # Secure memory credential caching
+│   │   ├── SecureCredentialCache.cs   # Secure memory credential caching
+│   │   ├── SshKeyManagerService.cs    # SSH key generation and management
+│   │   ├── KeyEncryptionService.cs    # Key passphrase management
+│   │   └── PpkConverter.cs            # PPK ↔ OpenSSH key conversion
 │   │
 │   ├── SshManager.Terminal/       # SSH, Serial, and terminal components
 │   │   ├── Controls/              # WebTerminalControl, SshTerminalControl
-│   │   ├── Models/                # SerialConnectionInfo
-│   │   ├── Services/              # Connection and bridge services
+│   │   ├── Models/                # SerialConnectionInfo, TerminalConnectionInfo
+│   │   ├── Services/
+│   │   │   ├── Connection/        # SSH connection services
+│   │   │   ├── Display/           # Terminal display and theme services
+│   │   │   ├── Lifecycle/         # Session lifecycle management
+│   │   │   ├── Processing/        # Terminal output processing
+│   │   │   ├── Recording/         # Session recording (ASCIINEMA format)
+│   │   │   ├── Playback/          # Session playback with speed control
+│   │   │   ├── Search/            # Terminal text search
+│   │   │   ├── Stats/             # Terminal and server statistics
 │   │   │   ├── SshConnectionService.cs      # SSH connections
 │   │   │   ├── SshTerminalBridge.cs         # SSH ↔ terminal bridge
 │   │   │   ├── SerialConnectionService.cs   # Serial port connections
 │   │   │   ├── SerialTerminalBridge.cs      # Serial ↔ terminal bridge
-│   │   │   ├── Recording/         # Session recording (ASCIINEMA format)
-│   │   │   └── Playback/          # Session playback with speed control
+│   │   │   ├── AgentKeyService.cs           # SSH agent key management
+│   │   │   ├── KerberosAuthService.cs       # Kerberos/GSSAPI authentication
+│   │   │   ├── AutoReconnectManager.cs      # Auto-reconnection handling
+│   │   │   ├── ConnectionPool.cs            # Connection pooling
+│   │   │   ├── TunnelBuilderService.cs      # Visual tunnel builder logic
+│   │   │   └── X11ForwardingService.cs      # X11 display forwarding
 │   │   └── Resources/             # terminal.html with xterm.js
 │   │
 │   └── SshManager.App/            # WPF UI application
-│       ├── Views/                 # XAML views (Windows, Dialogs, Controls)
-│       │   └── Dialogs/           # Including SerialQuickConnectDialog
-│       ├── ViewModels/            # MVVM view models
-│       ├── Services/              # Application services
+│       ├── Views/
+│       │   ├── Windows/           # MainWindow, SftpBrowserWindow, TextEditorWindow
+│       │   ├── Dialogs/           # 35+ dialogs (HostEdit, Settings, TunnelBuilder, etc.)
+│       │   └── Controls/          # TerminalPane, TunnelCanvas, CompletionPopup, etc.
+│       ├── ViewModels/            # 60+ MVVM view models
+│       ├── Services/              # Application services (Import/Export, Backup, Sync)
+│       ├── Converters/            # 34+ WPF value converters
 │       └── App.xaml.cs            # DI container and app initialization
+│
+├── tests/
+│   ├── SshManager.Terminal.Tests/ # Terminal unit and integration tests
+│   └── SshManager.Security.Tests/ # Security and PPK conversion tests
 │
 ├── docs/                          # Documentation
 └── SshManager.sln                 # Visual Studio solution file
@@ -154,13 +202,20 @@ SshManager supports two connection types defined in `ConnectionType` enum:
 
 ### Authentication Types (SSH)
 
-SshManager supports three authentication methods defined in `AuthType` enum:
+SshManager supports four authentication methods defined in `AuthType` enum:
 
 | Type | Description |
 |------|-------------|
-| **SshAgent** | Uses SSH keys from your `~/.ssh/` directory or SSH agent |
-| **PrivateKeyFile** | Specify a custom private key file path |
-| **Password** | Store encrypted password in the database |
+| **SshAgent** | Uses SSH keys from your `~/.ssh/` directory or SSH agent (Pageant, Windows OpenSSH Agent) |
+| **PrivateKeyFile** | Specify a custom private key file path with optional passphrase |
+| **Password** | Store encrypted password in the database (DPAPI-encrypted) |
+| **Kerberos** | Windows domain authentication using GSSAPI/Kerberos with optional credential delegation |
+
+**SSH Agent Fallback Chain:**
+1. Pageant (PuTTY's SSH agent) via Windows named pipes
+2. OpenSSH Agent (Windows 10+) via `\\.\pipe\openssh-ssh-agent`
+3. Load keys from `~/.ssh/` directory (id_rsa, id_ed25519, id_ecdsa, id_dsa)
+4. Keyboard-interactive authentication as final fallback
 
 ### Serial Port Configuration
 
@@ -282,6 +337,62 @@ While connected to a serial port:
 3. Use playback controls: play/pause, seek, adjust speed (0.5x to 4x)
 4. Recordings can be shared and played in external ASCIINEMA players
 
+### Using the Visual Tunnel Builder
+
+The Visual Tunnel Builder provides a graph-based interface for creating complex SSH tunnel configurations:
+
+1. Open **View > Tunnel Builder** or click the tunnel icon in the toolbar
+2. **Add nodes** by clicking "Add Node" and selecting:
+   - **Source**: Your local machine (starting point)
+   - **Intermediate**: Jump hosts/bastions (gateways)
+   - **Destination**: Target servers
+3. **Connect nodes** by clicking on a node and dragging to another
+4. **Configure connections** by clicking on edges to set port forwarding rules
+5. **Save profile** to reuse the tunnel configuration later
+6. **Execute** to establish all tunnels in the correct order
+
+**Tunnel Profile Example:**
+```
+Local (Source) ──> Bastion (Intermediate) ──> Database (Destination)
+                                          └──> Web Server (Destination)
+```
+
+### Using X11 Forwarding
+
+Forward graphical applications from remote servers:
+
+1. Edit a host and enable **X11 Forwarding** in Advanced Options
+2. Ensure an X server is running locally (e.g., VcXsrv, Xming)
+3. Connect to the host
+4. Run graphical applications (e.g., `firefox`, `gedit`, `xclock`)
+5. The application window appears on your local display
+
+**Note:** Requires X server installed and `DISPLAY` environment variable configured.
+
+### Session Recovery
+
+If a connection is unexpectedly dropped:
+
+1. The **Session Recovery Dialog** appears automatically when disconnected sessions are detected
+2. Select which sessions to restore
+3. Click **Recover** to re-establish connections and restore terminal state
+4. Sessions can be manually saved for later recovery via right-click menu
+
+### Broadcast Input to Multiple Terminals
+
+Send commands to multiple terminals simultaneously:
+
+1. Open multiple terminal tabs/panes to different hosts
+2. Enable **Broadcast Mode** via the toolbar or right-click menu
+3. Select which terminals should receive broadcast input
+4. Type in any terminal - input is sent to all selected terminals
+5. Disable broadcast mode when done
+
+**Use cases:**
+- Updating multiple servers simultaneously
+- Running the same diagnostic command across a cluster
+- Synchronized configuration changes
+
 ## Configuration
 
 ### Application Settings
@@ -291,12 +402,17 @@ Access settings via the gear icon in the toolbar. Key settings include:
 | Setting | Description |
 |---------|-------------|
 | **Terminal Theme** | Select terminal color scheme |
+| **Terminal Font** | Choose font family and size for terminal |
 | **Scrollback Buffer** | Number of lines to keep in terminal history |
 | **Session Logging** | Enable logging of terminal sessions |
 | **Session Recording** | Automatically record terminal sessions |
 | **Credential Caching** | Cache credentials in memory for repeated connections |
+| **Credential Cache Timeout** | How long to keep cached credentials (minutes) |
 | **Auto Backup** | Automatically backup database at intervals |
 | **Cloud Sync** | Sync hosts via OneDrive |
+| **Keep-Alive Interval** | Global SSH keep-alive interval (0-3600 seconds) |
+| **Auto-Reconnect** | Attempt to reconnect on connection drop |
+| **Autocompletion Mode** | Terminal autocompletion behavior (Off, Manual, Automatic) |
 
 ### Database Location
 

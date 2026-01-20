@@ -6,12 +6,16 @@ using SshManager.App.ViewModels;
 using SshManager.App.Views.Windows;
 using SshManager.Data;
 using SshManager.Data.Repositories;
+using SshManager.Data.Services;
 using SshManager.Security;
 using SshManager.Terminal;
 using SshManager.Terminal.Services;
 using SshManager.Terminal.Services.Playback;
 using SshManager.Terminal.Services.Recording;
 using Wpf.Ui;
+#if DEBUG
+using SshManager.App.Services.Testing;
+#endif
 
 namespace SshManager.App.Infrastructure;
 
@@ -40,6 +44,13 @@ public static class ServiceRegistrar
         services.AddSingleton<ITagRepository, TagRepository>();
         services.AddSingleton<IHostEnvironmentVariableRepository, HostEnvironmentVariableRepository>();
         services.AddSingleton<ISessionRecordingRepository, SessionRecordingRepository>();
+        services.AddSingleton<ISavedSessionRepository, SavedSessionRepository>();
+        services.AddSingleton<ITunnelProfileRepository, TunnelProfileRepository>();
+        services.AddSingleton<ICommandHistoryRepository, CommandHistoryRepository>();
+
+        // Data services
+        services.AddSingleton<IConnectionHistoryCleanupService, ConnectionHistoryCleanupService>();
+        services.AddSingleton<IHostCacheService, HostCacheService>();
 
         // Security
         services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
@@ -58,6 +69,7 @@ public static class ServiceRegistrar
         services.AddSingleton<ISshAuthenticationFactory, SshAuthenticationFactory>();
         services.AddSingleton<IAgentDiagnosticsService, AgentDiagnosticsService>();
         services.AddSingleton<IAgentKeyService, AgentKeyService>();
+        services.AddSingleton<IKerberosAuthService, KerberosAuthService>();
         services.AddSingleton<IProxyChainConnectionBuilder, ProxyChainConnectionBuilder>();
         services.AddSingleton<ISshConnectionService, SshConnectionService>();
         services.AddSingleton<ISftpService, SftpService>();
@@ -72,6 +84,10 @@ public static class ServiceRegistrar
         services.AddSingleton<ISessionRecordingService, SessionRecordingService>();
         services.AddSingleton<ISessionPlaybackService, SessionPlaybackService>();
         services.AddSingleton<ISerialConnectionService, SerialConnectionService>();
+        services.AddSingleton<IConnectionPool, ConnectionPool>();
+        services.AddSingleton<IX11ForwardingService, X11ForwardingService>();
+        services.AddSingleton<ITunnelBuilderService, TunnelBuilderService>();
+        services.AddSingleton<IAutocompletionService, AutocompletionService>();
 
         // Phase 2: Terminal control extracted services (transient - per-control instances)
         services.AddTransient<ITerminalClipboardService, TerminalClipboardService>();
@@ -94,6 +110,10 @@ public static class ServiceRegistrar
         services.AddSingleton<IBackupService, BackupService>();
         services.AddSingleton<IPaneLayoutManager, PaneLayoutManager>();
         services.AddSingleton<ISessionConnectionService, SessionConnectionService>();
+        services.AddSingleton<IAppThemeService, AppThemeService>();
+        services.AddSingleton<IKeyboardShortcutHandler, KeyboardShortcutHandler>();
+        services.AddSingleton<IWindowStateManager, WindowStateManager>();
+        services.AddSingleton<IPaneOrchestrator, PaneOrchestrator>();
 
         // Cloud sync services
         services.AddSingleton<IOneDrivePathDetector, OneDrivePathDetector>();
@@ -127,9 +147,16 @@ public static class ServiceRegistrar
         services.AddTransient<PortForwardingProfileDialogViewModel>();
         services.AddSingleton<RecordingBrowserViewModel>();
         services.AddTransient<RecordingPlaybackViewModel>();
+        services.AddTransient<TunnelBuilderViewModel>();
 
         // Windows
         services.AddSingleton<MainWindow>();
+
+#if DEBUG
+        // Test automation services (DEBUG only)
+        services.AddSingleton<ITestCommandHandler, TestCommandHandler>();
+        services.AddSingleton<ITestServer, TestServer>();
+#endif
 
         return services;
     }

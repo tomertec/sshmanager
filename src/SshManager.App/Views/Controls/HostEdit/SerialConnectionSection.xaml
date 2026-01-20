@@ -1,0 +1,123 @@
+<UserControl x:Class="SshManager.App.Views.Controls.HostEdit.SerialConnectionSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="400">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="HostEditResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <TextBlock Text="Serial Port Settings"
+                   FontWeight="SemiBold"
+                   Margin="0,8,0,8" />
+
+        <!-- COM Port with refresh button -->
+        <TextBlock Text="COM Port *"
+                   Style="{StaticResource SectionLabelStyle}" />
+        <Grid Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ComboBox Grid.Column="0"
+                      ItemsSource="{Binding AvailablePorts}"
+                      SelectedItem="{Binding SerialPortName, Mode=TwoWay}"
+                      Text="{Binding SerialPortName, Mode=TwoWay}"
+                      IsEditable="True" />
+            <ui:Button Grid.Column="1"
+                       Icon="{ui:SymbolIcon ArrowSync16}"
+                       Command="{Binding RefreshPortsCommand}"
+                       ToolTip="Refresh available ports"
+                       Width="32" Height="32"
+                       Padding="0"
+                       Margin="8,0,0,0" />
+        </Grid>
+
+        <!-- Baud Rate -->
+        <TextBlock Text="Baud Rate"
+                   Style="{StaticResource SectionLabelStyle}" />
+        <ComboBox ItemsSource="{Binding BaudRateOptions}"
+                  SelectedItem="{Binding SerialBaudRate, Mode=TwoWay}"
+                  IsEditable="True"
+                  Margin="0,0,0,16" />
+
+        <!-- Data Bits and Stop Bits in a row -->
+        <Grid Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Data Bits"
+                           Style="{StaticResource SectionLabelStyle}" />
+                <ComboBox ItemsSource="{Binding DataBitsOptions}"
+                          SelectedItem="{Binding SerialDataBits, Mode=TwoWay}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Stop Bits"
+                           Style="{StaticResource SectionLabelStyle}" />
+                <ComboBox ItemsSource="{Binding StopBitsOptions}"
+                          SelectedItem="{Binding SerialStopBits, Mode=TwoWay}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Parity and Flow Control in a row -->
+        <Grid Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Parity"
+                           Style="{StaticResource SectionLabelStyle}" />
+                <ComboBox ItemsSource="{Binding ParityOptions}"
+                          SelectedItem="{Binding SerialParity, Mode=TwoWay}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Flow Control"
+                           Style="{StaticResource SectionLabelStyle}" />
+                <ComboBox ItemsSource="{Binding HandshakeOptions}"
+                          SelectedItem="{Binding SerialHandshake, Mode=TwoWay}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Line Ending -->
+        <TextBlock Text="Line Ending"
+                   Style="{StaticResource SectionLabelStyle}" />
+        <ComboBox ItemsSource="{Binding LineEndingOptions}"
+                  SelectedItem="{Binding SerialLineEnding, Mode=TwoWay}"
+                  Margin="0,0,0,16" />
+
+        <!-- Hardware Options -->
+        <TextBlock Text="Hardware Options"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,8" />
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <CheckBox Content="DTR Enable"
+                      IsChecked="{Binding SerialDtrEnable, Mode=TwoWay}"
+                      Margin="0,0,16,0" />
+            <CheckBox Content="RTS Enable"
+                      IsChecked="{Binding SerialRtsEnable, Mode=TwoWay}" />
+        </StackPanel>
+
+        <!-- Local Echo -->
+        <CheckBox Content="Local Echo"
+                  IsChecked="{Binding SerialLocalEcho, Mode=TwoWay}"
+                  Margin="0,0,0,16" />
+
+        <TextBlock Text="Common baud rates: 9600, 19200, 38400, 57600, 115200"
+                   Style="{StaticResource HintTextStyle}"
+                   Margin="0,0,0,8" />
+    </StackPanel>
+</UserControl>

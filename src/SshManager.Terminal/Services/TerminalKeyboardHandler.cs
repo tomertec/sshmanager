@@ -26,6 +26,35 @@ public sealed class TerminalKeyboardHandler : ITerminalKeyboardHandler
         ArgumentNullException.ThrowIfNull(e);
         ArgumentNullException.ThrowIfNull(context);
 
+        // Autocompletion navigation when popup is visible
+        if (context.IsCompletionPopupVisible)
+        {
+            switch (e.Key)
+            {
+                case Key.Up:
+                    context.CompletionSelectPrevious();
+                    return true;
+                case Key.Down:
+                    context.CompletionSelectNext();
+                    return true;
+                case Key.Enter:
+                case Key.Tab:
+                    context.AcceptCompletion();
+                    return true;
+                case Key.Escape:
+                    context.HideCompletionPopup();
+                    return true;
+            }
+        }
+
+        // Tab key for requesting completions (when popup not visible)
+        if (e.Key == Key.Tab && Keyboard.Modifiers == ModifierKeys.None && !context.IsCompletionPopupVisible)
+        {
+            context.RequestCompletions();
+            _logger.LogDebug("Requested autocompletion");
+            return true;
+        }
+
         // Handle Delete key - send escape sequence directly to SSH
         // WebView2 may intercept this key before it reaches xterm.js
         if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None)

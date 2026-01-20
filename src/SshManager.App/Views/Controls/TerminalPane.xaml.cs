@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Extensions.DependencyInjection;
 using SshManager.App.Models;
 using SshManager.App.Services;
 using SshManager.Core.Models;
@@ -22,6 +23,7 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
 {
     private PaneLeafNode? _paneNode;
     private bool _terminalAttached;
+    private IServiceProvider? _serviceProvider;
 
     /// <summary>
     /// Event raised when user requests a split operation.
@@ -53,6 +55,16 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
         // Handle visibility changes to refresh WebView2 when becoming visible
         // WebView2 controls may not properly repaint after Hidden → Visible transitions
         IsVisibleChanged += OnIsVisibleChanged;
+    }
+
+    /// <summary>
+    /// Sets the service provider for resolving dependencies.
+    /// Must be called before using services.
+    /// </summary>
+    /// <param name="serviceProvider">The service provider.</param>
+    public void SetServiceProvider(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
     }
 
     private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -138,11 +150,16 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
         if (_terminalAttached)
             return;
 
+        if (_serviceProvider == null)
+        {
+            System.Diagnostics.Debug.WriteLine("Service provider not set on TerminalPane");
+            return;
+        }
+
         // Get services from DI
-        var sshService = App.GetService<ISshConnectionService>();
-        var broadcastService = App.GetService<IBroadcastInputService>();
-        var serverStatsService = App.GetService<IServerStatsService>();
-        var focusTracker = App.GetService<ITerminalFocusTracker>();
+        var broadcastService = _serviceProvider.GetRequiredService<IBroadcastInputService>();
+        var serverStatsService = _serviceProvider.GetRequiredService<IServerStatsService>();
+        var focusTracker = _serviceProvider.GetRequiredService<ITerminalFocusTracker>();
 
         // Set services on terminal
         Terminal.SetBroadcastService(broadcastService);
@@ -172,8 +189,14 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
     {
         try
         {
-            var settingsRepo = App.GetService<ISettingsRepository>();
-            var themeService = App.GetService<ITerminalThemeService>();
+            if (_serviceProvider == null)
+            {
+                System.Diagnostics.Debug.WriteLine("Service provider not set on TerminalPane");
+                return;
+            }
+
+            var settingsRepo = _serviceProvider.GetRequiredService<ISettingsRepository>();
+            var themeService = _serviceProvider.GetRequiredService<ITerminalThemeService>();
 
             var settings = await settingsRepo.GetAsync();
             var theme = themeService.GetTheme(settings.TerminalThemeId)
@@ -232,10 +255,10 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
 
     private void SetPaneFocus()
     {
-        if (_paneNode == null)
+        if (_paneNode == null || _serviceProvider == null)
             return;
 
-        var layoutManager = App.GetService<IPaneLayoutManager>();
+        var layoutManager = _serviceProvider.GetRequiredService<IPaneLayoutManager>();
         layoutManager.SetFocusedPane(_paneNode);
     }
 
@@ -258,10 +281,10 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
 
     private async void RecordButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_paneNode?.Session == null)
+        if (_paneNode?.Session == null || _serviceProvider == null)
             return;
 
-        var recordingService = App.GetService<ISessionRecordingService>();
+        var recordingService = _serviceProvider.GetRequiredService<ISessionRecordingService>();
         var session = _paneNode.Session;
 
         if (session.IsRecording)

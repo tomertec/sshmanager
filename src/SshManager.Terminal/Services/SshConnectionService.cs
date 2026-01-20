@@ -1,9 +1,12 @@
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Renci.SshNet;
+using Renci.SshNet.Common;
+using SshManager.Core.Exceptions;
 using SshManager.Core.Models;
 using SshManager.Terminal.Models;
 
@@ -123,11 +126,19 @@ public sealed class SshConnectionService : ISshConnectionService
         var hostKeyVerificationResult = true;
         Exception? hostKeyException = null;
 
-        // Set up host key verification if callback provided
+        // SECURITY: Set up host key verification
         // IMPORTANT: Host key verification is a critical security feature that prevents MITM attacks.
         // Without it, an attacker could intercept the connection and impersonate the server.
+        //
+        // SECURE DEFAULT BEHAVIOR:
+        // - If hostKeyCallback is provided: Use it to verify the host key
+        // - If hostKeyCallback is null AND SkipHostKeyVerification is true: Allow connection (explicitly acknowledged risk)
+        // - If hostKeyCallback is null AND SkipHostKeyVerification is false: REJECT connection (secure default)
+        //
+        // This prevents silent bypass of host key verification which would create a MITM vulnerability.
         if (hostKeyCallback != null)
         {
+            // Host key verification callback provided - use it for verification
             client.HostKeyReceived += (sender, e) =>
             {
                 try
@@ -166,6 +177,28 @@ public sealed class SshConnectionService : ISshConnectionService
                 }
             };
         }
+        else if (!connectionInfo.SkipHostKeyVerification)
+        {
+            // SECURITY: No callback provided and skip flag not set - reject all connections by default
+            // This is the secure default that prevents MITM attacks when verification is not configured.
+            client.HostKeyReceived += (sender, e) =>
+            {
+                var fingerprint = ComputeFingerprint(e.HostKey);
+                _logger.LogError(
+                    "SECURITY: Rejecting connection to {Host}:{Port} - no host key verification callback provided. " +
+                    "Host key: {Algorithm} {Fingerprint}. " +
+                    "To connect, either: (1) provide a HostKeyVerificationCallback, or (2) set SkipHostKeyVerification=true to acknowledge the MITM risk.",
+                    connectionInfo.Hostname, connectionInfo.Port, e.HostKeyName, fingerprint);
+
+                e.CanTrust = false;
+                hostKeyVerificationResult = false;
+                hostKeyException = new InvalidOperationException(
+                    $"Host key verification failed: No verification callback provided for {connectionInfo.Hostname}:{connectionInfo.Port}. " +
+                    "This connection was rejected to prevent potential man-in-the-middle attacks. " +
+                    "Provide a HostKeyVerificationCallback or set SkipHostKeyVerification=true to proceed.");
+            };
+        }
+        // else: SkipHostKeyVerification is true - no handler, SSH.NET will accept any key (risky but explicitly requested)
 
         try
         {
@@ -199,7 +232,7 @@ public sealed class SshConnectionService : ISshConnectionService
             LogConnectionFailure(connectionInfo, connInfo, ex);
             client.Dispose();
             DisposeAuthResources(authResult);
-            throw;
+            throw WrapSshException(ex, connectionInfo.Hostname, connectionInfo.Port);
         }
 
         // Create shell stream with terminal settings
@@ -345,17 +378,24 @@ public sealed class SshConnectionService : ISshConnectionService
     {
         if (hostKeyCallback == null && !connectionInfo.SkipHostKeyVerification)
         {
-            _logger.LogWarning(
-                "SECURITY WARNING: Connecting to {Host}:{Port} without host key verification. " +
-                "This makes the connection vulnerable to man-in-the-middle attacks. " +
-                "Provide a HostKeyVerificationCallback or set SkipHostKeyVerification=true to acknowledge this risk.",
+            _logger.LogCritical(
+                "SECURITY: Attempting to connect to {Host}:{Port} without host key verification callback. " +
+                "The connection will be REJECTED by default to prevent MITM attacks. " +
+                "To proceed, provide a HostKeyVerificationCallback or set SkipHostKeyVerification=true.",
                 connectionInfo.Hostname, connectionInfo.Port);
         }
         else if (connectionInfo.SkipHostKeyVerification)
         {
             _logger.LogWarning(
-                "Host key verification explicitly disabled for {Host}:{Port}. " +
-                "Connection is vulnerable to MITM attacks.",
+                "SECURITY WARNING: Host key verification explicitly disabled for {Host}:{Port}. " +
+                "Connection is vulnerable to man-in-the-middle attacks. " +
+                "All host keys will be accepted without verification.",
+                connectionInfo.Hostname, connectionInfo.Port);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "Host key verification enabled for {Host}:{Port} via callback",
                 connectionInfo.Hostname, connectionInfo.Port);
         }
     }
@@ -629,5 +669,121 @@ public sealed class SshConnectionService : ISshConnectionService
             ShellType.Other => false,      // Unknown, skip to be safe
             _ => false
         };
+    }
+
+    /// <summary>
+    /// Wraps SSH.NET and socket exceptions into SshManager custom exceptions
+    /// for consistent error handling and user-friendly messages.
+    /// </summary>
+    /// <param name="ex">The original exception.</param>
+    /// <param name="hostname">The target hostname.</param>
+    /// <param name="port">The target port.</param>
+    /// <returns>A wrapped SshConnectionException or the original exception.</returns>
+    private static Exception WrapSshException(Exception ex, string hostname, int port)
+    {
+        // Already wrapped - return as-is
+        if (ex is SshManagerException)
+        {
+            return ex;
+        }
+
+        // SSH.NET specific exceptions
+        if (ex is Renci.SshNet.Common.SshConnectionException sshConnEx)
+        {
+            return new Core.Exceptions.SshConnectionException(
+                ConnectionFailedReason.Unknown,
+                hostname,
+                port,
+                sshConnEx.Message,
+                sshConnEx);
+        }
+
+        if (ex is SshAuthenticationException authEx)
+        {
+            return new Core.Exceptions.SshConnectionException(
+                ConnectionFailedReason.AuthenticationFailed,
+                hostname,
+                port,
+                authEx.Message,
+                authEx);
+        }
+
+        if (ex is SshOperationTimeoutException)
+        {
+            return new Core.Exceptions.SshConnectionException(
+                ConnectionFailedReason.ConnectionTimedOut,
+                hostname,
+                port,
+                ex.Message,
+                ex);
+        }
+
+        // Socket exceptions
+        if (ex is SocketException socketEx)
+        {
+            var reason = socketEx.SocketErrorCode switch
+            {
+                SocketError.ConnectionRefused => ConnectionFailedReason.ConnectionRefused,
+                SocketError.TimedOut => ConnectionFailedReason.ConnectionTimedOut,
+                SocketError.HostNotFound => ConnectionFailedReason.DnsResolutionFailed,
+                SocketError.HostUnreachable => ConnectionFailedReason.NetworkUnreachable,
+                SocketError.NetworkUnreachable => ConnectionFailedReason.NetworkUnreachable,
+                SocketError.NetworkDown => ConnectionFailedReason.NetworkUnreachable,
+                SocketError.ConnectionReset => ConnectionFailedReason.ServerDisconnected,
+                SocketError.ConnectionAborted => ConnectionFailedReason.ServerDisconnected,
+                SocketError.AccessDenied => ConnectionFailedReason.PermissionDenied,
+                _ => ConnectionFailedReason.Unknown
+            };
+
+            return new Core.Exceptions.SshConnectionException(
+                reason,
+                hostname,
+                port,
+                socketEx.Message,
+                socketEx);
+        }
+
+        // DNS resolution failures
+        if (ex is System.Net.Sockets.SocketException ||
+            ex.Message.Contains("No such host is known", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("getaddrinfo", StringComparison.OrdinalIgnoreCase))
+        {
+            return new Core.Exceptions.SshConnectionException(
+                ConnectionFailedReason.DnsResolutionFailed,
+                hostname,
+                port,
+                ex.Message,
+                ex);
+        }
+
+        // Timeout exceptions
+        if (ex is TimeoutException)
+        {
+            return new Core.Exceptions.SshConnectionException(
+                ConnectionFailedReason.ConnectionTimedOut,
+                hostname,
+                port,
+                ex.Message,
+                ex);
+        }
+
+        // Cancellation
+        if (ex is OperationCanceledException)
+        {
+            return new Core.Exceptions.SshConnectionException(
+                ConnectionFailedReason.Cancelled,
+                hostname,
+                port,
+                "Connection cancelled by user",
+                ex);
+        }
+
+        // Default: wrap as unknown
+        return new Core.Exceptions.SshConnectionException(
+            ConnectionFailedReason.Unknown,
+            hostname,
+            port,
+            ex.Message,
+            ex);
     }
 }

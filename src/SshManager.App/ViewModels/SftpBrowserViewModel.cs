@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SshManager.App.Services;
 using SshManager.Terminal.Services;
 
 namespace SshManager.App.ViewModels;
@@ -236,6 +237,7 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     public SftpBrowserViewModel(
         ISftpSession session,
         string hostname,
+        IEditorThemeService editorThemeService,
         ILogger<SftpBrowserViewModel>? logger = null,
         ILogger<LocalFileBrowserViewModel>? localLogger = null,
         ILogger<RemoteFileBrowserViewModel>? remoteLogger = null,
@@ -254,7 +256,7 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
         _remoteBrowser = new RemoteFileBrowserViewModel(remoteLogger);
         _transferManager = new SftpTransferManagerViewModel(session, transferLogger);
         _dialogState = new SftpDialogStateViewModel(session, dialogLogger);
-        _fileOperations = new SftpFileOperationsViewModel(session, hostname, fileOpsLogger);
+        _fileOperations = new SftpFileOperationsViewModel(session, hostname, editorThemeService, fileOpsLogger);
 
         // Set up the remote browser with the session
         _remoteBrowser.SetSession(session);

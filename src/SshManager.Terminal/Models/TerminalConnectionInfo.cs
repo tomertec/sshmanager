@@ -44,6 +44,18 @@ public sealed class TerminalConnectionInfo
     public string? PrivateKeyPassphrase { get; init; }
 
     /// <summary>
+    /// Kerberos service principal name for GSSAPI authentication (for Kerberos auth type).
+    /// Example: "host/server.domain.com" or null to use default principal.
+    /// </summary>
+    public string? KerberosServicePrincipal { get; init; }
+
+    /// <summary>
+    /// Enable Kerberos credential delegation (ticket forwarding).
+    /// When enabled, allows the remote host to act on your behalf.
+    /// </summary>
+    public bool KerberosDelegateCredentials { get; init; }
+
+    /// <summary>
     /// Connection timeout.
     /// </summary>
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
@@ -126,6 +138,8 @@ public sealed class TerminalConnectionInfo
             AuthType = host.AuthType,
             Password = decryptedPassword,
             PrivateKeyPath = host.PrivateKeyPath,
+            KerberosServicePrincipal = host.KerberosServicePrincipal,
+            KerberosDelegateCredentials = host.KerberosDelegateCredentials,
             Timeout = timeout ?? TimeSpan.FromSeconds(30),
             KeepAliveInterval = keepAliveInterval,
             EnvironmentVariables = envVars,

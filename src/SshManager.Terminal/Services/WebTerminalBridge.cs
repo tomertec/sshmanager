@@ -7,6 +7,42 @@ using Microsoft.Web.WebView2.Wpf;
 namespace SshManager.Terminal.Services;
 
 /// <summary>
+/// Configuration options for terminal output batching.
+/// </summary>
+public sealed class TerminalBatchingOptions
+{
+    /// <summary>
+    /// Enable output batching for smoother terminal rendering.
+    /// When disabled, each chunk of output is sent immediately.
+    /// Default: true.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Flush interval in milliseconds. Lower values provide smoother output
+    /// but increase CPU usage. Default: 16ms (~60fps).
+    /// </summary>
+    public int FlushIntervalMs { get; set; } = 16;
+
+    /// <summary>
+    /// Maximum batch size in bytes before forcing a flush.
+    /// Larger values reduce message overhead but may cause visible chunking.
+    /// Default: 8192 bytes.
+    /// </summary>
+    public int MaxBatchSize { get; set; } = 8192;
+
+    /// <summary>
+    /// Creates default batching options.
+    /// </summary>
+    public static TerminalBatchingOptions Default => new();
+
+    /// <summary>
+    /// Creates options with batching disabled (immediate writes).
+    /// </summary>
+    public static TerminalBatchingOptions Disabled => new() { Enabled = false };
+}
+
+/// <summary>
 /// Bridges communication between C# and the WebView2 xterm.js terminal.
 /// Handles bidirectional message passing using WebView2's PostWebMessageAsJson
 /// and WebMessageReceived events.
@@ -18,7 +54,7 @@ namespace SshManager.Terminal.Services;
 /// optimizes performance through:
 /// </para>
 /// <list type="bullet">
-/// <item><b>Write batching:</b> Accumulates writes for 8ms before sending to reduce message count</item>
+/// <item><b>Write batching:</b> Accumulates writes before sending to reduce message count (configurable)</item>
 /// <item><b>Data buffering:</b> Buffers incoming SSH data until xterm.js signals "ready"</item>
 /// <item><b>UI thread dispatch:</b> Automatically marshals calls to the UI thread for WebView2</item>
 /// </list>
@@ -50,12 +86,14 @@ public sealed class WebTerminalBridge : IDisposable
     // Problem: Each PostWebMessageAsJson call has ~1-2ms overhead due to cross-process marshaling.
     // At high data rates (e.g., `cat largefile.txt`), this causes severe slowdowns.
     // Solution: Accumulate writes in a StringBuilder and flush periodically.
-    // The 8ms delay (~120fps) is imperceptible while dramatically reducing message count.
+    // The delay is configurable (default 16ms = ~60fps) and imperceptible while dramatically reducing message count.
     private readonly object _writeBatchLock = new();
     private readonly System.Text.StringBuilder _writeBatch = new();
     private System.Threading.Timer? _writeBatchTimer;
     private int _timerRunning = 0; // Thread-safe flag for timer state
-    private const int WriteBatchDelayMs = 8; // ~120fps, imperceptible delay
+
+    // Configurable batching options
+    private TerminalBatchingOptions _batchingOptions = TerminalBatchingOptions.Default;
 
     /// <summary>
     /// Default font size for the terminal.
@@ -101,6 +139,28 @@ public sealed class WebTerminalBridge : IDisposable
     /// Gets the current font size.
     /// </summary>
     public double FontSize => _fontSize;
+
+    /// <summary>
+    /// Gets the current batching options.
+    /// </summary>
+    public TerminalBatchingOptions BatchingOptions => _batchingOptions;
+
+    /// <summary>
+    /// Configures the terminal output batching behavior.
+    /// </summary>
+    /// <param name="options">The batching options to apply.</param>
+    public void ConfigureBatching(TerminalBatchingOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        lock (_writeBatchLock)
+        {
+            _batchingOptions = options;
+            _logger.LogDebug(
+                "Terminal batching configured: enabled={Enabled}, flushInterval={FlushMs}ms, maxBatch={MaxSize} bytes",
+                options.Enabled, options.FlushIntervalMs, options.MaxBatchSize);
+        }
+    }
 
     /// <summary>
     /// Event raised when user types in the terminal.
@@ -206,8 +266,23 @@ public sealed class WebTerminalBridge : IDisposable
             lock (_bufferLock)
             {
                 _pendingData.Add(data);
-                _logger.LogTrace("Buffered {Length} chars while waiting for terminal ready", data.Length);
+                // Log at Debug level (not Trace) to make it more visible for troubleshooting
+                _logger.LogDebug("Buffered {Length} chars while waiting for terminal ready (total pending: {Count})",
+                    data.Length, _pendingData.Count);
             }
+            return;
+        }
+
+        // Check if batching is disabled - send immediately
+        if (!_batchingOptions.Enabled)
+        {
+            _webView?.Dispatcher.InvokeAsync(() =>
+            {
+                if (!_disposed)
+                {
+                    SendWriteMessage(data);
+                }
+            }, System.Windows.Threading.DispatcherPriority.Send);
             return;
         }
 
@@ -216,18 +291,30 @@ public sealed class WebTerminalBridge : IDisposable
         lock (_writeBatchLock)
         {
             _writeBatch.Append(data);
-        }
 
-        // Only start timer if not already running (thread-safe check)
-        if (System.Threading.Interlocked.CompareExchange(ref _timerRunning, 1, 0) == 0)
-        {
-            // We won the race - start a new timer
-            _writeBatchTimer?.Dispose();
-            _writeBatchTimer = new System.Threading.Timer(
-                FlushWriteBatch,
-                null,
-                WriteBatchDelayMs,
-                System.Threading.Timeout.Infinite);
+            // Force flush if batch exceeds max size
+            var shouldFlushImmediately = _writeBatch.Length >= _batchingOptions.MaxBatchSize;
+
+            // Only start timer if not already running (thread-safe check)
+            // CRITICAL: This must be inside the lock to prevent race conditions where:
+            // 1. Timer callback resets _timerRunning and extracts batch
+            // 2. WriteData appends new data and sees _timerRunning=0
+            // 3. New timer starts while old timer's UI dispatch is still pending
+            if (System.Threading.Interlocked.CompareExchange(ref _timerRunning, 1, 0) == 0)
+            {
+                // We won the race - start a new timer
+                _writeBatchTimer?.Dispose();
+                _writeBatchTimer = new System.Threading.Timer(
+                    FlushWriteBatch,
+                    null,
+                    shouldFlushImmediately ? 0 : _batchingOptions.FlushIntervalMs,
+                    System.Threading.Timeout.Infinite);
+            }
+            else if (shouldFlushImmediately)
+            {
+                // Timer is already running but we hit max batch size - change timer to fire immediately
+                _writeBatchTimer?.Change(0, System.Threading.Timeout.Infinite);
+            }
         }
     }
 
@@ -303,10 +390,11 @@ public sealed class WebTerminalBridge : IDisposable
                 batch = _writeBatch.ToString();
                 _writeBatch.Clear();
             }
+            // CRITICAL: Reset flag inside the lock, AFTER extracting the batch.
+            // This prevents race condition where new data arrives and starts a new timer
+            // while this timer's UI dispatch is still pending.
+            System.Threading.Interlocked.Exchange(ref _timerRunning, 0);
         }
-
-        // Reset the running flag before dispatching
-        System.Threading.Interlocked.Exchange(ref _timerRunning, 0);
 
         // Send the batch if we have data
         if (!string.IsNullOrEmpty(batch))
@@ -557,6 +645,39 @@ public sealed class WebTerminalBridge : IDisposable
     }
 
     /// <summary>
+    /// Sets the terminal scrollback buffer size (number of lines to keep in history).
+    /// </summary>
+    /// <param name="lines">Number of lines to retain in scrollback buffer (clamped to 100-100000).</param>
+    public void SetScrollback(int lines)
+    {
+        if (_disposed || _webView == null || !_isReady)
+        {
+            return;
+        }
+
+        // Clamp to reasonable limits
+        lines = Math.Clamp(lines, 100, 100000);
+
+        try
+        {
+            var message = new TerminalMessage
+            {
+                Type = "setScrollback",
+                Scrollback = lines
+            };
+
+            var json = JsonSerializer.Serialize(message);
+            _webView.CoreWebView2.PostWebMessageAsJson(json);
+
+            _logger.LogDebug("Set scrollback to {Lines} lines", lines);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to set scrollback");
+        }
+    }
+
+    /// <summary>
     /// Increases the terminal font size by one step.
     /// </summary>
     /// <returns>True if zoom was applied, false if already at max.</returns>
@@ -627,15 +748,18 @@ public sealed class WebTerminalBridge : IDisposable
         try
         {
             var json = e.WebMessageAsJson;
+            // Log at Debug level to help troubleshoot initialization issues
+            _logger.LogDebug("Received raw message from JS terminal: {Json}", json);
+
             var message = JsonSerializer.Deserialize<TerminalMessage>(json);
 
             if (message == null)
             {
-                _logger.LogWarning("Received null message from terminal");
+                _logger.LogWarning("Received null message from terminal after deserialization");
                 return;
             }
 
-            _logger.LogTrace("Received message from terminal: {Type}", message.Type);
+            _logger.LogDebug("Received message from terminal: {Type}", message.Type);
 
             switch (message.Type)
             {
@@ -648,7 +772,7 @@ public sealed class WebTerminalBridge : IDisposable
 
                 case "ready":
                     _isReady = true;
-                    _logger.LogInformation("Terminal ready");
+                    _logger.LogInformation("Terminal ready - xterm.js initialized successfully");
                     FlushPendingData();
                     TerminalReady?.Invoke();
                     break;
@@ -693,12 +817,32 @@ public sealed class WebTerminalBridge : IDisposable
         {
             _writeBatchTimer?.Dispose();
             _writeBatchTimer = null;
+
+            // Reset the timer running flag to ensure proper cleanup
+            // This prevents issues if a timer callback is in-flight or if
+            // the object is improperly reused after disposal
+            System.Threading.Interlocked.Exchange(ref _timerRunning, 0);
+
+            // Clear any pending batched data
+            _writeBatch.Clear();
         }
 
         if (_webView != null)
         {
             _webView.WebMessageReceived -= OnWebMessageReceived;
             _webView = null;
+        }
+
+        // Clear pending pre-ready data buffer
+        lock (_bufferLock)
+        {
+            _pendingData.Clear();
+        }
+
+        // Clear output preview buffer
+        lock (_previewBufferLock)
+        {
+            _outputPreviewBuffer.Clear();
         }
 
         _isReady = false;
@@ -735,5 +879,9 @@ public sealed class WebTerminalBridge : IDisposable
         [JsonPropertyName("fontSize")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public double? FontSize { get; set; }
+
+        [JsonPropertyName("scrollback")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? Scrollback { get; set; }
     }
 }

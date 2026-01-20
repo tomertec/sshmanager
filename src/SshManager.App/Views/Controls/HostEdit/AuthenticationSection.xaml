@@ -1,0 +1,228 @@
+<UserControl x:Class="SshManager.App.Views.Controls.HostEdit.AuthenticationSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:models="clr-namespace:SshManager.Core.Models;assembly=SshManager.Core"
+             mc:Ignorable="d"
+             d:DesignHeight="500" d:DesignWidth="400">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="HostEditResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <!-- Authentication Type -->
+        <TextBlock Text="Authentication"
+                   Style="{StaticResource SectionLabelStyle}" />
+        <ComboBox ItemsSource="{Binding AuthTypes}"
+                  SelectedItem="{Binding AuthType}"
+                  Margin="0,0,0,8">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock>
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="{Binding}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding}" Value="{x:Static models:AuthType.SshAgent}">
+                                        <Setter Property="Text" Value="SSH Agent (Auto)" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding}" Value="{x:Static models:AuthType.PrivateKeyFile}">
+                                        <Setter Property="Text" Value="Private Key File" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding}" Value="{x:Static models:AuthType.Password}">
+                                        <Setter Property="Text" Value="Password" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding}" Value="{x:Static models:AuthType.Kerberos}">
+                                        <Setter Property="Text" Value="Kerberos/GSSAPI" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <!-- SSH Agent Status (shown only for SshAgent auth) -->
+        <Border Visibility="{Binding ShowAgentStatus, Converter={StaticResource BoolToVisibilityConverter}}"
+                Style="{StaticResource StatusBorderStyle}"
+                Margin="0,0,0,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Status Icon -->
+                <ui:SymbolIcon Grid.Column="0"
+                               FontSize="16"
+                               Margin="0,0,8,0"
+                               VerticalAlignment="Center">
+                    <ui:SymbolIcon.Style>
+                        <Style TargetType="ui:SymbolIcon">
+                            <Setter Property="Symbol" Value="Warning16" />
+                            <Setter Property="Foreground" Value="#FFC107" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsAgentAvailable}" Value="True">
+                                    <Setter Property="Symbol" Value="Checkmark16" />
+                                    <Setter Property="Foreground" Value="#4CAF50" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ui:SymbolIcon.Style>
+                </ui:SymbolIcon>
+
+                <!-- Status Text -->
+                <TextBlock Grid.Column="1"
+                           Text="{Binding AgentStatusText}"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap" />
+
+                <!-- Refresh Button -->
+                <ui:Button Grid.Column="2"
+                           Icon="{ui:SymbolIcon ArrowSync16}"
+                           ToolTip="Refresh agent status"
+                           Command="{Binding RefreshAgentStatusAsyncCommand}"
+                           Width="32" Height="32"
+                           Padding="0"
+                           Margin="8,0,0,0">
+                    <ui:Button.Style>
+                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsCheckingAgent}" Value="True">
+                                    <Setter Property="IsEnabled" Value="False" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ui:Button.Style>
+                </ui:Button>
+            </Grid>
+        </Border>
+
+        <!-- Private Key Path (shown only for PrivateKeyFile auth) -->
+        <StackPanel Visibility="{Binding ShowPrivateKeyPath, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Margin="0,0,0,16">
+            <TextBlock Text="Private Key File"
+                       Style="{StaticResource SectionLabelStyle}" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:TextBox Grid.Column="0"
+                            Text="{Binding PrivateKeyPath, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="C:\Users\...\.ssh\id_rsa"
+                            Margin="0,0,8,0" />
+                <ui:Button Grid.Column="1"
+                           Content="Browse..."
+                           Command="{Binding BrowsePrivateKeyCommand}"
+                           Margin="0,0,4,0" />
+                <ui:Button Grid.Column="2"
+                           x:Name="SelectKeyButton"
+                           Icon="{ui:SymbolIcon Key24}"
+                           ToolTip="Select from existing SSH keys"
+                           Click="SelectKeyButton_Click" />
+            </Grid>
+        </StackPanel>
+
+        <!-- Password (shown only for Password auth) -->
+        <StackPanel Visibility="{Binding ShowPassword, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Margin="0,0,0,16">
+            <TextBlock Text="Password"
+                       Style="{StaticResource SectionLabelStyle}" />
+            <PasswordBox x:Name="PasswordBox"
+                         PasswordChanged="PasswordBox_PasswordChanged"
+                         Margin="0,0,0,4" />
+            <TextBlock Text="Password is encrypted locally using Windows DPAPI"
+                       Style="{StaticResource HintTextStyle}" />
+        </StackPanel>
+
+        <!-- Kerberos Settings (shown only for Kerberos auth) -->
+        <StackPanel Visibility="{Binding ShowKerberosSettings, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Margin="0,0,0,16">
+
+            <!-- Kerberos Status -->
+            <Border Style="{StaticResource StatusBorderStyle}"
+                    Margin="0,0,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Status Icon -->
+                    <ui:SymbolIcon Grid.Column="0"
+                                   FontSize="16"
+                                   Margin="0,0,8,0"
+                                   VerticalAlignment="Center">
+                        <ui:SymbolIcon.Style>
+                            <Style TargetType="ui:SymbolIcon">
+                                <Setter Property="Symbol" Value="Warning16" />
+                                <Setter Property="Foreground" Value="#FFC107" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsKerberosAvailable}" Value="True">
+                                        <Setter Property="Symbol" Value="Checkmark16" />
+                                        <Setter Property="Foreground" Value="#4CAF50" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ui:SymbolIcon.Style>
+                    </ui:SymbolIcon>
+
+                    <!-- Status Text -->
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding KerberosStatusText}"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap" />
+
+                    <!-- Refresh Button -->
+                    <ui:Button Grid.Column="2"
+                               Icon="{ui:SymbolIcon ArrowSync16}"
+                               ToolTip="Refresh Kerberos status"
+                               Command="{Binding RefreshKerberosStatusAsyncCommand}"
+                               Width="32" Height="32"
+                               Padding="0"
+                               Margin="8,0,0,0">
+                        <ui:Button.Style>
+                            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCheckingKerberos}" Value="True">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ui:Button.Style>
+                    </ui:Button>
+                </Grid>
+            </Border>
+
+            <!-- Service Principal -->
+            <TextBlock Text="Service Principal (Optional)"
+                       Style="{StaticResource SectionLabelStyle}" />
+            <ui:TextBox Text="{Binding KerberosServicePrincipal, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="host/server.domain.com (leave empty for default)"
+                        Margin="0,0,0,4" />
+            <TextBlock Text="Override the default SPN for GSSAPI authentication"
+                       Style="{StaticResource HintTextStyle}"
+                       Margin="0,0,0,12" />
+
+            <!-- Credential Delegation -->
+            <CheckBox IsChecked="{Binding KerberosDelegateCredentials}"
+                      Content="Enable credential delegation (ticket forwarding)"
+                      Margin="0,0,0,4" />
+            <TextBlock Text="Allows the remote host to act on your behalf. Use with trusted servers only."
+                       Style="{StaticResource HintTextStyle}"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

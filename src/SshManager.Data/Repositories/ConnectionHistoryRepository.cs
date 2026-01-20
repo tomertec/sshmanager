@@ -84,4 +84,57 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
             .Where(h => h.ConnectedAt < cutoff)
             .ExecuteDeleteAsync(ct);
     }
+
+    public async Task<int> CountOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.ConnectionHistory
+            .Where(h => h.ConnectedAt < cutoff)
+            .CountAsync(ct);
+    }
+
+    public async Task<HostConnectionStats> GetHostStatsAsync(Guid hostId, CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var history = await db.ConnectionHistory
+            .Where(h => h.HostId == hostId)
+            .ToListAsync(ct);
+
+        if (history.Count == 0)
+        {
+            return new HostConnectionStats(null, 0, 0, 0);
+        }
+
+        var lastConnected = history.Max(h => h.ConnectedAt);
+        var totalConnections = history.Count;
+        var successfulConnections = history.Count(h => h.WasSuccessful);
+        var successRate = totalConnections > 0 
+            ? Math.Round((double)successfulConnections / totalConnections * 100, 1) 
+            : 0;
+
+        return new HostConnectionStats(lastConnected, totalConnections, successfulConnections, successRate);
+    }
+
+    public async Task<Dictionary<Guid, HostConnectionStats>> GetAllHostStatsAsync(CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var history = await db.ConnectionHistory.ToListAsync(ct);
+
+        var stats = history
+            .GroupBy(h => h.HostId)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var lastConnected = g.Max(h => h.ConnectedAt);
+                    var totalConnections = g.Count();
+                    var successfulConnections = g.Count(h => h.WasSuccessful);
+                    var successRate = totalConnections > 0 
+                        ? Math.Round((double)successfulConnections / totalConnections * 100, 1) 
+                        : 0;
+                    return new HostConnectionStats(lastConnected, totalConnections, successfulConnections, successRate);
+                });
+
+        return stats;
+    }
 }

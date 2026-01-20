@@ -113,6 +113,7 @@ public static class DbMigrator
             ["RedactTypedSecrets"] = ("INTEGER", "0"),
             ["MaxHistoryEntries"] = ("INTEGER", "100"),
             ["HistoryRetentionDays"] = ("INTEGER", "0"),
+            ["ConnectionHistoryRetentionDays"] = ("INTEGER", "90"),
             ["WindowX"] = ("INTEGER", "NULL"),
             ["WindowY"] = ("INTEGER", "NULL"),
             ["WindowWidth"] = ("INTEGER", "NULL"),
@@ -153,6 +154,36 @@ public static class DbMigrator
             ["SftpMirrorNavigation"] = ("INTEGER", "0"),
             // Snippet Manager settings
             ["SnippetManagerOpacity"] = ("REAL", "1"),
+            // Session recovery settings
+            ["EnableSessionRecovery"] = ("INTEGER", "1"),
+            // Kerberos/GSSAPI settings
+            ["EnableKerberosAuth"] = ("INTEGER", "0"),
+            ["DefaultKerberosDelegation"] = ("INTEGER", "0"),
+            // Connection pooling settings
+            ["EnableConnectionPooling"] = ("INTEGER", "0"),
+            ["ConnectionPoolMaxPerHost"] = ("INTEGER", "3"),
+            ["ConnectionPoolIdleTimeoutSeconds"] = ("INTEGER", "300"),
+            // X11 forwarding settings
+            ["DefaultX11ForwardingEnabled"] = ("INTEGER", "0"),
+            ["X11ServerPath"] = ("TEXT", "NULL"),
+            ["AutoLaunchXServer"] = ("INTEGER", "0"),
+            // Autocompletion settings
+            ["EnableAutocompletion"] = ("INTEGER", "0"),
+            ["AutocompletionMode"] = ("INTEGER", "0"),
+            ["AutocompletionDebounceMs"] = ("INTEGER", "150"),
+            ["MaxCompletionSuggestions"] = ("INTEGER", "10"),
+            // Host list settings
+            ["HostListViewMode"] = ("INTEGER", "1"),  // Normal = 1
+            ["ShowHostConnectionStats"] = ("INTEGER", "1"),
+            ["PinFavoritesToTop"] = ("INTEGER", "1"),
+            // Performance settings (Phase 1)
+            ["TerminalOutputFlushIntervalMs"] = ("INTEGER", "16"),
+            ["TerminalOutputMaxBatchSize"] = ("INTEGER", "8192"),
+            ["EnableTerminalOutputBatching"] = ("INTEGER", "1"),
+            // Connection settings (Phase 1)
+            ["ReconnectBaseDelayMs"] = ("INTEGER", "1000"),
+            ["ReconnectMaxDelayMs"] = ("INTEGER", "30000"),
+            ["EnableNetworkMonitoring"] = ("INTEGER", "1"),
         };
 
         // Add missing settings columns using validated compile-time constants
@@ -602,6 +633,51 @@ public static class DbMigrator
             logger.Information("Added missing column KeepAliveIntervalSeconds to Hosts table");
         }
 
+        // Kerberos/GSSAPI authentication columns
+        if (!hostsColumns.Contains("KerberosServicePrincipal"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Hosts ADD COLUMN KerberosServicePrincipal TEXT DEFAULT NULL");
+            logger.Information("Added missing column KerberosServicePrincipal to Hosts table");
+        }
+
+        if (!hostsColumns.Contains("KerberosDelegateCredentials"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Hosts ADD COLUMN KerberosDelegateCredentials INTEGER NOT NULL DEFAULT 0");
+            logger.Information("Added missing column KerberosDelegateCredentials to Hosts table");
+        }
+
+        // X11 forwarding columns
+        if (!hostsColumns.Contains("X11ForwardingEnabled"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Hosts ADD COLUMN X11ForwardingEnabled INTEGER DEFAULT NULL");
+            logger.Information("Added missing column X11ForwardingEnabled to Hosts table");
+        }
+
+        if (!hostsColumns.Contains("X11TrustedForwarding"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Hosts ADD COLUMN X11TrustedForwarding INTEGER NOT NULL DEFAULT 0");
+            logger.Information("Added missing column X11TrustedForwarding to Hosts table");
+        }
+
+        if (!hostsColumns.Contains("X11DisplayNumber"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Hosts ADD COLUMN X11DisplayNumber INTEGER DEFAULT NULL");
+            logger.Information("Added missing column X11DisplayNumber to Hosts table");
+        }
+
+        // Phase 2 UI/UX: IsFavorite column for host favorites
+        if (!hostsColumns.Contains("IsFavorite"))
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE Hosts ADD COLUMN IsFavorite INTEGER NOT NULL DEFAULT 0");
+            logger.Information("Added missing column IsFavorite to Hosts table");
+        }
+
         // Create HostProfiles table if it doesn't exist
         if (!existingTables.Contains("HostProfiles"))
         {
@@ -729,6 +805,26 @@ public static class DbMigrator
             ";
             await db.Database.ExecuteSqlRawAsync(sql);
             logger.Information("Created missing table SessionRecordings");
+        }
+
+        // Create SavedSessions table if it doesn't exist (for crash recovery)
+        if (!existingTables.Contains("SavedSessions"))
+        {
+            var sql = @"
+                CREATE TABLE SavedSessions (
+                    Id TEXT NOT NULL PRIMARY KEY,
+                    HostEntryId TEXT NOT NULL,
+                    Title TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    SavedAt TEXT NOT NULL,
+                    WasGracefulShutdown INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY (HostEntryId) REFERENCES Hosts(Id) ON DELETE CASCADE
+                );
+                CREATE INDEX IX_SavedSessions_HostEntryId ON SavedSessions(HostEntryId);
+                CREATE INDEX IX_SavedSessions_WasGracefulShutdown ON SavedSessions(WasGracefulShutdown);
+            ";
+            await db.Database.ExecuteSqlRawAsync(sql);
+            logger.Information("Created missing table SavedSessions");
         }
     }
 

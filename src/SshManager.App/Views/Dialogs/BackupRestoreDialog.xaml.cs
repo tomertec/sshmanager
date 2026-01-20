@@ -15,10 +15,13 @@ public partial class BackupRestoreDialog : FluentWindow
     /// </summary>
     public event Action? OnRestoreCompleted;
 
-    public BackupRestoreDialog()
+    /// <summary>
+    /// Initializes a new instance of the BackupRestoreDialog with dependency injection.
+    /// </summary>
+    /// <param name="viewModel">The backup/restore view model.</param>
+    public BackupRestoreDialog(BackupRestoreViewModel viewModel)
     {
-        var backupService = App.GetService<IBackupService>();
-        _viewModel = new BackupRestoreViewModel(backupService);
+        _viewModel = viewModel;
         DataContext = _viewModel;
 
         InitializeComponent();

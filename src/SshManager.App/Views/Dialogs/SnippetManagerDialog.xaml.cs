@@ -14,11 +14,15 @@ public partial class SnippetManagerDialog : Window
 
     public event Action<CommandSnippet>? OnExecuteSnippet;
 
-    public SnippetManagerDialog()
+    /// <summary>
+    /// Initializes a new instance of the SnippetManagerDialog with dependency injection.
+    /// </summary>
+    /// <param name="viewModel">The snippet manager view model.</param>
+    /// <param name="settingsRepo">The settings repository.</param>
+    public SnippetManagerDialog(SnippetManagerViewModel viewModel, ISettingsRepository settingsRepo)
     {
-        var snippetRepo = App.GetService<ISnippetRepository>();
-        _settingsRepo = App.GetService<ISettingsRepository>();
-        _viewModel = new SnippetManagerViewModel(snippetRepo);
+        _viewModel = viewModel;
+        _settingsRepo = settingsRepo;
         DataContext = _viewModel;
 
         InitializeComponent();

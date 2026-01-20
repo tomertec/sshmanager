@@ -10,10 +10,13 @@ public partial class SshConfigImportDialog : FluentWindow
 {
     private readonly SshConfigImportViewModel _viewModel;
 
-    public SshConfigImportDialog()
+    /// <summary>
+    /// Initializes a new instance of the SshConfigImportDialog with dependency injection.
+    /// </summary>
+    /// <param name="viewModel">The SSH config import view model.</param>
+    public SshConfigImportDialog(SshConfigImportViewModel viewModel)
     {
-        var parser = App.GetService<ISshConfigParser>();
-        _viewModel = new SshConfigImportViewModel(parser);
+        _viewModel = viewModel;
         DataContext = _viewModel;
 
         InitializeComponent();

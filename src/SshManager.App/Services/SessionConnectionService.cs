@@ -21,6 +21,7 @@ public sealed class SessionConnectionService : ISessionConnectionService
     private readonly IPortForwardingService _portForwardingService;
     private readonly IConnectionHistoryRepository _historyRepository;
     private readonly ISettingsRepository _settingsRepository;
+    private readonly IHostFingerprintRepository _hostFingerprintRepository;
     private readonly ILogger<SessionConnectionService> _logger;
 
     /// <summary>
@@ -35,6 +36,7 @@ public sealed class SessionConnectionService : ISessionConnectionService
         IPortForwardingService portForwardingService,
         IConnectionHistoryRepository historyRepository,
         ISettingsRepository settingsRepository,
+        IHostFingerprintRepository hostFingerprintRepository,
         ILogger<SessionConnectionService> logger)
     {
         _sshService = sshService ?? throw new ArgumentNullException(nameof(sshService));
@@ -43,6 +45,7 @@ public sealed class SessionConnectionService : ISessionConnectionService
         _portForwardingService = portForwardingService ?? throw new ArgumentNullException(nameof(portForwardingService));
         _historyRepository = historyRepository ?? throw new ArgumentNullException(nameof(historyRepository));
         _settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
+        _hostFingerprintRepository = hostFingerprintRepository ?? throw new ArgumentNullException(nameof(hostFingerprintRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -513,22 +516,14 @@ public sealed class SessionConnectionService : ISessionConnectionService
         {
             _logger.LogDebug("Verifying host key for {Hostname}:{Port} - {Algorithm}", hostname, port, algorithm);
 
-            // Get existing fingerprint from database
-            var fingerprintRepo = App.GetService<IHostFingerprintRepository>();
-            if (fingerprintRepo == null)
-            {
-                _logger.LogWarning("Host fingerprint repository not available, cannot verify host key");
-                return false;
-            }
-
             // Look up fingerprint by host AND algorithm (supports multiple key types per host)
-            var existingFingerprint = await fingerprintRepo.GetByHostAndAlgorithmAsync(hostId, algorithm);
+            var existingFingerprint = await _hostFingerprintRepository.GetByHostAndAlgorithmAsync(hostId, algorithm);
 
             // Check if fingerprint matches for this specific algorithm
             if (existingFingerprint != null && existingFingerprint.Fingerprint == fingerprint)
             {
                 // Fingerprint matches - update last seen and trust
-                await fingerprintRepo.UpdateLastSeenAsync(existingFingerprint.Id);
+                await _hostFingerprintRepository.UpdateLastSeenAsync(existingFingerprint.Id);
                 _logger.LogDebug("Host key verified - fingerprint matches stored value for {Algorithm}", algorithm);
                 return true;
             }
@@ -559,7 +554,7 @@ public sealed class SessionConnectionService : ISessionConnectionService
                     existingFingerprint.Fingerprint = fingerprint;
                     existingFingerprint.LastSeen = DateTimeOffset.UtcNow;
                     existingFingerprint.IsTrusted = true;
-                    await fingerprintRepo.UpdateAsync(existingFingerprint);
+                    await _hostFingerprintRepository.UpdateAsync(existingFingerprint);
                     _logger.LogInformation("Updated host key fingerprint for {Hostname}:{Port} ({Algorithm})", hostname, port, algorithm);
                 }
                 else
@@ -575,7 +570,7 @@ public sealed class SessionConnectionService : ISessionConnectionService
                         LastSeen = DateTimeOffset.UtcNow,
                         IsTrusted = true
                     };
-                    await fingerprintRepo.AddAsync(newFingerprint);
+                    await _hostFingerprintRepository.AddAsync(newFingerprint);
                     _logger.LogInformation("Stored new host key fingerprint for {Hostname}:{Port} ({Algorithm})", hostname, port, algorithm);
                 }
             }

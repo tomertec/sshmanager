@@ -322,6 +322,128 @@ internal sealed class SftpSession : ISftpSession
         _logger.LogInformation("Upload complete: {LocalPath} ({Bytes} bytes)", localPath, startOffset + uploadedBytes);
     }
 
+    public async Task DownloadFileWithStatsAsync(
+        string remotePath,
+        string localPath,
+        IProgress<TransferProgress> progress,
+        CancellationToken ct = default,
+        long resumeOffset = 0)
+    {
+        ValidateRemotePath(remotePath);
+        ValidateLocalPath(localPath);
+
+        _logger.LogInformation("Downloading with stats {RemotePath} to {LocalPath} (resume: {ResumeOffset})",
+            remotePath, localPath, resumeOffset);
+
+        var fileInfo = _client.Get(remotePath);
+        var totalBytes = fileInfo.Length;
+        var startOffset = Math.Clamp(resumeOffset, 0, totalBytes);
+
+        // Ensure parent directory exists
+        var localDir = Path.GetDirectoryName(localPath);
+        if (!string.IsNullOrEmpty(localDir) && !Directory.Exists(localDir))
+        {
+            Directory.CreateDirectory(localDir);
+        }
+
+        var fileMode = startOffset > 0 ? FileMode.OpenOrCreate : FileMode.Create;
+        await using var localStream = new FileStream(localPath, fileMode, FileAccess.Write, FileShare.None);
+        if (startOffset > 0)
+        {
+            localStream.Seek(startOffset, SeekOrigin.Begin);
+        }
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        long downloadedBytes = startOffset;
+
+        await Task.Run(() =>
+        {
+            using var remoteStream = _client.OpenRead(remotePath);
+            if (startOffset > 0)
+            {
+                remoteStream.Seek(startOffset, SeekOrigin.Begin);
+            }
+
+            var buffer = new byte[81920]; // 80KB buffer for better throughput
+            int read;
+            while ((read = remoteStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                ct.ThrowIfCancellationRequested();
+                localStream.Write(buffer, 0, read);
+                downloadedBytes += read;
+
+                // Report enhanced progress
+                progress.Report(TransferProgress.Create(downloadedBytes, totalBytes, stopwatch, startOffset));
+            }
+        }, ct);
+
+        stopwatch.Stop();
+        var finalProgress = TransferProgress.Create(downloadedBytes, totalBytes, stopwatch, startOffset);
+        progress.Report(finalProgress);
+
+        _logger.LogInformation("Download complete: {RemotePath} ({Bytes} bytes in {Elapsed:F1}s at {Speed})",
+            remotePath, downloadedBytes, stopwatch.Elapsed.TotalSeconds, finalProgress.SpeedFormatted);
+    }
+
+    public async Task UploadFileWithStatsAsync(
+        string localPath,
+        string remotePath,
+        IProgress<TransferProgress> progress,
+        CancellationToken ct = default,
+        long resumeOffset = 0)
+    {
+        ValidateLocalPath(localPath);
+        ValidateRemotePath(remotePath);
+
+        _logger.LogInformation("Uploading with stats {LocalPath} to {RemotePath} (resume: {ResumeOffset})",
+            localPath, remotePath, resumeOffset);
+
+        var fileInfo = new FileInfo(localPath);
+        var totalBytes = fileInfo.Length;
+        var startOffset = Math.Clamp(resumeOffset, 0, totalBytes);
+
+        await using var localStream = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (startOffset > 0)
+        {
+            localStream.Seek(startOffset, SeekOrigin.Begin);
+        }
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        long uploadedBytes = startOffset;
+
+        await Task.Run(() =>
+        {
+            using var remoteStream = _client.Open(
+                remotePath,
+                startOffset > 0 ? FileMode.OpenOrCreate : FileMode.Create,
+                FileAccess.Write);
+
+            if (startOffset > 0)
+            {
+                remoteStream.Seek(startOffset, SeekOrigin.Begin);
+            }
+
+            var buffer = new byte[81920]; // 80KB buffer for better throughput
+            int read;
+            while ((read = localStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                ct.ThrowIfCancellationRequested();
+                remoteStream.Write(buffer, 0, read);
+                uploadedBytes += read;
+
+                // Report enhanced progress
+                progress.Report(TransferProgress.Create(uploadedBytes, totalBytes, stopwatch, startOffset));
+            }
+        }, ct);
+
+        stopwatch.Stop();
+        var finalProgress = TransferProgress.Create(uploadedBytes, totalBytes, stopwatch, startOffset);
+        progress.Report(finalProgress);
+
+        _logger.LogInformation("Upload complete: {LocalPath} ({Bytes} bytes in {Elapsed:F1}s at {Speed})",
+            localPath, uploadedBytes, stopwatch.Elapsed.TotalSeconds, finalProgress.SpeedFormatted);
+    }
+
     public async Task CreateDirectoryAsync(string path, CancellationToken ct = default)
     {
         _logger.LogInformation("Creating directory: {Path}", path);

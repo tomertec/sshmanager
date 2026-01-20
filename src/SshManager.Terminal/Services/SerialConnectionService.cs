@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using RJCP.IO.Ports;
+using SshManager.Core.Exceptions;
 using SshManager.Terminal.Models;
 using SysSerialPort = System.IO.Ports.SerialPort;
 
@@ -111,15 +112,32 @@ public sealed class SerialConnectionService : ISerialConnectionService
         {
             LogConnectionFailure(info, ex, "Port may be in use by another application");
             port?.Dispose();
-            throw new InvalidOperationException(
+            throw new SerialConnectionException(
+                ConnectionFailedReason.PortNotAvailable,
+                info.PortName,
+                info.BaudRate,
                 $"Access denied to serial port {info.PortName}. The port may be in use by another application.",
+                ex);
+        }
+        catch (FileNotFoundException ex)
+        {
+            LogConnectionFailure(info, ex, "Port not found");
+            port?.Dispose();
+            throw new SerialConnectionException(
+                ConnectionFailedReason.DeviceNotFound,
+                info.PortName,
+                info.BaudRate,
+                $"Serial port {info.PortName} was not found.",
                 ex);
         }
         catch (IOException ex)
         {
             LogConnectionFailure(info, ex, "I/O error occurred");
             port?.Dispose();
-            throw new InvalidOperationException(
+            throw new SerialConnectionException(
+                ConnectionFailedReason.Unknown,
+                info.PortName,
+                info.BaudRate,
                 $"I/O error opening serial port {info.PortName}: {ex.Message}",
                 ex);
         }
@@ -127,22 +145,32 @@ public sealed class SerialConnectionService : ISerialConnectionService
         {
             LogConnectionFailure(info, ex, "Invalid port configuration");
             port?.Dispose();
-            throw new ArgumentException(
+            throw new SerialConnectionException(
+                ConnectionFailedReason.InvalidConfiguration,
+                info.PortName,
+                info.BaudRate,
                 $"Invalid configuration for serial port {info.PortName}: {ex.Message}",
-                nameof(info),
                 ex);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
             _logger.LogInformation("Serial port connection to {PortName} was cancelled", info.PortName);
             port?.Dispose();
-            throw;
+            throw new SerialConnectionException(
+                ConnectionFailedReason.Cancelled,
+                info.PortName,
+                info.BaudRate,
+                "Connection was cancelled",
+                ex);
         }
         catch (Exception ex)
         {
             LogConnectionFailure(info, ex, null);
             port?.Dispose();
-            throw new InvalidOperationException(
+            throw new SerialConnectionException(
+                ConnectionFailedReason.Unknown,
+                info.PortName,
+                info.BaudRate,
                 $"Failed to open serial port {info.PortName}: {ex.Message}",
                 ex);
         }

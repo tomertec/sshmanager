@@ -19,6 +19,7 @@ public partial class HostDialogViewModel : ObservableObject
     private readonly ISecretProtector _secretProtector;
     private readonly ISerialConnectionService _serialConnectionService;
     private readonly IAgentDiagnosticsService? _agentDiagnosticsService;
+    private readonly IKerberosAuthService? _kerberosAuthService;
     private readonly IHostProfileRepository? _hostProfileRepo;
     private readonly IProxyJumpProfileRepository? _proxyJumpRepo;
     private readonly IPortForwardingProfileRepository? _portForwardingRepo;
@@ -138,6 +139,16 @@ public partial class HostDialogViewModel : ObservableObject
     [ObservableProperty]
     private int _keepAliveIntervalSeconds = 60;
 
+    // X11 Forwarding Properties (SSH only)
+    [ObservableProperty]
+    private bool? _x11ForwardingEnabled;
+
+    [ObservableProperty]
+    private bool _x11TrustedForwarding;
+
+    [ObservableProperty]
+    private int? _x11DisplayNumber;
+
     // SSH Agent Status Properties
     [ObservableProperty]
     private bool _isAgentAvailable;
@@ -147,6 +158,22 @@ public partial class HostDialogViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isCheckingAgent;
+
+    // Kerberos/GSSAPI Properties
+    [ObservableProperty]
+    private string? _kerberosServicePrincipal;
+
+    [ObservableProperty]
+    private bool _kerberosDelegateCredentials;
+
+    [ObservableProperty]
+    private bool _isKerberosAvailable;
+
+    [ObservableProperty]
+    private string _kerberosStatusText = "Checking...";
+
+    [ObservableProperty]
+    private bool _isCheckingKerberos;
 
     // Static arrays for ComboBox options
     public static int[] BaudRateOptions { get; } = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400];
@@ -233,11 +260,13 @@ public partial class HostDialogViewModel : ObservableObject
         ITagRepository? tagRepo = null,
         IHostEnvironmentVariableRepository? envVarRepo = null,
         IAgentDiagnosticsService? agentDiagnosticsService = null,
+        IKerberosAuthService? kerberosAuthService = null,
         ILogger<HostDialogViewModel>? logger = null)
     {
         _secretProtector = secretProtector;
         _serialConnectionService = serialConnectionService;
         _agentDiagnosticsService = agentDiagnosticsService;
+        _kerberosAuthService = kerberosAuthService;
         _hostProfileRepo = hostProfileRepo;
         _proxyJumpRepo = proxyJumpRepo;
         _portForwardingRepo = portForwardingRepo;
@@ -262,6 +291,10 @@ public partial class HostDialogViewModel : ObservableObject
         ShellType = _originalHost.ShellType;
         PrivateKeyPath = _originalHost.PrivateKeyPath ?? "";
         Notes = _originalHost.Notes;
+
+        // Load Kerberos settings
+        KerberosServicePrincipal = _originalHost.KerberosServicePrincipal;
+        KerberosDelegateCredentials = _originalHost.KerberosDelegateCredentials;
 
         // Find the matching group if exists
         if (_originalHost.GroupId.HasValue && groups != null)
@@ -309,6 +342,11 @@ public partial class HostDialogViewModel : ObservableObject
             UseGlobalKeepAliveSetting = true;
             KeepAliveIntervalSeconds = 60; // Default value
         }
+
+        // Load X11 forwarding settings
+        X11ForwardingEnabled = _originalHost.X11ForwardingEnabled;
+        X11TrustedForwarding = _originalHost.X11TrustedForwarding;
+        X11DisplayNumber = _originalHost.X11DisplayNumber;
 
         // Initialize available ports list
         RefreshPorts();
@@ -646,6 +684,20 @@ public partial class HostDialogViewModel : ObservableObject
             _originalHost.PasswordProtected = null; // Clear password if auth type changed
         }
 
+        // Save Kerberos settings
+        if (AuthType == AuthType.Kerberos)
+        {
+            _originalHost.KerberosServicePrincipal = string.IsNullOrWhiteSpace(KerberosServicePrincipal)
+                ? null
+                : KerberosServicePrincipal.Trim();
+            _originalHost.KerberosDelegateCredentials = KerberosDelegateCredentials;
+        }
+        else
+        {
+            _originalHost.KerberosServicePrincipal = null;
+            _originalHost.KerberosDelegateCredentials = false;
+        }
+
         // Encrypt secure notes if provided
         if (!string.IsNullOrEmpty(SecureNotes))
         {
@@ -678,6 +730,11 @@ public partial class HostDialogViewModel : ObservableObject
         {
             _originalHost.KeepAliveIntervalSeconds = KeepAliveIntervalSeconds;
         }
+
+        // Save X11 forwarding settings
+        _originalHost.X11ForwardingEnabled = X11ForwardingEnabled;
+        _originalHost.X11TrustedForwarding = X11TrustedForwarding;
+        _originalHost.X11DisplayNumber = X11DisplayNumber;
 
         return _originalHost;
     }
@@ -878,11 +935,18 @@ public partial class HostDialogViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowPrivateKeyPath));
         OnPropertyChanged(nameof(ShowPassword));
         OnPropertyChanged(nameof(ShowAgentStatus));
+        OnPropertyChanged(nameof(ShowKerberosSettings));
 
         // Refresh agent status when switching to SSH Agent auth
         if (value == AuthType.SshAgent && IsSshConnection)
         {
             _ = RefreshAgentStatusAsync();
+        }
+
+        // Refresh Kerberos status when switching to Kerberos auth
+        if (value == AuthType.Kerberos && IsSshConnection)
+        {
+            _ = RefreshKerberosStatusAsync();
         }
     }
 
@@ -988,4 +1052,57 @@ public partial class HostDialogViewModel : ObservableObject
     public bool ShowPrivateKeyPath => AuthType == AuthType.PrivateKeyFile;
     public bool ShowPassword => AuthType == AuthType.Password;
     public bool ShowAgentStatus => AuthType == AuthType.SshAgent && IsSshConnection;
+    public bool ShowKerberosSettings => AuthType == AuthType.Kerberos && IsSshConnection;
+
+    /// <summary>
+    /// Refreshes Kerberos authentication status information.
+    /// </summary>
+    [RelayCommand]
+    private async Task RefreshKerberosStatusAsync()
+    {
+        if (_kerberosAuthService == null)
+        {
+            KerberosStatusText = "Kerberos diagnostics not available";
+            IsKerberosAvailable = false;
+            return;
+        }
+
+        IsCheckingKerberos = true;
+
+        try
+        {
+            await _kerberosAuthService.RefreshAsync();
+            var status = await _kerberosAuthService.GetStatusAsync();
+
+            IsKerberosAvailable = status.IsAvailable && status.HasValidTgt;
+
+            if (status.HasValidTgt)
+            {
+                var expirationText = status.TgtExpiration.HasValue
+                    ? $" (expires {status.TgtExpiration.Value:g})"
+                    : "";
+                KerberosStatusText = $"{status.Principal}{expirationText}";
+            }
+            else if (status.IsAvailable)
+            {
+                KerberosStatusText = status.StatusMessage;
+            }
+            else
+            {
+                KerberosStatusText = status.Error ?? "Kerberos not available";
+            }
+
+            _logger.LogDebug("Kerberos status refreshed: {StatusText}", KerberosStatusText);
+        }
+        catch (Exception ex)
+        {
+            KerberosStatusText = "Error checking Kerberos status";
+            IsKerberosAvailable = false;
+            _logger.LogWarning(ex, "Failed to refresh Kerberos status");
+        }
+        finally
+        {
+            IsCheckingKerberos = false;
+        }
+    }
 }

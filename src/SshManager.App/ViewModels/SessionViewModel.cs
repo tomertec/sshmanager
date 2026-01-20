@@ -33,8 +33,26 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private readonly IExternalTerminalService _externalTerminalService;
     private readonly ILogger<SessionViewModel> _logger;
 
+    /// <summary>
+    /// Semaphore for synchronizing connection attempts to prevent race conditions.
+    /// Ensures only one connection operation can proceed at a time.
+    /// </summary>
+    private readonly SemaphoreSlim _connectionLock = new(1, 1);
+
+    /// <summary>
+    /// Tracks hosts currently being connected to prevent duplicate connection attempts.
+    /// Thread-safe HashSet protected by _connectionLock.
+    /// </summary>
+    private readonly HashSet<Guid> _connectingHosts = new();
+
     [ObservableProperty]
     private TerminalSession? _currentSession;
+
+    [ObservableProperty]
+    private bool _isConnecting;
+
+    [ObservableProperty]
+    private string? _connectingHostName;
 
     /// <summary>
     /// Event raised when a new session is created (for pane management).
@@ -126,58 +144,117 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         if (host == null) return;
 
-        _logger.LogInformation("Initiating connection to {DisplayName} ({Hostname}:{Port}) using {AuthType}",
-            host.DisplayName, host.Hostname, host.Port, host.AuthType);
-
-        var settings = await _settingsRepo.GetAsync();
-
-        // Check if external terminal mode is enabled (only for SSH connections)
-        if (!settings.UseEmbeddedTerminal && host.ConnectionType == ConnectionType.Ssh)
+        // First check: Is this host already being connected? (outside lock for quick rejection)
+        bool isAlreadyConnecting;
+        lock (_connectingHosts)
         {
-            _logger.LogInformation("Using external terminal for {DisplayName}", host.DisplayName);
+            isAlreadyConnecting = _connectingHosts.Contains(host.Id);
+        }
 
-            // Get password for password auth (note: SSH prompts interactively, this is just for logging)
-            string? password = GetPasswordForHost(host, settings);
-
-            var launched = await _externalTerminalService.LaunchSshConnectionAsync(host, password);
-
-            if (launched)
-            {
-                // Record connection attempt in history (we can't know if it succeeded)
-                await RecordConnectionResultAsync(host, true, null);
-                _logger.LogInformation("External terminal launched for {DisplayName}", host.DisplayName);
-            }
-            else
-            {
-                _logger.LogWarning("Failed to launch external terminal for {DisplayName}", host.DisplayName);
-            }
-
+        if (isAlreadyConnecting)
+        {
+            _logger.LogWarning("Connection to {DisplayName} already in progress, ignoring duplicate request", host.DisplayName);
             return;
         }
 
-        // Embedded terminal mode (default behavior)
-        // Get password - check cache first, then fall back to stored password
-        string? embeddedPassword = GetPasswordForHost(host, settings);
-        bool usedCachedCredential = embeddedPassword != null && host.AuthType == AuthType.Password &&
-                                     settings.EnableCredentialCaching &&
-                                     _credentialCache.GetCachedCredential(host.Id) != null;
+        // Acquire connection lock to serialize connection attempts
+        // Use timeout to prevent indefinite blocking
+        if (!await _connectionLock.WaitAsync(TimeSpan.FromSeconds(30)))
+        {
+            _logger.LogWarning("Failed to acquire connection lock for {DisplayName} within timeout", host.DisplayName);
+            return;
+        }
 
-        // Create session
-        var session = _sessionManager.CreateSession(host.DisplayName);
-        session.Host = host;
-        session.DecryptedPassword = embeddedPassword?.ToSecureString();
+        try
+        {
+            // Double-check inside lock to prevent race condition
+            lock (_connectingHosts)
+            {
+                if (!_connectingHosts.Add(host.Id))
+                {
+                    _logger.LogWarning("Connection to {DisplayName} already in progress (race condition detected), aborting", host.DisplayName);
+                    return;
+                }
+            }
 
-        // Notify that Sessions changed now that Host is set (for active session indicators)
-        OnPropertyChanged(nameof(Sessions));
+            _logger.LogInformation("Initiating connection to {DisplayName} ({Hostname}:{Port}) using {AuthType}",
+                host.DisplayName, host.Hostname, host.Port, host.AuthType);
 
-        _logger.LogDebug("Terminal session {SessionId} created for host {DisplayName} (cached credential: {UsedCache})",
-            session.Id, host.DisplayName, usedCachedCredential);
+            // Set connecting state (ObservableProperty updates must be on UI thread for WPF)
+            // These are now protected by the semaphore
+            IsConnecting = true;
+            ConnectingHostName = $"{host.DisplayName} ({host.Hostname})";
 
-        // Initialize session logging if enabled
-        InitializeSessionLogging(session, host, settings);
+            try
+            {
+                var settings = await _settingsRepo.GetAsync();
 
-        // Raise SessionCreated event for pane management
-        SessionCreated?.Invoke(this, session);
+                // Check if external terminal mode is enabled (only for SSH connections)
+                if (!settings.UseEmbeddedTerminal && host.ConnectionType == ConnectionType.Ssh)
+                {
+                    _logger.LogInformation("Using external terminal for {DisplayName}", host.DisplayName);
+
+                    // Get password for password auth (note: SSH prompts interactively, this is just for logging)
+                    string? password = GetPasswordForHost(host, settings);
+
+                    var launched = await _externalTerminalService.LaunchSshConnectionAsync(host, password);
+
+                    if (launched)
+                    {
+                        // Record connection attempt in history (we can't know if it succeeded)
+                        await RecordConnectionResultAsync(host, true, null);
+                        _logger.LogInformation("External terminal launched for {DisplayName}", host.DisplayName);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Failed to launch external terminal for {DisplayName}", host.DisplayName);
+                    }
+
+                    return;
+                }
+
+                // Embedded terminal mode (default behavior)
+                // Get password - check cache first, then fall back to stored password
+                string? embeddedPassword = GetPasswordForHost(host, settings);
+                bool usedCachedCredential = embeddedPassword != null && host.AuthType == AuthType.Password &&
+                                             settings.EnableCredentialCaching &&
+                                             _credentialCache.GetCachedCredential(host.Id) != null;
+
+                // Create session (TerminalSessionManager modifies ObservableCollection, protect with lock)
+                var session = _sessionManager.CreateSession(host.DisplayName);
+                session.Host = host;
+                session.DecryptedPassword = embeddedPassword?.ToSecureString();
+
+                // Notify that Sessions changed now that Host is set (for active session indicators)
+                OnPropertyChanged(nameof(Sessions));
+
+                _logger.LogDebug("Terminal session {SessionId} created for host {DisplayName} (cached credential: {UsedCache})",
+                    session.Id, host.DisplayName, usedCachedCredential);
+
+                // Initialize session logging if enabled
+                InitializeSessionLogging(session, host, settings);
+
+                // Raise SessionCreated event for pane management
+                SessionCreated?.Invoke(this, session);
+            }
+            finally
+            {
+                // Clear connecting state
+                IsConnecting = false;
+                ConnectingHostName = null;
+
+                // Remove from connecting hosts set
+                lock (_connectingHosts)
+                {
+                    _connectingHosts.Remove(host.Id);
+                }
+            }
+        }
+        finally
+        {
+            // Always release the semaphore
+            _connectionLock.Release();
+        }
     }
 
     /// <summary>
@@ -186,28 +263,76 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// </summary>
     public async Task<TerminalSession?> CreateSessionForHostAsync(HostEntry host)
     {
-        _logger.LogInformation("Creating session for {DisplayName} ({Hostname}:{Port}) using {AuthType}",
-            host.DisplayName, host.Hostname, host.Port, host.AuthType);
+        // Check if already connecting to prevent duplicate sessions
+        bool isAlreadyConnecting;
+        lock (_connectingHosts)
+        {
+            isAlreadyConnecting = _connectingHosts.Contains(host.Id);
+        }
 
-        var settings = await _settingsRepo.GetAsync();
+        if (isAlreadyConnecting)
+        {
+            _logger.LogWarning("Session creation for {DisplayName} already in progress, ignoring duplicate request", host.DisplayName);
+            return null;
+        }
 
-        // Get password - check cache first, then fall back to stored password
-        string? password = GetPasswordForHost(host, settings);
+        // Acquire connection lock for thread safety
+        if (!await _connectionLock.WaitAsync(TimeSpan.FromSeconds(30)))
+        {
+            _logger.LogWarning("Failed to acquire connection lock for session creation of {DisplayName}", host.DisplayName);
+            return null;
+        }
 
-        // Create session
-        var session = _sessionManager.CreateSession(host.DisplayName);
-        session.Host = host;
-        session.DecryptedPassword = password?.ToSecureString();
+        try
+        {
+            // Mark host as connecting
+            lock (_connectingHosts)
+            {
+                if (!_connectingHosts.Add(host.Id))
+                {
+                    _logger.LogWarning("Session creation for {DisplayName} already in progress (race condition), aborting", host.DisplayName);
+                    return null;
+                }
+            }
 
-        // Notify that Sessions changed now that Host is set (for active session indicators)
-        OnPropertyChanged(nameof(Sessions));
+            try
+            {
+                _logger.LogInformation("Creating session for {DisplayName} ({Hostname}:{Port}) using {AuthType}",
+                    host.DisplayName, host.Hostname, host.Port, host.AuthType);
 
-        _logger.LogDebug("Terminal session {SessionId} created for host {DisplayName}", session.Id, host.DisplayName);
+                var settings = await _settingsRepo.GetAsync();
 
-        // Initialize session logging if enabled
-        InitializeSessionLogging(session, host, settings);
+                // Get password - check cache first, then fall back to stored password
+                string? password = GetPasswordForHost(host, settings);
 
-        return session;
+                // Create session
+                var session = _sessionManager.CreateSession(host.DisplayName);
+                session.Host = host;
+                session.DecryptedPassword = password?.ToSecureString();
+
+                // Notify that Sessions changed now that Host is set (for active session indicators)
+                OnPropertyChanged(nameof(Sessions));
+
+                _logger.LogDebug("Terminal session {SessionId} created for host {DisplayName}", session.Id, host.DisplayName);
+
+                // Initialize session logging if enabled
+                InitializeSessionLogging(session, host, settings);
+
+                return session;
+            }
+            finally
+            {
+                // Remove from connecting hosts set
+                lock (_connectingHosts)
+                {
+                    _connectingHosts.Remove(host.Id);
+                }
+            }
+        }
+        finally
+        {
+            _connectionLock.Release();
+        }
     }
 
     [RelayCommand]
@@ -516,5 +641,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _sessionManager.SessionCreated -= OnSessionCreated;
         _sessionManager.SessionClosed -= OnSessionClosed;
         _sessionManager.CurrentSessionChanged -= OnCurrentSessionChanged;
+
+        // Dispose the connection lock semaphore
+        _connectionLock.Dispose();
     }
 }

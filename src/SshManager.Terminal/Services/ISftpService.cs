@@ -1,7 +1,125 @@
+using System.Diagnostics;
 using SshManager.Core.Models;
 using SshManager.Terminal.Models;
 
 namespace SshManager.Terminal.Services;
+
+/// <summary>
+/// Enhanced transfer progress information with statistics.
+/// </summary>
+public sealed record TransferProgress
+{
+    /// <summary>
+    /// Gets the number of bytes transferred so far.
+    /// </summary>
+    public long BytesTransferred { get; init; }
+
+    /// <summary>
+    /// Gets the total size of the file in bytes.
+    /// </summary>
+    public long TotalBytes { get; init; }
+
+    /// <summary>
+    /// Gets the elapsed time since transfer started.
+    /// </summary>
+    public TimeSpan Elapsed { get; init; }
+
+    /// <summary>
+    /// Gets the current transfer speed in bytes per second.
+    /// </summary>
+    public double SpeedBytesPerSecond { get; init; }
+
+    /// <summary>
+    /// Gets the estimated time remaining for the transfer.
+    /// </summary>
+    public TimeSpan EstimatedRemaining { get; init; }
+
+    /// <summary>
+    /// Gets the percentage complete (0-100).
+    /// </summary>
+    public double PercentComplete => TotalBytes > 0 ? (double)BytesTransferred / TotalBytes * 100.0 : 0;
+
+    /// <summary>
+    /// Gets whether the transfer is complete.
+    /// </summary>
+    public bool IsComplete => BytesTransferred >= TotalBytes;
+
+    /// <summary>
+    /// Gets the formatted speed string (e.g., "1.5 MB/s").
+    /// </summary>
+    public string SpeedFormatted => FormatSpeed(SpeedBytesPerSecond);
+
+    /// <summary>
+    /// Gets the formatted remaining time string (e.g., "2:30" or "< 1s").
+    /// </summary>
+    public string RemainingFormatted => FormatTimeRemaining(EstimatedRemaining);
+
+    /// <summary>
+    /// Creates a TransferProgress from current state.
+    /// </summary>
+    public static TransferProgress Create(
+        long bytesTransferred,
+        long totalBytes,
+        Stopwatch elapsed,
+        long previousBytes = 0)
+    {
+        var elapsedTime = elapsed.Elapsed;
+        var effectiveBytes = bytesTransferred - previousBytes;
+        var speedBps = elapsedTime.TotalSeconds > 0
+            ? effectiveBytes / elapsedTime.TotalSeconds
+            : 0;
+
+        var remainingBytes = totalBytes - bytesTransferred;
+        var estimatedRemaining = speedBps > 0
+            ? TimeSpan.FromSeconds(remainingBytes / speedBps)
+            : TimeSpan.MaxValue;
+
+        return new TransferProgress
+        {
+            BytesTransferred = bytesTransferred,
+            TotalBytes = totalBytes,
+            Elapsed = elapsedTime,
+            SpeedBytesPerSecond = speedBps,
+            EstimatedRemaining = estimatedRemaining
+        };
+    }
+
+    private static string FormatSpeed(double bytesPerSecond)
+    {
+        return bytesPerSecond switch
+        {
+            >= 1_000_000_000 => $"{bytesPerSecond / 1_000_000_000:F1} GB/s",
+            >= 1_000_000 => $"{bytesPerSecond / 1_000_000:F1} MB/s",
+            >= 1_000 => $"{bytesPerSecond / 1_000:F1} KB/s",
+            _ => $"{bytesPerSecond:F0} B/s"
+        };
+    }
+
+    private static string FormatTimeRemaining(TimeSpan remaining)
+    {
+        if (remaining == TimeSpan.MaxValue)
+        {
+            return "calculating...";
+        }
+
+        if (remaining.TotalSeconds < 1)
+        {
+            return "< 1s";
+        }
+
+        if (remaining.TotalHours >= 1)
+        {
+            return $"{(int)remaining.TotalHours}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
+        }
+
+        if (remaining.TotalMinutes >= 1)
+        {
+            return $"{(int)remaining.TotalMinutes}:{remaining.Seconds:D2}";
+        }
+
+        return $"{(int)remaining.TotalSeconds}s";
+    }
+}
 
 /// <summary>
 /// Service for establishing SFTP connections.
@@ -70,6 +188,36 @@ public interface ISftpSession : IAsyncDisposable
         string localPath,
         string remotePath,
         IProgress<double>? progress = null,
+        CancellationToken ct = default,
+        long resumeOffset = 0);
+
+    /// <summary>
+    /// Downloads a file from the remote server with enhanced progress reporting.
+    /// </summary>
+    /// <param name="remotePath">The remote file path.</param>
+    /// <param name="localPath">The local destination path.</param>
+    /// <param name="progress">Progress reporter with detailed transfer statistics.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="resumeOffset">Byte offset to resume from (for resumable transfers).</param>
+    Task DownloadFileWithStatsAsync(
+        string remotePath,
+        string localPath,
+        IProgress<TransferProgress> progress,
+        CancellationToken ct = default,
+        long resumeOffset = 0);
+
+    /// <summary>
+    /// Uploads a file from the local filesystem to the remote server with enhanced progress reporting.
+    /// </summary>
+    /// <param name="localPath">The local file path.</param>
+    /// <param name="remotePath">The remote destination path.</param>
+    /// <param name="progress">Progress reporter with detailed transfer statistics.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="resumeOffset">Byte offset to resume from (for resumable transfers).</param>
+    Task UploadFileWithStatsAsync(
+        string localPath,
+        string remotePath,
+        IProgress<TransferProgress> progress,
         CancellationToken ct = default,
         long resumeOffset = 0);
 

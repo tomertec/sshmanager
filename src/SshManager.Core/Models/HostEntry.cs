@@ -60,6 +60,19 @@ public sealed partial class HostEntry : IValidatableObject
     public string? PasswordProtected { get; set; }
 
     /// <summary>
+    /// Kerberos service principal name for GSSAPI authentication (for Kerberos auth type).
+    /// Example: "host/server.domain.com" or null to use default principal.
+    /// </summary>
+    [StringLength(MaxHostnameLength, ErrorMessage = "Kerberos service principal cannot exceed 400 characters")]
+    public string? KerberosServicePrincipal { get; set; }
+
+    /// <summary>
+    /// Enable Kerberos credential delegation (ticket forwarding) for this host.
+    /// When enabled, allows the remote host to act on your behalf.
+    /// </summary>
+    public bool KerberosDelegateCredentials { get; set; }
+
+    /// <summary>
     /// Optional notes about this host.
     /// </summary>
     [StringLength(MaxNotesLength, ErrorMessage = "Notes cannot exceed 5000 characters")]
@@ -148,6 +161,25 @@ public sealed partial class HostEntry : IValidatableObject
     [Range(0, 3600)]
     public int? KeepAliveIntervalSeconds { get; set; }
 
+    // ===== X11 Forwarding Settings =====
+
+    /// <summary>
+    /// Whether X11 forwarding is enabled for this host.
+    /// Null means use global default from AppSettings.
+    /// </summary>
+    public bool? X11ForwardingEnabled { get; set; }
+
+    /// <summary>
+    /// Whether to use trusted X11 forwarding (-Y instead of -X).
+    /// Trusted forwarding allows more access but is less secure.
+    /// </summary>
+    public bool X11TrustedForwarding { get; set; }
+
+    /// <summary>
+    /// X11 display number to use. Default is 0 (:0).
+    /// </summary>
+    public int? X11DisplayNumber { get; set; }
+
     /// <summary>
     /// Optional group this host belongs to.
     /// </summary>
@@ -199,6 +231,11 @@ public sealed partial class HostEntry : IValidatableObject
     /// Sort order for display within a group (lower numbers appear first).
     /// </summary>
     public int SortOrder { get; set; }
+
+    /// <summary>
+    /// Whether this host is marked as a favorite for quick access.
+    /// </summary>
+    public bool IsFavorite { get; set; }
 
     /// <summary>
     /// When this host entry was created.

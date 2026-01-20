@@ -6,18 +6,28 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using SshManager.App.Infrastructure;
 using SshManager.App.Services;
+using SshManager.App.ViewModels;
+using SshManager.App.Views.Dialogs;
 using SshManager.App.Views.Windows;
+using SshManager.Core.Models;
 using SshManager.Data;
 using SshManager.Data.Repositories;
 using SshManager.Security;
 using SshManager.Terminal;
 using SshManager.Terminal.Services;
+using Wpf.Ui.Appearance;
+#if DEBUG
+using SshManager.App.Services.Testing;
+#endif
 
 namespace SshManager.App;
 
 public partial class App : Application
 {
     private readonly IHost _host;
+#if DEBUG
+    private ITestServer? _testServer;
+#endif
 
     public App()
     {
@@ -59,8 +69,12 @@ public partial class App : Application
 
             // Initialize settings (creates defaults if not exist)
             var settingsRepo = _host.Services.GetRequiredService<ISettingsRepository>();
-            await settingsRepo.GetAsync();
+            var settings = await settingsRepo.GetAsync();
             logger.Debug("Application settings loaded");
+
+            // Apply application theme from settings
+            ApplyApplicationTheme(settings.Theme);
+            logger.Debug("Application theme set to {Theme}", settings.Theme);
 
             // Load custom terminal themes
             var themeService = _host.Services.GetRequiredService<ITerminalThemeService>();
@@ -92,10 +106,24 @@ public partial class App : Application
             // Initialize credential cache with settings
             await InitializeCredentialCacheAsync(logger);
 
+            // Cleanup old connection history entries
+            await CleanupConnectionHistoryAsync(logger);
+
             // Show main window
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
             mainWindow.Show();
-            logger.Information("Main window displayed, startup complete");
+            logger.Information("Main window displayed");
+
+#if DEBUG
+            // Start test automation server (DEBUG only)
+            await StartTestServerAsync(logger);
+#endif
+
+            // Check for crash recovery sessions (after main window is shown)
+            if (settings.EnableSessionRecovery)
+            {
+                await CheckSessionRecoveryAsync(logger, mainWindow);
+            }
         }
         catch (Exception ex)
         {
@@ -119,6 +147,14 @@ public partial class App : Application
 
         try
         {
+#if DEBUG
+            // Stop test automation server
+            await StopTestServerAsync(logger);
+#endif
+
+            // Save active sessions for crash recovery (marked as graceful)
+            await SaveSessionsForRecoveryAsync(logger, gracefulShutdown: true);
+
             // Clear credential cache on exit if configured
             await ClearCredentialCacheOnExitAsync(logger);
 
@@ -265,4 +301,213 @@ public partial class App : Application
             logger.Warning(ex, "Failed to clear credential cache on exit");
         }
     }
+
+    /// <summary>
+    /// Cleans up old connection history entries based on the configured retention policy.
+    /// </summary>
+    private async Task CleanupConnectionHistoryAsync(Serilog.ILogger logger)
+    {
+        try
+        {
+            var cleanupService = _host.Services.GetRequiredService<Data.Services.IConnectionHistoryCleanupService>();
+            var deletedCount = await cleanupService.CleanupOldEntriesAsync();
+
+            if (deletedCount > 0)
+            {
+                logger.Information("Cleaned up {Count} old connection history entries", deletedCount);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Warning(ex, "Failed to cleanup connection history - continuing with startup");
+        }
+    }
+
+    /// <summary>
+    /// Applies the application theme using WPF-UI's ApplicationThemeManager.
+    /// </summary>
+    /// <param name="theme">Theme name: "Dark", "Light", or "System".</param>
+    public static void ApplyApplicationTheme(string theme)
+    {
+        var appTheme = theme switch
+        {
+            "Light" => ApplicationTheme.Light,
+            "System" => ApplicationTheme.Unknown, // Unknown allows WPF-UI to follow system theme
+            _ => ApplicationTheme.Dark
+        };
+        ApplicationThemeManager.Apply(appTheme);
+    }
+
+    /// <summary>
+    /// Checks for recoverable sessions from a previous crash and offers to restore them.
+    /// </summary>
+    private async Task CheckSessionRecoveryAsync(Serilog.ILogger logger, Window ownerWindow)
+    {
+        try
+        {
+            var savedSessionRepo = _host.Services.GetRequiredService<ISavedSessionRepository>();
+            var recoverableSessions = await savedSessionRepo.GetRecoverableSessionsAsync();
+
+            if (recoverableSessions.Count == 0)
+            {
+                // No crash recovery needed - clear any gracefully closed sessions
+                await savedSessionRepo.ClearAllAsync();
+                return;
+            }
+
+            logger.Information("Found {Count} sessions to potentially recover", recoverableSessions.Count);
+
+            // Show recovery dialog
+            var viewModel = new SessionRecoveryViewModel(recoverableSessions);
+            var dialog = new SessionRecoveryDialog(viewModel);
+            dialog.Owner = ownerWindow;
+            dialog.ShowDialog();
+
+            if (viewModel.ShouldRestore)
+            {
+                logger.Information("User chose to restore {Count} sessions", recoverableSessions.Count);
+
+                // Restore sessions by connecting to their hosts
+                var hostRepo = _host.Services.GetRequiredService<IHostRepository>();
+                var mainWindowViewModel = _host.Services.GetRequiredService<MainWindowViewModel>();
+
+                foreach (var savedSession in recoverableSessions)
+                {
+                    try
+                    {
+                        var host = await hostRepo.GetByIdAsync(savedSession.HostEntryId);
+                        if (host != null)
+                        {
+                            await mainWindowViewModel.ConnectCommand.ExecuteAsync(host);
+                            logger.Debug("Restored session for host {HostName}", host.DisplayName);
+                        }
+                        else
+                        {
+                            logger.Warning("Could not restore session - host {HostId} not found", savedSession.HostEntryId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.Warning(ex, "Failed to restore session for host {HostId}", savedSession.HostEntryId);
+                    }
+                }
+            }
+            else
+            {
+                logger.Information("User chose not to restore sessions");
+            }
+
+            // Clear saved sessions after recovery attempt
+            await savedSessionRepo.ClearAllAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.Warning(ex, "Failed to check for session recovery - continuing with startup");
+        }
+    }
+
+    /// <summary>
+    /// Saves active terminal sessions for crash recovery.
+    /// </summary>
+    /// <param name="logger">Logger for diagnostics.</param>
+    /// <param name="gracefulShutdown">Whether this is a graceful shutdown.</param>
+    private async Task SaveSessionsForRecoveryAsync(Serilog.ILogger logger, bool gracefulShutdown)
+    {
+        try
+        {
+            var settingsRepo = _host.Services.GetRequiredService<ISettingsRepository>();
+            var settings = await settingsRepo.GetAsync();
+
+            if (!settings.EnableSessionRecovery)
+            {
+                return;
+            }
+
+            var sessionManager = _host.Services.GetRequiredService<ITerminalSessionManager>();
+            var savedSessionRepo = _host.Services.GetRequiredService<ISavedSessionRepository>();
+
+            // Get active sessions
+            var activeSessions = sessionManager.Sessions
+                .Where(s => s.IsConnected)
+                .ToList();
+
+            if (activeSessions.Count == 0)
+            {
+                // No active sessions - clear any saved sessions
+                await savedSessionRepo.ClearAllAsync();
+                return;
+            }
+
+            // Save each session
+            var savedSessions = activeSessions
+                .Where(s => s.Host != null)
+                .Select(s => new SavedSession
+                {
+                    Id = s.Id,
+                    HostEntryId = s.Host!.Id,
+                    Title = s.Title,
+                    CreatedAt = s.CreatedAt,
+                    SavedAt = DateTimeOffset.UtcNow,
+                    WasGracefulShutdown = gracefulShutdown
+                })
+                .ToList();
+
+            if (savedSessions.Count > 0)
+            {
+                // Clear existing and save new
+                await savedSessionRepo.ClearAllAsync();
+                await savedSessionRepo.SaveAllAsync(savedSessions);
+                logger.Debug("Saved {Count} sessions for recovery (graceful: {Graceful})",
+                    savedSessions.Count, gracefulShutdown);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Warning(ex, "Failed to save sessions for recovery");
+        }
+    }
+
+#if DEBUG
+    /// <summary>
+    /// Starts the test automation server for external testing tools.
+    /// Only available in DEBUG builds.
+    /// </summary>
+    private async Task StartTestServerAsync(Serilog.ILogger logger)
+    {
+        try
+        {
+            _testServer = _host.Services.GetService<ITestServer>();
+            if (_testServer != null)
+            {
+                await _testServer.StartAsync();
+                logger.Information("Test automation server started on pipe: {PipeName}", _testServer.PipeName);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Warning(ex, "Failed to start test automation server - continuing without it");
+        }
+    }
+
+    /// <summary>
+    /// Stops the test automation server.
+    /// Only available in DEBUG builds.
+    /// </summary>
+    private async Task StopTestServerAsync(Serilog.ILogger logger)
+    {
+        try
+        {
+            if (_testServer != null)
+            {
+                await _testServer.StopAsync();
+                _testServer.Dispose();
+                logger.Debug("Test automation server stopped");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.Warning(ex, "Error stopping test automation server");
+        }
+    }
+#endif
 }

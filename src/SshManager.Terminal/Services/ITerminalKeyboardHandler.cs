@@ -66,4 +66,49 @@ public interface IKeyboardHandlerContext
     /// Resets the terminal font size to default.
     /// </summary>
     void ResetZoom();
+
+    /// <summary>
+    /// Request autocompletion suggestions for the current input.
+    /// </summary>
+    void RequestCompletions();
+
+    /// <summary>
+    /// Insert the selected completion text at the current cursor position.
+    /// </summary>
+    void InsertCompletion(string text);
+
+    /// <summary>
+    /// Gets the current input line text (text since last newline/Enter).
+    /// </summary>
+    string GetCurrentInputLine();
+
+    /// <summary>
+    /// Gets the cursor position within the current input line.
+    /// </summary>
+    int GetCursorPosition();
+
+    /// <summary>
+    /// Whether the completion popup is currently visible.
+    /// </summary>
+    bool IsCompletionPopupVisible { get; }
+
+    /// <summary>
+    /// Move selection up in the completion popup.
+    /// </summary>
+    void CompletionSelectPrevious();
+
+    /// <summary>
+    /// Move selection down in the completion popup.
+    /// </summary>
+    void CompletionSelectNext();
+
+    /// <summary>
+    /// Accept the currently selected completion.
+    /// </summary>
+    void AcceptCompletion();
+
+    /// <summary>
+    /// Hide the completion popup.
+    /// </summary>
+    void HideCompletionPopup();
 }

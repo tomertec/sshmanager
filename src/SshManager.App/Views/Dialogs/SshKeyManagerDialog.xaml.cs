@@ -1,4 +1,6 @@
 using System.Windows;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SshManager.App.ViewModels;
 using SshManager.Security;
 using Wpf.Ui.Controls;
@@ -8,10 +10,17 @@ namespace SshManager.App.Views.Dialogs;
 public partial class SshKeyManagerDialog : FluentWindow
 {
     private readonly SshKeyManagerViewModel _viewModel;
+    private readonly IServiceProvider _serviceProvider;
 
-    public SshKeyManagerDialog(SshKeyManagerViewModel viewModel)
+    /// <summary>
+    /// Initializes a new instance of the SshKeyManagerDialog with dependency injection.
+    /// </summary>
+    /// <param name="viewModel">The SSH key manager view model.</param>
+    /// <param name="serviceProvider">The service provider for resolving additional dependencies.</param>
+    public SshKeyManagerDialog(SshKeyManagerViewModel viewModel, IServiceProvider serviceProvider)
     {
         _viewModel = viewModel;
+        _serviceProvider = serviceProvider;
         DataContext = viewModel;
 
         InitializeComponent();
@@ -67,8 +76,8 @@ public partial class SshKeyManagerDialog : FluentWindow
 
     private Task OnRequestGenerateKey()
     {
-        var keyManager = App.GetService<ISshKeyManager>();
-        var logger = App.GetLogger<KeyGenerationViewModel>();
+        var keyManager = _serviceProvider.GetRequiredService<ISshKeyManager>();
+        var logger = _serviceProvider.GetRequiredService<ILogger<KeyGenerationViewModel>>();
         var generateVm = new KeyGenerationViewModel(keyManager, logger);
         var dialog = new KeyGenerationDialog(generateVm)
         {
@@ -80,12 +89,12 @@ public partial class SshKeyManagerDialog : FluentWindow
 
     private Task OnRequestImportPpk()
     {
-        var ppkConverter = App.GetService<Security.IPpkConverter>();
-        var keyManager = App.GetService<ISshKeyManager>();
-        var managedKeyRepo = App.GetService<Data.Repositories.IManagedKeyRepository>();
-        var encryptionService = App.TryGetService<Security.IKeyEncryptionService>();
-        var agentKeyService = App.TryGetService<Terminal.Services.IAgentKeyService>();
-        var logger = App.GetLogger<PpkImportWizardViewModel>();
+        var ppkConverter = _serviceProvider.GetRequiredService<IPpkConverter>();
+        var keyManager = _serviceProvider.GetRequiredService<ISshKeyManager>();
+        var managedKeyRepo = _serviceProvider.GetRequiredService<Data.Repositories.IManagedKeyRepository>();
+        var encryptionService = _serviceProvider.GetService<IKeyEncryptionService>();
+        var agentKeyService = _serviceProvider.GetService<Terminal.Services.IAgentKeyService>();
+        var logger = _serviceProvider.GetRequiredService<ILogger<PpkImportWizardViewModel>>();
 
         var wizardVm = new PpkImportWizardViewModel(
             ppkConverter,

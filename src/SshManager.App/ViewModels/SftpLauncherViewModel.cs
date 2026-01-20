@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SshManager.App.Services;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
@@ -22,6 +23,7 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
     private readonly ISftpService _sftpService;
     private readonly ISettingsRepository _settingsRepo;
     private readonly ISecretProtector _secretProtector;
+    private readonly IEditorThemeService _editorThemeService;
     private readonly ILogger<SftpLauncherViewModel> _logger;
 
     public SftpLauncherViewModel(
@@ -29,12 +31,14 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
         ISftpService sftpService,
         ISettingsRepository settingsRepo,
         ISecretProtector secretProtector,
+        IEditorThemeService editorThemeService,
         ILogger<SftpLauncherViewModel>? logger = null)
     {
         _sessionViewModel = sessionViewModel;
         _sftpService = sftpService;
         _settingsRepo = settingsRepo;
         _secretProtector = secretProtector;
+        _editorThemeService = editorThemeService;
         _logger = logger ?? NullLogger<SftpLauncherViewModel>.Instance;
 
         // Subscribe to CurrentSession changes to update command availability
@@ -78,9 +82,7 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
             var sftpBrowserVm = new SftpBrowserViewModel(
                 sftpSession,
                 host.DisplayName,
-                App.GetLogger<SftpBrowserViewModel>(),
-                App.GetLogger<LocalFileBrowserViewModel>(),
-                App.GetLogger<RemoteFileBrowserViewModel>());
+                _editorThemeService);
 
             // Initialize the browsers
             await sftpBrowserVm.InitializeAsync();
@@ -168,9 +170,7 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
             var sftpBrowserVm = new SftpBrowserViewModel(
                 sftpSession,
                 host.DisplayName,
-                App.GetLogger<SftpBrowserViewModel>(),
-                App.GetLogger<LocalFileBrowserViewModel>(),
-                App.GetLogger<RemoteFileBrowserViewModel>());
+                _editorThemeService);
 
             // Initialize the browsers
             await sftpBrowserVm.InitializeAsync();

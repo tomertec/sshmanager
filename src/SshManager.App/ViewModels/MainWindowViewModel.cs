@@ -73,6 +73,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public IAsyncRelayCommand SearchCommand => _hostManagement.SearchCommand;
     public IAsyncRelayCommand<HostGroup?> FilterByGroupCommand => _hostManagement.FilterByGroupCommand;
     public IAsyncRelayCommand<Behaviors.DragDropReorderEventArgs> ReorderHostsCommand => _hostManagement.ReorderHostsCommand;
+    public IAsyncRelayCommand<HostEntry?> ToggleFavoriteCommand => _hostManagement.ToggleFavoriteCommand;
 
     // Facade properties for Tag management
     public ObservableCollection<Tag> AllTags => _hostManagement.AllTags;
@@ -93,6 +94,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public IRelayCommand<TerminalSession?> CloseSessionCommand => _session.CloseSessionCommand;
 
     public bool HasActiveSessions => _session.HasActiveSessions;
+    public bool IsConnecting => _session.IsConnecting;
+    public string? ConnectingHostName => _session.ConnectingHostName;
 
     /// <summary>
     /// Gets host statuses for UI binding.
@@ -236,8 +239,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     public void OpenQuickConnect()
     {
-        // Update hosts in the overlay before opening
+        // Update hosts and statuses in the overlay before opening
         QuickConnectOverlay.SetHosts(Hosts);
+        QuickConnectOverlay.HostStatuses = HostStatuses;
         QuickConnectOverlay.Open();
     }
 
@@ -310,6 +314,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             case nameof(SessionViewModel.HasActiveSessions):
                 OnPropertyChanged(nameof(HasActiveSessions));
                 break;
+            case nameof(SessionViewModel.IsConnecting):
+                OnPropertyChanged(nameof(IsConnecting));
+                break;
+            case nameof(SessionViewModel.ConnectingHostName):
+                OnPropertyChanged(nameof(ConnectingHostName));
+                break;
         }
     }
 
@@ -349,6 +359,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         // Notify that HostStatuses has changed (UI will re-query)
         OnPropertyChanged(nameof(HostStatuses));
+        
+        // Also update QuickConnectOverlay's HostStatuses if it's open
+        if (QuickConnectOverlay.IsOpen)
+        {
+            QuickConnectOverlay.HostStatuses = HostStatuses;
+        }
     }
 
     /// <summary>
