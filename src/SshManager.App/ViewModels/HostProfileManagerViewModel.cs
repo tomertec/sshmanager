@@ -33,11 +33,11 @@ public partial class HostProfileManagerViewModel : ObservableObject
     public HostProfileManagerViewModel(
         IHostProfileRepository profileRepository,
         IProxyJumpProfileRepository proxyJumpRepository,
-        ILogger<HostProfileManagerViewModel> logger)
+        ILogger<HostProfileManagerViewModel>? logger)
     {
         _profileRepository = profileRepository;
         _proxyJumpRepository = proxyJumpRepository;
-        _logger = logger;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<HostProfileManagerViewModel>.Instance;
     }
 
     /// <summary>

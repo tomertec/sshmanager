@@ -373,12 +373,24 @@ public sealed class PaneLayoutManager : IPaneLayoutManager
     /// <inheritdoc />
     public IEnumerable<PaneLeafNode> GetAllLeafNodes()
     {
-        if (_rootNode == null)
-            yield break;
-
-        foreach (var leaf in GetLeafNodesRecursive(_rootNode))
+        // Include tabbed panes (these may not be in the tree structure)
+        foreach (var tabbedPane in _tabbedPanes)
         {
-            yield return leaf;
+            yield return tabbedPane;
+        }
+
+        // Include tree panes if we have a root node
+        if (_rootNode != null)
+        {
+            // Get all leaf nodes from tree, excluding any already returned as tabbed panes
+            var tabbedPaneIds = new HashSet<Guid>(_tabbedPanes.Select(p => p.Id));
+            foreach (var leaf in GetLeafNodesRecursive(_rootNode))
+            {
+                if (!tabbedPaneIds.Contains(leaf.Id))
+                {
+                    yield return leaf;
+                }
+            }
         }
     }
 

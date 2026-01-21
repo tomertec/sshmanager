@@ -70,12 +70,12 @@ public readonly struct Result<T>
         new(false, default, exception.Message, exception);
 
     /// <summary>
-    /// Creates a failed result with an error message and exception.
+    /// Creates a failed result with an error message and optional exception.
     /// </summary>
     /// <param name="error">The error message describing the failure.</param>
-    /// <param name="exception">The exception that caused the failure.</param>
+    /// <param name="exception">The exception that caused the failure, if any.</param>
     /// <returns>A failed result with both the error message and exception.</returns>
-    public static Result<T> Failure(string error, Exception exception) =>
+    public static Result<T> Failure(string error, Exception? exception) =>
         new(false, default, error, exception);
 
     /// <summary>
@@ -222,12 +222,12 @@ public readonly struct Result
         new(false, exception.Message, exception);
 
     /// <summary>
-    /// Creates a failed result with an error message and exception.
+    /// Creates a failed result with an error message and optional exception.
     /// </summary>
     /// <param name="error">The error message describing the failure.</param>
-    /// <param name="exception">The exception that caused the failure.</param>
+    /// <param name="exception">The exception that caused the failure, if any.</param>
     /// <returns>A failed result with both the error message and exception.</returns>
-    public static Result Failure(string error, Exception exception) =>
+    public static Result Failure(string error, Exception? exception) =>
         new(false, error, exception);
 
     /// <summary>
