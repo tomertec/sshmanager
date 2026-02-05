@@ -223,25 +223,19 @@ public partial class QuickConnectViewModel : ObservableObject
 
     private void ConnectSerial()
     {
-        CreatedHostEntry = new HostEntry
-        {
-            Id = Guid.NewGuid(),
-            DisplayName = SerialPortName ?? "Serial",
-            ConnectionType = ConnectionType.Serial,
-            SerialPortName = SerialPortName,
-            SerialBaudRate = SerialBaudRate,
-            SerialDataBits = SerialDataBits,
-            SerialStopBits = SerialStopBits,
-            SerialParity = SerialParity,
-            SerialHandshake = SerialHandshake,
-            SerialDtrEnable = SerialDtrEnable,
-            SerialRtsEnable = SerialRtsEnable,
-            SerialLocalEcho = SerialLocalEcho,
-            SerialLineEnding = SerialLineEnding,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-            Notes = "Quick Connect (temporary)"
-        };
+        CreatedHostEntry = SerialQuickConnectViewModel.CreateSerialHostEntry(
+            null,
+            SerialPortName,
+            SerialBaudRate,
+            SerialDataBits,
+            SerialStopBits,
+            SerialParity,
+            SerialHandshake,
+            SerialDtrEnable,
+            SerialRtsEnable,
+            SerialLocalEcho,
+            SerialLineEnding);
+        CreatedHostEntry.Notes = "Quick Connect (temporary)";
 
         DialogResult = true;
         RequestClose?.Invoke();

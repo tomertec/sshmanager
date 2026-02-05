@@ -26,6 +26,7 @@ public class CloudSyncService : ICloudSyncService
     private readonly ILogger<CloudSyncService> _logger;
 
     private readonly object _statusLock = new();
+    private readonly object _deletedItemsLock = new();
     private SyncStatus _status = SyncStatus.Disabled;
     private List<SyncDeletedItem> _deletedItems = [];
 
@@ -244,7 +245,10 @@ public class CloudSyncService : ICloudSyncService
         settings.LastSyncTime = null;
         await _settingsRepo.UpdateAsync(settings, ct);
 
-        _deletedItems.Clear();
+        lock (_deletedItemsLock)
+        {
+            _deletedItems.Clear();
+        }
         await SaveDeletedItemsAsync(ct);
 
         SetStatus(SyncStatus.Disabled, "Sync disabled");
@@ -300,12 +304,15 @@ public class CloudSyncService : ICloudSyncService
     /// </summary>
     public async Task RecordDeletedItemAsync(Guid id, string itemType, CancellationToken ct = default)
     {
-        _deletedItems.Add(new SyncDeletedItem
+        lock (_deletedItemsLock)
         {
-            Id = id,
-            ItemType = itemType,
-            DeletedAt = DateTimeOffset.UtcNow
-        });
+            _deletedItems.Add(new SyncDeletedItem
+            {
+                Id = id,
+                ItemType = itemType,
+                DeletedAt = DateTimeOffset.UtcNow
+            });
+        }
 
         await SaveDeletedItemsAsync(ct);
         _logger.LogDebug("Recorded deleted item: {ItemType} {Id}", itemType, id);
@@ -340,6 +347,12 @@ public class CloudSyncService : ICloudSyncService
         var hosts = await _hostRepo.GetAllAsync(ct);
         var groups = await _groupRepo.GetAllAsync(ct);
 
+        List<SyncDeletedItem> deletedItemsCopy;
+        lock (_deletedItemsLock)
+        {
+            deletedItemsCopy = _deletedItems.ToList();
+        }
+
         var syncData = new SyncData
         {
             Version = "1.0",
@@ -348,7 +361,7 @@ public class CloudSyncService : ICloudSyncService
             ModifiedAt = DateTimeOffset.UtcNow,
             Hosts = hosts.Select(ConvertToSyncHost).ToList(),
             Groups = groups.Select(ConvertToSyncGroup).ToList(),
-            DeletedItems = _deletedItems.ToList()
+            DeletedItems = deletedItemsCopy
         };
 
         return syncData;
@@ -527,7 +540,10 @@ public class CloudSyncService : ICloudSyncService
         }
 
         // Update deleted items list
-        _deletedItems = mergedData.DeletedItems.ToList();
+        lock (_deletedItemsLock)
+        {
+            _deletedItems = mergedData.DeletedItems.ToList();
+        }
         await SaveDeletedItemsAsync(ct);
     }
 
@@ -539,12 +555,20 @@ public class CloudSyncService : ICloudSyncService
             try
             {
                 var json = await File.ReadAllTextAsync(filePath, ct);
-                _deletedItems = JsonSerializer.Deserialize<List<SyncDeletedItem>>(json, JsonOptions) ?? [];
+                var items = JsonSerializer.Deserialize<List<SyncDeletedItem>>(json, JsonOptions) ?? [];
+
+                lock (_deletedItemsLock)
+                {
+                    _deletedItems = items;
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to load deleted items file");
-                _deletedItems = [];
+                lock (_deletedItemsLock)
+                {
+                    _deletedItems = [];
+                }
             }
         }
     }
@@ -558,7 +582,12 @@ public class CloudSyncService : ICloudSyncService
             Directory.CreateDirectory(directory);
         }
 
-        var json = JsonSerializer.Serialize(_deletedItems, JsonOptions);
+        string json;
+        lock (_deletedItemsLock)
+        {
+            json = JsonSerializer.Serialize(_deletedItems, JsonOptions);
+        }
+
         await File.WriteAllTextAsync(filePath, json, ct);
     }
 }

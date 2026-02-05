@@ -47,6 +47,10 @@ public partial class ConnectionHistoryViewModel : ObservableObject
             SuccessfulConnections = entries.Count(e => e.WasSuccessful);
             FailedConnections = entries.Count(e => !e.WasSuccessful);
         }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error loading connection history: {ex}");
+        }
         finally
         {
             IsLoading = false;

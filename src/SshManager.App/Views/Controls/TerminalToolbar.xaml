@@ -15,19 +15,19 @@
                Margin="4,4,8,4">
         <!-- Broadcast Mode Toggle -->
         <Grid Margin="0,0,8,0">
-            <ui:Button Command="{Binding ToggleBroadcastModeCommand}"
+            <ui:Button Command="{Binding BroadcastInput.ToggleBroadcastModeCommand}"
                       Padding="8">
                 <ui:Button.Style>
                     <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                         <Setter Property="ToolTip" Value="Enable Broadcast Mode (type in all sessions)" />
                         <Setter Property="Icon" Value="{ui:SymbolIcon Send24}" />
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsBroadcastMode}" Value="True">
+                            <DataTrigger Binding="{Binding BroadcastInput.IsBroadcastMode}" Value="True">
                                 <Setter Property="ToolTip">
                                     <Setter.Value>
                                         <StackPanel>
                                             <TextBlock Text="Broadcast Mode Active" FontWeight="SemiBold" />
-                                            <TextBlock Text="{Binding BroadcastSelectedCount, StringFormat='Typing to {0} session(s)'}" Opacity="0.7" />
+                                            <TextBlock Text="{Binding BroadcastInput.BroadcastSelectedCount, StringFormat='Typing to {0} session(s)'}" Opacity="0.7" />
                                         </StackPanel>
                                     </Setter.Value>
                                 </Setter>
@@ -44,20 +44,20 @@
                     VerticalAlignment="Top"
                     Margin="0,2,2,0"
                     IsHitTestVisible="False"
-                    Visibility="{Binding IsBroadcastMode, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    Visibility="{Binding BroadcastInput.IsBroadcastMode, Converter={StaticResource BoolToVisibilityConverter}}" />
         </Grid>
         <!-- Broadcast Select All / Deselect All (visible when broadcast mode is on) -->
         <StackPanel Orientation="Horizontal"
-                   Visibility="{Binding IsBroadcastMode, Converter={StaticResource BoolToVisibilityConverter}}"
+                   Visibility="{Binding BroadcastInput.IsBroadcastMode, Converter={StaticResource BoolToVisibilityConverter}}"
                    Margin="0,0,8,0">
             <ui:Button Icon="{ui:SymbolIcon SelectAllOn24}"
                       ToolTip="Select all sessions for broadcast"
-                      Command="{Binding SelectAllForBroadcastCommand}"
+                      Command="{Binding BroadcastInput.SelectAllForBroadcastCommand}"
                       Padding="6"
                       Margin="0,0,2,0" />
             <ui:Button Icon="{ui:SymbolIcon SelectAllOff24}"
                       ToolTip="Deselect all sessions"
-                      Command="{Binding DeselectAllForBroadcastCommand}"
+                      Command="{Binding BroadcastInput.DeselectAllForBroadcastCommand}"
                       Padding="6" />
         </StackPanel>
         <!-- Separator -->
@@ -65,7 +65,7 @@
         <!-- Session Recording Toggle -->
         <Grid>
             <ui:Button x:Name="SessionLoggingButton"
-                      Command="{Binding ToggleSessionLoggingCommand}"
+                      Command="{Binding SessionLogging.ToggleSessionLoggingCommand}"
                       Padding="8"
                       Margin="0,0,4,0">
                 <ui:Button.Style>
@@ -73,12 +73,12 @@
                         <Setter Property="ToolTip" Value="Start session logging" />
                         <Setter Property="Icon" Value="{ui:SymbolIcon TextDescription24}" />
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsCurrentSessionLogging}" Value="True">
+                            <DataTrigger Binding="{Binding SessionLogging.IsCurrentSessionLogging}" Value="True">
                                 <Setter Property="ToolTip">
                                     <Setter.Value>
                                         <StackPanel>
                                             <TextBlock Text="Logging - Click to stop" FontWeight="SemiBold" />
-                                            <TextBlock Text="{Binding CurrentSessionLogPath}" Opacity="0.7" />
+                                            <TextBlock Text="{Binding SessionLogging.CurrentSessionLogPath}" Opacity="0.7" />
                                         </StackPanel>
                                     </Setter.Value>
                                 </Setter>
@@ -99,7 +99,7 @@
                     VerticalAlignment="Top"
                     Margin="0,2,2,0"
                     IsHitTestVisible="False"
-                    Visibility="{Binding IsCurrentSessionLogging, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    Visibility="{Binding SessionLogging.IsCurrentSessionLogging, Converter={StaticResource BoolToVisibilityConverter}}" />
         </Grid>
         <!-- Session Log Options -->
         <ui:DropDownButton Icon="{ui:SymbolIcon Settings24}"
@@ -109,37 +109,37 @@
             <ui:DropDownButton.Flyout>
                 <ContextMenu>
                     <ui:MenuItem Header="Output + Events"
-                                 Command="{Binding SetCurrentSessionLogLevelCommand}"
+                                 Command="{Binding SessionLogging.SetCurrentSessionLogLevelCommand}"
                                  CommandParameter="{x:Static terminalServices:SessionLogLevel.OutputAndEvents}" />
                     <ui:MenuItem Header="Events Only"
-                                 Command="{Binding SetCurrentSessionLogLevelCommand}"
+                                 Command="{Binding SessionLogging.SetCurrentSessionLogLevelCommand}"
                                  CommandParameter="{x:Static terminalServices:SessionLogLevel.EventsOnly}" />
                     <ui:MenuItem Header="Errors Only"
-                                 Command="{Binding SetCurrentSessionLogLevelCommand}"
+                                 Command="{Binding SessionLogging.SetCurrentSessionLogLevelCommand}"
                                  CommandParameter="{x:Static terminalServices:SessionLogLevel.ErrorsOnly}" />
                     <Separator />
                     <ui:MenuItem Header="Redact typed secrets"
                                  IsCheckable="True"
-                                 IsChecked="{Binding CurrentSessionRedactTypedSecrets}" />
+                                 IsChecked="{Binding SessionLogging.CurrentSessionRedactTypedSecrets}" />
                 </ContextMenu>
             </ui:DropDownButton.Flyout>
         </ui:DropDownButton>
         <!-- Open Current Log -->
         <ui:Button Icon="{ui:SymbolIcon Open24}"
                   ToolTip="Open current session log file"
-                  Command="{Binding OpenCurrentSessionLogFileCommand}"
+                  Command="{Binding SessionLogging.OpenCurrentSessionLogFileCommand}"
                   Padding="8"
                   Margin="0,0,4,0" />
         <!-- Open Log Directory -->
         <ui:Button Icon="{ui:SymbolIcon FolderOpen24}"
                   ToolTip="Open log directory"
-                  Command="{Binding OpenLogDirectoryCommand}"
+                  Command="{Binding SessionLogging.OpenLogDirectoryCommand}"
                   Padding="8"
                   Margin="0,0,4,0" />
         <!-- SFTP Browser Button -->
         <ui:Button Icon="{ui:SymbolIcon Document24}"
                   ToolTip="Open SFTP File Browser (Ctrl+B)"
-                  Command="{Binding OpenSftpBrowserCommand}"
+                  Command="{Binding SftpLauncher.OpenSftpBrowserCommand}"
                   Padding="8"
                   Margin="0,0,4,0" />
         <!-- SSH Tunnel Builder Button -->

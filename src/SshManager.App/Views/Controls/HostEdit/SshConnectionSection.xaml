@@ -19,14 +19,14 @@
         <!-- Hostname -->
         <TextBlock Text="Hostname *"
                    Style="{StaticResource SectionLabelStyle}" />
-        <ui:TextBox Text="{Binding Hostname, UpdateSourceTrigger=PropertyChanged}"
+        <ui:TextBox Text="{Binding SshSettings.Hostname, UpdateSourceTrigger=PropertyChanged}"
                     PlaceholderText="192.168.1.100 or server.example.com"
                     Margin="0,0,0,16" />
 
         <!-- Port -->
         <TextBlock Text="Port"
                    Style="{StaticResource SectionLabelStyle}" />
-        <ui:NumberBox Value="{Binding Port}"
+        <ui:NumberBox Value="{Binding SshSettings.Port}"
                       Minimum="1"
                       Maximum="65535"
                       SpinButtonPlacementMode="Compact"
@@ -35,7 +35,7 @@
         <!-- Username -->
         <TextBlock Text="Username *"
                    Style="{StaticResource SectionLabelStyle}" />
-        <ui:TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"
+        <ui:TextBox Text="{Binding SshSettings.Username, UpdateSourceTrigger=PropertyChanged}"
                     PlaceholderText="root"
                     Margin="0,0,0,16" />
 
@@ -49,8 +49,8 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <ComboBox Grid.Column="0"
-                      ItemsSource="{Binding AvailableHostProfiles}"
-                      SelectedItem="{Binding SelectedHostProfile}"
+                      ItemsSource="{Binding SshSettings.AvailableHostProfiles}"
+                      SelectedItem="{Binding SshSettings.SelectedHostProfile}"
                       Margin="0,0,4,0">
                 <ComboBox.ItemTemplate>
                     <DataTemplate>
@@ -64,7 +64,7 @@
             <ui:Button Grid.Column="1"
                        Icon="{ui:SymbolIcon Dismiss16}"
                        ToolTip="Clear selection"
-                       Command="{Binding ClearHostProfileCommand}"
+                       Command="{Binding SshSettings.ClearHostProfileCommand}"
                        Width="32" Height="32"
                        Padding="0"
                        Margin="0,0,4,0" />

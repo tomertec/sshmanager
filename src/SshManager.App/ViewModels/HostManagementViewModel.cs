@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SshManager.App.Services.Validation;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Data.Services;
@@ -30,9 +31,12 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
     private readonly IProxyJumpProfileRepository _proxyJumpRepo;
     private readonly IPortForwardingProfileRepository _portForwardingRepo;
     private readonly ITagRepository _tagRepo;
+    private readonly IHostEnvironmentVariableRepository _envVarRepo;
     private readonly ISecretProtector _secretProtector;
     private readonly ISerialConnectionService _serialConnectionService;
     private readonly IAgentDiagnosticsService? _agentDiagnosticsService;
+    private readonly IKerberosAuthService? _kerberosAuthService;
+    private readonly IHostValidationService _validationService;
     private readonly IHostCacheService _hostCacheService;
     private readonly ILogger<HostManagementViewModel> _logger;
 
@@ -55,6 +59,11 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool HasHosts => Hosts.Count > 0;
 
+    /// <summary>
+    /// Gets whether there are no hosts in the collection (for UI binding to empty state).
+    /// </summary>
+    public bool HasNoHosts => !HasHosts;
+
     [ObservableProperty]
     private HostEntry? _selectedHost;
 
@@ -74,10 +83,13 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         IProxyJumpProfileRepository proxyJumpRepo,
         IPortForwardingProfileRepository portForwardingRepo,
         ITagRepository tagRepo,
+        IHostEnvironmentVariableRepository envVarRepo,
         ISecretProtector secretProtector,
         ISerialConnectionService serialConnectionService,
+        IHostValidationService validationService,
         IHostCacheService hostCacheService,
         IAgentDiagnosticsService? agentDiagnosticsService = null,
+        IKerberosAuthService? kerberosAuthService = null,
         ILogger<HostManagementViewModel>? logger = null)
     {
         _hostRepo = hostRepo;
@@ -86,10 +98,13 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         _proxyJumpRepo = proxyJumpRepo;
         _portForwardingRepo = portForwardingRepo;
         _tagRepo = tagRepo;
+        _envVarRepo = envVarRepo;
         _secretProtector = secretProtector;
         _serialConnectionService = serialConnectionService;
+        _validationService = validationService;
         _hostCacheService = hostCacheService;
         _agentDiagnosticsService = agentDiagnosticsService;
+        _kerberosAuthService = kerberosAuthService;
         _logger = logger ?? NullLogger<HostManagementViewModel>.Instance;
 
         // Subscribe to initial collection changes
@@ -109,11 +124,13 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         }
         newValue.CollectionChanged += OnHostsCollectionChanged;
         OnPropertyChanged(nameof(HasHosts));
+        OnPropertyChanged(nameof(HasNoHosts));
     }
 
     private void OnHostsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         OnPropertyChanged(nameof(HasHosts));
+        OnPropertyChanged(nameof(HasNoHosts));
     }
 
     /// <summary>
@@ -337,21 +354,21 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
     private async Task AddHostAsync()
     {
         var viewModel = new HostDialogViewModel(
+            _validationService,
             _secretProtector,
             _serialConnectionService,
-            null,
-            Groups,
+            _agentDiagnosticsService,
+            _kerberosAuthService,
             _hostProfileRepo,
             _proxyJumpRepo,
             _portForwardingRepo,
             _tagRepo,
-            null,
-            _agentDiagnosticsService);
+            _envVarRepo,
+            host: null,
+            groups: Groups);
 
-        // Load profiles asynchronously
-        await Task.WhenAll(
-            viewModel.LoadHostProfilesAsync(),
-            viewModel.LoadProxyJumpProfilesAsync());
+        // Load all async data (profiles, tags, agent status, etc.)
+        await viewModel.LoadDataAsync();
 
         var dialog = new HostEditDialog(
             viewModel,
@@ -365,6 +382,14 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         {
             var host = viewModel.GetHost();
             await _hostRepo.AddAsync(host);
+
+            // Save environment variables
+            var envVars = viewModel.GetEnvironmentVariables().ToList();
+            if (envVars.Count > 0)
+            {
+                await _envVarRepo.SetForHostAsync(host.Id, envVars);
+            }
+
             _hostCacheService.Invalidate(); // Invalidate cache after add
             Hosts.Add(host);
             SelectedHost = host;
@@ -377,22 +402,21 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         if (host == null) return;
 
         var viewModel = new HostDialogViewModel(
+            _validationService,
             _secretProtector,
             _serialConnectionService,
-            host,
-            Groups,
+            _agentDiagnosticsService,
+            _kerberosAuthService,
             _hostProfileRepo,
             _proxyJumpRepo,
             _portForwardingRepo,
             _tagRepo,
-            null,
-            _agentDiagnosticsService);
+            _envVarRepo,
+            host: host,
+            groups: Groups);
 
-        // Load profiles and port forwarding count asynchronously
-        await Task.WhenAll(
-            viewModel.LoadHostProfilesAsync(),
-            viewModel.LoadProxyJumpProfilesAsync(),
-            viewModel.LoadPortForwardingCountAsync());
+        // Load all async data (profiles, tags, port forwarding count, env vars, agent status, etc.)
+        await viewModel.LoadDataAsync();
 
         var dialog = new HostEditDialog(
             viewModel,
@@ -406,13 +430,20 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         {
             var updatedHost = viewModel.GetHost();
             await _hostRepo.UpdateAsync(updatedHost);
+
+            // Save environment variables
+            var envVars = viewModel.GetEnvironmentVariables().ToList();
+            await _envVarRepo.SetForHostAsync(updatedHost.Id, envVars);
+
             _hostCacheService.Invalidate(); // Invalidate cache after update
 
-            // Refresh the host in the list
+            // Force UI refresh by removing and re-inserting the host
+            // (ObservableCollection doesn't notify when same object reference is assigned)
             var index = Hosts.IndexOf(host);
             if (index >= 0)
             {
-                Hosts[index] = updatedHost;
+                Hosts.RemoveAt(index);
+                Hosts.Insert(index, updatedHost);
             }
         }
     }

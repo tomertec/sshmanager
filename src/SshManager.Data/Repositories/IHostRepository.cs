@@ -7,6 +7,7 @@ namespace SshManager.Data.Repositories;
 /// </summary>
 public interface IHostRepository
 {
+    Task<bool> AnyAsync(CancellationToken ct = default);
     Task<List<HostEntry>> GetAllAsync(CancellationToken ct = default);
     Task<List<HostEntry>> GetByGroupAsync(Guid? groupId, CancellationToken ct = default);
     Task<List<HostEntry>> SearchAsync(string? searchTerm, IEnumerable<Guid>? tagIds = null, CancellationToken ct = default);

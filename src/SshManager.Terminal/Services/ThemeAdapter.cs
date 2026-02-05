@@ -54,31 +54,31 @@ public static class ThemeAdapter
     {
         return new Dictionary<string, string>
         {
-            ["background"] = "#0C0C0C",
-            ["foreground"] = "#CCCCCC",
-            ["cursor"] = "#CCCCCC",
-            ["cursorAccent"] = "#0C0C0C",
-            ["selectionBackground"] = "#3399FF",
+            ["background"] = TerminalConstants.ThemeColors.Background,
+            ["foreground"] = TerminalConstants.ThemeColors.Foreground,
+            ["cursor"] = TerminalConstants.ThemeColors.Cursor,
+            ["cursorAccent"] = TerminalConstants.ThemeColors.CursorAccent,
+            ["selectionBackground"] = TerminalConstants.ThemeColors.SelectionBackground,
 
             // Standard ANSI colors (0-7)
-            ["black"] = "#0C0C0C",
-            ["red"] = "#C50F1F",
-            ["green"] = "#13A10E",
-            ["yellow"] = "#C19C00",
-            ["blue"] = "#0037DA",
-            ["magenta"] = "#881798",
-            ["cyan"] = "#3A96DD",
-            ["white"] = "#CCCCCC",
+            ["black"] = TerminalConstants.ThemeColors.Black,
+            ["red"] = TerminalConstants.ThemeColors.Red,
+            ["green"] = TerminalConstants.ThemeColors.Green,
+            ["yellow"] = TerminalConstants.ThemeColors.Yellow,
+            ["blue"] = TerminalConstants.ThemeColors.Blue,
+            ["magenta"] = TerminalConstants.ThemeColors.Magenta,
+            ["cyan"] = TerminalConstants.ThemeColors.Cyan,
+            ["white"] = TerminalConstants.ThemeColors.White,
 
             // Bright ANSI colors (8-15)
-            ["brightBlack"] = "#767676",
-            ["brightRed"] = "#E74856",
-            ["brightGreen"] = "#16C60C",
-            ["brightYellow"] = "#F9F1A5",
-            ["brightBlue"] = "#3B78FF",
-            ["brightMagenta"] = "#B4009E",
-            ["brightCyan"] = "#61D6D6",
-            ["brightWhite"] = "#F2F2F2"
+            ["brightBlack"] = TerminalConstants.ThemeColors.BrightBlack,
+            ["brightRed"] = TerminalConstants.ThemeColors.BrightRed,
+            ["brightGreen"] = TerminalConstants.ThemeColors.BrightGreen,
+            ["brightYellow"] = TerminalConstants.ThemeColors.BrightYellow,
+            ["brightBlue"] = TerminalConstants.ThemeColors.BrightBlue,
+            ["brightMagenta"] = TerminalConstants.ThemeColors.BrightMagenta,
+            ["brightCyan"] = TerminalConstants.ThemeColors.BrightCyan,
+            ["brightWhite"] = TerminalConstants.ThemeColors.BrightWhite
         };
     }
 
@@ -90,7 +90,7 @@ public static class ThemeAdapter
     private static string EnsureHexFormat(string color)
     {
         if (string.IsNullOrEmpty(color))
-            return "#000000";
+            return TerminalConstants.ThemeColors.FallbackColor;
 
         // If already has #, return as-is
         if (color.StartsWith("#"))

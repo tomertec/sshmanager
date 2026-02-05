@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Wpf;
 
 namespace SshManager.Terminal.Services;
@@ -68,6 +69,8 @@ public sealed class TerminalBatchingOptions
 /// </remarks>
 public sealed class WebTerminalBridge : IDisposable
 {
+    private static readonly Regex AnsiEscapeRegex = new(@"\x1B(?:\[[^@-~]*[@-~]|\][^\x07]*\x07|P[^\x1B]*\x1B\\|[^[\]P])", RegexOptions.Compiled);
+
     private readonly ILogger<WebTerminalBridge> _logger;
 
     // Pre-ready buffering: SSH data may arrive before xterm.js is initialized.
@@ -76,8 +79,8 @@ public sealed class WebTerminalBridge : IDisposable
     private readonly List<string> _pendingData = new();
 
     private WebView2? _webView;
-    private bool _disposed;
-    private bool _isReady;
+    private int _disposed;
+    private volatile bool _isReady;
     private int _columns;
     private int _rows;
     private double _fontSize = DefaultFontSize;
@@ -201,7 +204,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// <param name="webView">The WebView2 control to bridge with.</param>
     public Task InitializeAsync(WebView2 webView)
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             throw new ObjectDisposedException(nameof(WebTerminalBridge));
         }
@@ -246,7 +249,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// </remarks>
     public void WriteData(string data)
     {
-        if (_disposed || _webView == null)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null)
         {
             return;
         }
@@ -261,16 +264,19 @@ public sealed class WebTerminalBridge : IDisposable
 
         // RACE CONDITION PREVENTION: xterm.js may not be initialized when first SSH
         // data arrives. We buffer here to avoid losing the initial server banner/MOTD.
-        if (!_isReady)
+        // The _isReady check MUST be inside _bufferLock to prevent a race where:
+        // 1) WriteData sees _isReady == false
+        // 2) OnWebMessageReceived sets _isReady = true and flushes pending data
+        // 3) WriteData adds to _pendingData — but flush already happened, data is lost
+        lock (_bufferLock)
         {
-            lock (_bufferLock)
+            if (!_isReady)
             {
                 _pendingData.Add(data);
-                // Log at Debug level (not Trace) to make it more visible for troubleshooting
                 _logger.LogDebug("Buffered {Length} chars while waiting for terminal ready (total pending: {Count})",
                     data.Length, _pendingData.Count);
+                return;
             }
-            return;
         }
 
         // Check if batching is disabled - send immediately
@@ -278,7 +284,7 @@ public sealed class WebTerminalBridge : IDisposable
         {
             _webView?.Dispatcher.InvokeAsync(() =>
             {
-                if (!_disposed)
+                if (Volatile.Read(ref _disposed) == 0)
                 {
                     SendWriteMessage(data);
                 }
@@ -369,14 +375,12 @@ public sealed class WebTerminalBridge : IDisposable
             return text;
         }
 
-        // Simple ANSI escape sequence removal (ESC[...m for colors, ESC[...H for cursor, etc.)
-        // This regex matches: ESC [ followed by any characters until a letter
-        return System.Text.RegularExpressions.Regex.Replace(text, @"\x1B\[[^@-~]*[@-~]", string.Empty);
+        return AnsiEscapeRegex.Replace(text, string.Empty);
     }
 
     private void FlushWriteBatch(object? state)
     {
-        if (_disposed || _webView == null)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null)
         {
             System.Threading.Interlocked.Exchange(ref _timerRunning, 0);
             return;
@@ -402,7 +406,7 @@ public sealed class WebTerminalBridge : IDisposable
             // Must dispatch to UI thread for WebView2
             _webView?.Dispatcher.InvokeAsync(() =>
             {
-                if (!_disposed)
+                if (Volatile.Read(ref _disposed) == 0)
                 {
                     SendWriteMessage(batch);
                 }
@@ -412,7 +416,7 @@ public sealed class WebTerminalBridge : IDisposable
 
     private void SendWriteMessage(string data)
     {
-        if (_disposed || _webView == null)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null)
         {
             return;
         }
@@ -463,7 +467,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// <param name="rows">Number of rows.</param>
     public void Resize(int cols, int rows)
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return;
         }
@@ -500,7 +504,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// <param name="theme">An object containing xterm.js theme properties.</param>
     public void SetTheme(object theme)
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return;
         }
@@ -534,7 +538,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// </summary>
     public void SetFont(string? fontFamily, double fontSize)
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return;
         }
@@ -569,7 +573,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// </summary>
     public void Fit()
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return;
         }
@@ -595,7 +599,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// </summary>
     public void Focus()
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return;
         }
@@ -621,7 +625,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// </summary>
     public void Clear()
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return;
         }
@@ -650,7 +654,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// <param name="lines">Number of lines to retain in scrollback buffer (clamped to 100-100000).</param>
     public void SetScrollback(int lines)
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return;
         }
@@ -683,7 +687,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// <returns>True if zoom was applied, false if already at max.</returns>
     public bool ZoomIn()
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return false;
         }
@@ -706,7 +710,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// <returns>True if zoom was applied, false if already at min.</returns>
     public bool ZoomOut()
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return false;
         }
@@ -728,7 +732,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// </summary>
     public void ResetZoom()
     {
-        if (_disposed || _webView == null || !_isReady)
+        if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
             return;
         }
@@ -740,7 +744,7 @@ public sealed class WebTerminalBridge : IDisposable
 
     private void OnWebMessageReceived(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return;
         }
@@ -771,7 +775,12 @@ public sealed class WebTerminalBridge : IDisposable
                     break;
 
                 case "ready":
-                    _isReady = true;
+                    // Set _isReady inside _bufferLock so WriteData cannot add to
+                    // _pendingData between setting _isReady and flushing.
+                    lock (_bufferLock)
+                    {
+                        _isReady = true;
+                    }
                     _logger.LogInformation("Terminal ready - xterm.js initialized successfully");
                     FlushPendingData();
                     TerminalReady?.Invoke();
@@ -804,12 +813,10 @@ public sealed class WebTerminalBridge : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
-
-        _disposed = true;
         _logger.LogDebug("Disposing WebTerminalBridge");
 
         // Clean up write batch timer

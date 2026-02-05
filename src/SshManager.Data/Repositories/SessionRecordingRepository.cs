@@ -15,20 +15,20 @@ public sealed class SessionRecordingRepository : ISessionRecordingRepository
     public async Task<List<SessionRecording>> GetAllAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var recordings = await db.SessionRecordings
+        return await db.SessionRecordings
             .Include(x => x.Host)
+            .OrderByDescending(x => x.StartedAt)
             .ToListAsync(ct);
-        return recordings.OrderByDescending(x => x.StartedAt).ToList();
     }
 
     public async Task<List<SessionRecording>> GetByHostAsync(Guid hostId, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var recordings = await db.SessionRecordings
+        return await db.SessionRecordings
             .Include(x => x.Host)
             .Where(x => x.HostId == hostId)
+            .OrderByDescending(x => x.StartedAt)
             .ToListAsync(ct);
-        return recordings.OrderByDescending(x => x.StartedAt).ToList();
     }
 
     public async Task<SessionRecording?> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -85,12 +85,10 @@ public sealed class SessionRecordingRepository : ISessionRecordingRepository
     public async Task<List<SessionRecording>> GetOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var recordings = await db.SessionRecordings
-            .ToListAsync(ct);
-        return recordings
+        return await db.SessionRecordings
             .Where(x => x.StartedAt < cutoff)
             .OrderBy(x => x.StartedAt)
-            .ToList();
+            .ToListAsync(ct);
     }
 
     public async Task<long> GetTotalStorageSizeAsync(CancellationToken ct = default)

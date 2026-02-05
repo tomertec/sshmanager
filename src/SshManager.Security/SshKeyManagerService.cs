@@ -419,13 +419,27 @@ public sealed partial class SshKeyManagerService : ISshKeyManager
             // Save private key
             File.WriteAllText(privateKeyPath, keyPair.PrivateKey);
 
-            // Set file permissions (Windows doesn't have Unix permissions, but we can make it readable only by owner)
+            // Set restrictive file permissions on Windows (owner-only access)
             try
             {
                 var fileInfo = new FileInfo(privateKeyPath);
                 var security = fileInfo.GetAccessControl();
-                // Note: On Windows, file permissions are more complex. SSH clients typically don't require
-                // specific permissions on Windows, but we could add ACL restrictions here if needed.
+
+                // Disable inheritance and remove all existing rules
+                security.SetAccessRuleProtection(true, false);
+
+                // Get current user identity
+                var currentUser = System.Security.Principal.WindowsIdentity.GetCurrent();
+
+                // Add full control for current user only
+                security.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                    currentUser.Name,
+                    System.Security.AccessControl.FileSystemRights.FullControl,
+                    System.Security.AccessControl.AccessControlType.Allow));
+
+                fileInfo.SetAccessControl(security);
+
+                _logger.LogDebug("Set restrictive file permissions on private key: {Path}", privateKeyPath);
             }
             catch (Exception ex)
             {
@@ -519,59 +533,17 @@ public sealed partial class SshKeyManagerService : ISshKeyManager
 
     private static string ExportRsaPrivateKey(RSA rsa, string? passphrase)
     {
-        if (string.IsNullOrEmpty(passphrase))
-        {
-            // Export unencrypted in PKCS#8 format
-            var privateKeyBytes = rsa.ExportPkcs8PrivateKey();
-            return FormatPem(privateKeyBytes, "PRIVATE KEY");
-        }
-        else
-        {
-            // Export encrypted
-            var pbeParams = new PbeParameters(
-                PbeEncryptionAlgorithm.Aes256Cbc,
-                HashAlgorithmName.SHA256,
-                100000);
-            var privateKeyBytes = rsa.ExportEncryptedPkcs8PrivateKey(
-                Encoding.UTF8.GetBytes(passphrase),
-                pbeParams);
-            return FormatPem(privateKeyBytes, "ENCRYPTED PRIVATE KEY");
-        }
+        return CryptoExportHelper.ExportRsaPrivateKey(rsa, passphrase);
     }
 
     private static string ExportEcdsaPrivateKey(ECDsa ecdsa, string? passphrase)
     {
-        if (string.IsNullOrEmpty(passphrase))
-        {
-            var privateKeyBytes = ecdsa.ExportPkcs8PrivateKey();
-            return FormatPem(privateKeyBytes, "PRIVATE KEY");
-        }
-        else
-        {
-            var pbeParams = new PbeParameters(
-                PbeEncryptionAlgorithm.Aes256Cbc,
-                HashAlgorithmName.SHA256,
-                100000);
-            var privateKeyBytes = ecdsa.ExportEncryptedPkcs8PrivateKey(
-                Encoding.UTF8.GetBytes(passphrase),
-                pbeParams);
-            return FormatPem(privateKeyBytes, "ENCRYPTED PRIVATE KEY");
-        }
+        return CryptoExportHelper.ExportEcdsaPrivateKey(ecdsa, passphrase);
     }
 
     private static string FormatPem(byte[] data, string label)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine($"-----BEGIN {label}-----");
-
-        var base64 = Convert.ToBase64String(data);
-        for (int i = 0; i < base64.Length; i += 64)
-        {
-            sb.AppendLine(base64.Substring(i, Math.Min(64, base64.Length - i)));
-        }
-
-        sb.AppendLine($"-----END {label}-----");
-        return sb.ToString();
+        return CryptoExportHelper.FormatPem(data, label);
     }
 
     private static string FormatRsaPublicKey(RSA rsa, string? comment)

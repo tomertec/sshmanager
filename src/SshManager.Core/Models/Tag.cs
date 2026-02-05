@@ -21,7 +21,7 @@ public sealed class Tag
     /// Null or empty string means no color (default).
     /// </summary>
     [StringLength(7, ErrorMessage = "Color must be in hex format (e.g., #FF5733)")]
-    [RegularExpression(@"^#[0-9A-Fa-f]{6}$", ErrorMessage = "Color must be in hex format (e.g., #FF5733)")]
+    [RegularExpression(@"^$|^#[0-9A-Fa-f]{6}$", ErrorMessage = "Color must be in hex format (e.g., #FF5733) or empty")]
     public string? Color { get; set; }
 
     /// <summary>

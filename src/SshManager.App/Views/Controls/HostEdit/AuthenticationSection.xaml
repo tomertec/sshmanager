@@ -21,7 +21,7 @@
         <TextBlock Text="Authentication"
                    Style="{StaticResource SectionLabelStyle}" />
         <ComboBox ItemsSource="{Binding AuthTypes}"
-                  SelectedItem="{Binding AuthType}"
+                  SelectedItem="{Binding SshSettings.AuthType}"
                   Margin="0,0,0,8">
             <ComboBox.ItemTemplate>
                 <DataTemplate>
@@ -51,7 +51,7 @@
         </ComboBox>
 
         <!-- SSH Agent Status (shown only for SshAgent auth) -->
-        <Border Visibility="{Binding ShowAgentStatus, Converter={StaticResource BoolToVisibilityConverter}}"
+        <Border Visibility="{Binding SshSettings.ShowAgentStatus, Converter={StaticResource BoolToVisibilityConverter}}"
                 Style="{StaticResource StatusBorderStyle}"
                 Margin="0,0,0,16">
             <Grid>
@@ -71,7 +71,7 @@
                             <Setter Property="Symbol" Value="Warning16" />
                             <Setter Property="Foreground" Value="#FFC107" />
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsAgentAvailable}" Value="True">
+                                <DataTrigger Binding="{Binding SshSettings.IsAgentAvailable}" Value="True">
                                     <Setter Property="Symbol" Value="Checkmark16" />
                                     <Setter Property="Foreground" Value="#4CAF50" />
                                 </DataTrigger>
@@ -82,7 +82,7 @@
 
                 <!-- Status Text -->
                 <TextBlock Grid.Column="1"
-                           Text="{Binding AgentStatusText}"
+                           Text="{Binding SshSettings.AgentStatusText}"
                            VerticalAlignment="Center"
                            TextWrapping="Wrap" />
 
@@ -90,14 +90,14 @@
                 <ui:Button Grid.Column="2"
                            Icon="{ui:SymbolIcon ArrowSync16}"
                            ToolTip="Refresh agent status"
-                           Command="{Binding RefreshAgentStatusAsyncCommand}"
+                           Command="{Binding SshSettings.RefreshAgentStatusAsyncCommand}"
                            Width="32" Height="32"
                            Padding="0"
                            Margin="8,0,0,0">
                     <ui:Button.Style>
                         <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsCheckingAgent}" Value="True">
+                                <DataTrigger Binding="{Binding SshSettings.IsCheckingAgent}" Value="True">
                                     <Setter Property="IsEnabled" Value="False" />
                                 </DataTrigger>
                             </Style.Triggers>
@@ -108,7 +108,7 @@
         </Border>
 
         <!-- Private Key Path (shown only for PrivateKeyFile auth) -->
-        <StackPanel Visibility="{Binding ShowPrivateKeyPath, Converter={StaticResource BoolToVisibilityConverter}}"
+        <StackPanel Visibility="{Binding SshSettings.ShowPrivateKeyPath, Converter={StaticResource BoolToVisibilityConverter}}"
                     Margin="0,0,0,16">
             <TextBlock Text="Private Key File"
                        Style="{StaticResource SectionLabelStyle}" />
@@ -119,12 +119,12 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <ui:TextBox Grid.Column="0"
-                            Text="{Binding PrivateKeyPath, UpdateSourceTrigger=PropertyChanged}"
+                            Text="{Binding SshSettings.PrivateKeyPath, UpdateSourceTrigger=PropertyChanged}"
                             PlaceholderText="C:\Users\...\.ssh\id_rsa"
                             Margin="0,0,8,0" />
                 <ui:Button Grid.Column="1"
                            Content="Browse..."
-                           Command="{Binding BrowsePrivateKeyCommand}"
+                           Command="{Binding SshSettings.BrowsePrivateKeyCommand}"
                            Margin="0,0,4,0" />
                 <ui:Button Grid.Column="2"
                            x:Name="SelectKeyButton"
@@ -135,7 +135,7 @@
         </StackPanel>
 
         <!-- Password (shown only for Password auth) -->
-        <StackPanel Visibility="{Binding ShowPassword, Converter={StaticResource BoolToVisibilityConverter}}"
+        <StackPanel Visibility="{Binding SshSettings.ShowPassword, Converter={StaticResource BoolToVisibilityConverter}}"
                     Margin="0,0,0,16">
             <TextBlock Text="Password"
                        Style="{StaticResource SectionLabelStyle}" />
@@ -147,7 +147,7 @@
         </StackPanel>
 
         <!-- Kerberos Settings (shown only for Kerberos auth) -->
-        <StackPanel Visibility="{Binding ShowKerberosSettings, Converter={StaticResource BoolToVisibilityConverter}}"
+        <StackPanel Visibility="{Binding SshSettings.ShowKerberosSettings, Converter={StaticResource BoolToVisibilityConverter}}"
                     Margin="0,0,0,16">
 
             <!-- Kerberos Status -->
@@ -170,7 +170,7 @@
                                 <Setter Property="Symbol" Value="Warning16" />
                                 <Setter Property="Foreground" Value="#FFC107" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsKerberosAvailable}" Value="True">
+                                    <DataTrigger Binding="{Binding SshSettings.IsKerberosAvailable}" Value="True">
                                         <Setter Property="Symbol" Value="Checkmark16" />
                                         <Setter Property="Foreground" Value="#4CAF50" />
                                     </DataTrigger>
@@ -181,7 +181,7 @@
 
                     <!-- Status Text -->
                     <TextBlock Grid.Column="1"
-                               Text="{Binding KerberosStatusText}"
+                               Text="{Binding SshSettings.KerberosStatusText}"
                                VerticalAlignment="Center"
                                TextWrapping="Wrap" />
 
@@ -189,14 +189,14 @@
                     <ui:Button Grid.Column="2"
                                Icon="{ui:SymbolIcon ArrowSync16}"
                                ToolTip="Refresh Kerberos status"
-                               Command="{Binding RefreshKerberosStatusAsyncCommand}"
+                               Command="{Binding SshSettings.RefreshKerberosStatusAsyncCommand}"
                                Width="32" Height="32"
                                Padding="0"
                                Margin="8,0,0,0">
                         <ui:Button.Style>
                             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsCheckingKerberos}" Value="True">
+                                    <DataTrigger Binding="{Binding SshSettings.IsCheckingKerberos}" Value="True">
                                         <Setter Property="IsEnabled" Value="False" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -209,7 +209,7 @@
             <!-- Service Principal -->
             <TextBlock Text="Service Principal (Optional)"
                        Style="{StaticResource SectionLabelStyle}" />
-            <ui:TextBox Text="{Binding KerberosServicePrincipal, UpdateSourceTrigger=PropertyChanged}"
+            <ui:TextBox Text="{Binding SshSettings.KerberosServicePrincipal, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="host/server.domain.com (leave empty for default)"
                         Margin="0,0,0,4" />
             <TextBlock Text="Override the default SPN for GSSAPI authentication"
@@ -217,7 +217,7 @@
                        Margin="0,0,0,12" />
 
             <!-- Credential Delegation -->
-            <CheckBox IsChecked="{Binding KerberosDelegateCredentials}"
+            <CheckBox IsChecked="{Binding SshSettings.KerberosDelegateCredentials}"
                       Content="Enable credential delegation (ticket forwarding)"
                       Margin="0,0,0,4" />
             <TextBlock Text="Allows the remote host to act on your behalf. Use with trusted servers only."

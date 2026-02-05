@@ -15,7 +15,7 @@ namespace SshManager.App.ViewModels;
 /// </summary>
 public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
 {
-    private readonly ILogger<SftpBrowserViewModel> _logger;
+    private readonly ILogger _logger;
     private readonly ISftpSession _session;
 
     /// <summary>
@@ -95,9 +95,21 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     private Action<bool>? _saveMirrorNavigationCallback;
 
     /// <summary>
-    /// Flag to prevent recursive navigation syncing.
+    /// Semaphore to prevent recursive navigation syncing (async-safe).
     /// </summary>
-    private bool _isSyncingNavigation;
+    private readonly SemaphoreSlim _navigationSyncLock = new(1, 1);
+
+    private bool _disposed;
+
+    /// <summary>
+    /// Prevents concurrent transfer batch operations that would conflict on the overwrite dialog.
+    /// </summary>
+    private readonly SemaphoreSlim _transferBatchLock = new(1, 1);
+
+    /// <summary>
+    /// TaskCompletionSource for awaiting the overwrite dialog result.
+    /// </summary>
+    private TaskCompletionSource<ConflictResolution?>? _overwriteTcs;
 
     // Facade properties for dialog state (for XAML binding compatibility)
     public bool IsNewFolderDialogVisible
@@ -238,25 +250,21 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
         ISftpSession session,
         string hostname,
         IEditorThemeService editorThemeService,
-        ILogger<SftpBrowserViewModel>? logger = null,
-        ILogger<LocalFileBrowserViewModel>? localLogger = null,
-        ILogger<RemoteFileBrowserViewModel>? remoteLogger = null,
-        ILogger<SftpTransferManagerViewModel>? transferLogger = null,
-        ILogger<SftpDialogStateViewModel>? dialogLogger = null,
-        ILogger<SftpFileOperationsViewModel>? fileOpsLogger = null)
+        ILoggerFactory? loggerFactory = null)
     {
         _session = session;
-        _logger = logger ?? NullLogger<SftpBrowserViewModel>.Instance;
+        var factory = loggerFactory ?? NullLoggerFactory.Instance;
+        _logger = factory.CreateLogger<SftpBrowserViewModel>();
 
         Hostname = hostname;
         IsConnected = session.IsConnected;
 
         // Initialize child view models
-        _localBrowser = new LocalFileBrowserViewModel(localLogger);
-        _remoteBrowser = new RemoteFileBrowserViewModel(remoteLogger);
-        _transferManager = new SftpTransferManagerViewModel(session, transferLogger);
-        _dialogState = new SftpDialogStateViewModel(session, dialogLogger);
-        _fileOperations = new SftpFileOperationsViewModel(session, hostname, editorThemeService, fileOpsLogger);
+        _localBrowser = new LocalFileBrowserViewModel(factory.CreateLogger<LocalFileBrowserViewModel>());
+        _remoteBrowser = new RemoteFileBrowserViewModel(factory.CreateLogger<RemoteFileBrowserViewModel>());
+        _transferManager = new SftpTransferManagerViewModel(session, factory.CreateLogger<SftpTransferManagerViewModel>());
+        _dialogState = new SftpDialogStateViewModel(session, factory.CreateLogger<SftpDialogStateViewModel>());
+        _fileOperations = new SftpFileOperationsViewModel(session, hostname, editorThemeService, factory.CreateLogger<SftpFileOperationsViewModel>());
 
         // Set up the remote browser with the session
         _remoteBrowser.SetSession(session);
@@ -273,12 +281,6 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
         _transferManager.RefreshLocalBrowserCallback = () => LocalBrowser.RefreshAsync();
 
         // Wire up callbacks for dialog state
-        _dialogState.CreateLocalDirectoryCallback = async name =>
-        {
-            var newPath = System.IO.Path.Combine(LocalBrowser.CurrentPath, name);
-            System.IO.Directory.CreateDirectory(newPath);
-            await LocalBrowser.RefreshAsync();
-        };
         _dialogState.RefreshLocalBrowserCallback = () => LocalBrowser.RefreshAsync();
         _dialogState.CreateRemoteDirectoryCallback = name => RemoteBrowser.CreateDirectoryAsync(name);
         _dialogState.GetCurrentLocalPathCallback = () => LocalBrowser.CurrentPath;
@@ -437,35 +439,19 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     private void CancelNewFolder() => DialogState.CancelNewFolder();
 
     [RelayCommand]
-    private void ConfirmOverwrite()
-    {
-        // This will be handled by the new upload/download flow
-        DialogState.HideOverwriteDialog();
-    }
+    private void ConfirmOverwrite() => CompleteOverwriteDialog(ConflictResolution.Overwrite);
 
     [RelayCommand]
-    private void SkipOverwrite()
-    {
-        DialogState.HideOverwriteDialog();
-    }
+    private void SkipOverwrite() => CompleteOverwriteDialog(ConflictResolution.Skip);
 
     [RelayCommand]
-    private void ResumeOverwrite()
-    {
-        DialogState.HideOverwriteDialog();
-    }
+    private void ResumeOverwrite() => CompleteOverwriteDialog(ConflictResolution.Resume);
 
     [RelayCommand]
-    private void KeepBothOverwrite()
-    {
-        DialogState.HideOverwriteDialog();
-    }
+    private void KeepBothOverwrite() => CompleteOverwriteDialog(ConflictResolution.KeepBoth);
 
     [RelayCommand]
-    private void CancelOverwrite()
-    {
-        DialogState.HideOverwriteDialog();
-    }
+    private void CancelOverwrite() => CompleteOverwriteDialog(null);
 
     [RelayCommand(CanExecute = nameof(CanShowPermissionsDialog))]
     private void ShowPermissionsDialog()
@@ -531,10 +517,29 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     public void UploadFiles(IReadOnlyList<string> localPaths)
     {
-        _ = TransferManager.UploadFilesAsync(
-            localPaths,
-            RemoteBrowser.CurrentPath,
-            ShowOverwriteConflictAsync);
+        _ = UploadFilesGuardedAsync(localPaths).ContinueWith(t =>
+            System.Diagnostics.Debug.WriteLine($"Upload error: {t.Exception}"),
+            TaskContinuationOptions.OnlyOnFaulted);
+    }
+
+    private async Task UploadFilesGuardedAsync(IReadOnlyList<string> localPaths)
+    {
+        await _transferBatchLock.WaitAsync();
+        try
+        {
+            await TransferManager.UploadFilesAsync(
+                localPaths,
+                RemoteBrowser.CurrentPath,
+                (lp, rp, es, ts, cr) => ShowOverwriteConflictAsync(lp, rp, es, ts, cr, isUpload: true));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Upload operation failed unexpectedly");
+        }
+        finally
+        {
+            _transferBatchLock.Release();
+        }
     }
 
     /// <summary>
@@ -542,10 +547,29 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     public void DownloadFiles(IReadOnlyList<string> remotePaths)
     {
-        _ = TransferManager.DownloadFilesAsync(
-            remotePaths,
-            LocalBrowser.CurrentPath,
-            ShowOverwriteConflictAsync);
+        _ = DownloadFilesGuardedAsync(remotePaths).ContinueWith(t =>
+            System.Diagnostics.Debug.WriteLine($"Download error: {t.Exception}"),
+            TaskContinuationOptions.OnlyOnFaulted);
+    }
+
+    private async Task DownloadFilesGuardedAsync(IReadOnlyList<string> remotePaths)
+    {
+        await _transferBatchLock.WaitAsync();
+        try
+        {
+            await TransferManager.DownloadFilesAsync(
+                remotePaths,
+                LocalBrowser.CurrentPath,
+                (lp, rp, es, ts, cr) => ShowOverwriteConflictAsync(lp, rp, es, ts, cr, isUpload: false));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Download operation failed unexpectedly");
+        }
+        finally
+        {
+            _transferBatchLock.Release();
+        }
     }
 
     private Task<ConflictResolution?> ShowOverwriteConflictAsync(
@@ -553,15 +577,33 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
         string remotePath,
         long existingSize,
         long totalSize,
-        bool canResume)
+        bool canResume,
+        bool isUpload)
     {
-        // Show dialog and wait for user response
-        var fileName = System.IO.Path.GetFileName(localPath);
-        DialogState.ShowOverwriteDialog(fileName, isUpload: true, existingSize, totalSize, canResume);
+        // Cancel any previous pending dialog to prevent orphaned tasks
+        _overwriteTcs?.TrySetResult(null);
+        _overwriteTcs = new TaskCompletionSource<ConflictResolution?>();
 
-        // This is a simplified version - in production you'd use a TaskCompletionSource
-        // to wait for the actual user response
-        return Task.FromResult<ConflictResolution?>(null);
+        var fileName = System.IO.Path.GetFileName(localPath);
+        DialogState.ShowOverwriteDialog(fileName, isUpload: isUpload, existingSize, totalSize, canResume);
+
+        return _overwriteTcs.Task;
+    }
+
+    /// <summary>
+    /// Completes the overwrite dialog with the given resolution.
+    /// </summary>
+    private void CompleteOverwriteDialog(ConflictResolution? resolution)
+    {
+        DialogState.HideOverwriteDialog();
+
+        if (OverwriteApplyToAll && resolution.HasValue)
+        {
+            TransferManager.SetApplyToAllResolution(resolution.Value);
+        }
+
+        _overwriteTcs?.TrySetResult(resolution);
+        _overwriteTcs = null;
     }
 
     /// <summary>
@@ -586,6 +628,9 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand]
     private async Task DisconnectAsync()
     {
+        if (!IsConnected) return;
+
+        _session.Disconnected -= OnSessionDisconnected;
         TransferManager.CancelAllTransfers();
         await _session.DisposeAsync();
         IsConnected = false;
@@ -678,18 +723,22 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
         }
 
         // Handle mirror navigation
-        if (e.PropertyName == nameof(RemoteBrowser.CurrentPath) && IsMirrorNavigationEnabled && !_isSyncingNavigation)
+        if (e.PropertyName == nameof(RemoteBrowser.CurrentPath) && IsMirrorNavigationEnabled)
         {
-            SyncLocalToRemotePath();
+            _ = SyncLocalToRemotePath().ContinueWith(t =>
+                _logger.LogDebug(t.Exception, "Mirror navigation sync failed"),
+                TaskContinuationOptions.OnlyOnFaulted);
         }
     }
 
     private void OnLocalBrowserPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         // Handle mirror navigation
-        if (e.PropertyName == nameof(LocalBrowser.CurrentPath) && IsMirrorNavigationEnabled && !_isSyncingNavigation)
+        if (e.PropertyName == nameof(LocalBrowser.CurrentPath) && IsMirrorNavigationEnabled)
         {
-            SyncRemoteToLocalPath();
+            _ = SyncRemoteToLocalPath().ContinueWith(t =>
+                _logger.LogDebug(t.Exception, "Mirror navigation sync failed"),
+                TaskContinuationOptions.OnlyOnFaulted);
         }
     }
 
@@ -697,14 +746,12 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     /// Syncs the local browser path to match the remote path structure.
     /// For mirror navigation: when remote changes, try to navigate local to equivalent path.
     /// </summary>
-    private void SyncLocalToRemotePath()
+    private async Task SyncLocalToRemotePath()
     {
-        if (_isSyncingNavigation) return;
+        if (!await _navigationSyncLock.WaitAsync(0)) return;
 
         try
         {
-            _isSyncingNavigation = true;
-
             // Get the relative path from home directory on remote
             var remotePath = RemoteBrowser.CurrentPath;
             var remoteHome = RemoteBrowser.HomeDirectory;
@@ -729,7 +776,14 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
 
             if (System.IO.Directory.Exists(targetPath))
             {
-                _ = LocalBrowser.NavigateToAsync(targetPath);
+                try
+                {
+                    await LocalBrowser.NavigateToAsync(targetPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Mirror navigation to local path failed");
+                }
             }
         }
         catch (Exception ex)
@@ -738,7 +792,7 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
         }
         finally
         {
-            _isSyncingNavigation = false;
+            _navigationSyncLock.Release();
         }
     }
 
@@ -746,14 +800,12 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     /// Syncs the remote browser path to match the local path structure.
     /// For mirror navigation: when local changes, try to navigate remote to equivalent path.
     /// </summary>
-    private void SyncRemoteToLocalPath()
+    private async Task SyncRemoteToLocalPath()
     {
-        if (_isSyncingNavigation) return;
+        if (!await _navigationSyncLock.WaitAsync(0)) return;
 
         try
         {
-            _isSyncingNavigation = true;
-
             // Get the relative path from user profile on local
             var localPath = LocalBrowser.CurrentPath;
             var localHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -775,7 +827,14 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
             var remoteHome = RemoteBrowser.HomeDirectory;
             var targetPath = remoteHome == "/" ? "/" + relativePath.Replace('\\', '/') : remoteHome + "/" + relativePath.Replace('\\', '/');
 
-            _ = RemoteBrowser.NavigateToAsync(targetPath);
+            try
+            {
+                await RemoteBrowser.NavigateToAsync(targetPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Mirror navigation to remote path failed");
+            }
         }
         catch (Exception ex)
         {
@@ -783,7 +842,7 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
         }
         finally
         {
-            _isSyncingNavigation = false;
+            _navigationSyncLock.Release();
         }
     }
 
@@ -867,13 +926,20 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed) return;
+        _disposed = true;
+
         _session.Disconnected -= OnSessionDisconnected;
         RemoteBrowser.PropertyChanged -= OnRemoteBrowserPropertyChanged;
         LocalBrowser.PropertyChanged -= OnLocalBrowserPropertyChanged;
         DialogState.PropertyChanged -= OnDialogStatePropertyChanged;
         TransferManager.PropertyChanged -= OnTransferManagerPropertyChanged;
         TransferManager.CancelAllTransfers();
+        TransferManager.Dispose();
+        _navigationSyncLock.Dispose();
+        _transferBatchLock.Dispose();
+
         await _session.DisposeAsync();
-        GC.SuppressFinalize(this);
+        IsConnected = false;
     }
 }

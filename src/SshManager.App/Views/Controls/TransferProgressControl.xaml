@@ -6,6 +6,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:converters="clr-namespace:SshManager.App.Converters"
              xmlns:models="clr-namespace:SshManager.Core.Models;assembly=SshManager.Core"
+             xmlns:vm="clr-namespace:SshManager.App.ViewModels"
              xmlns:controls="clr-namespace:SshManager.App.Views.Controls"
              mc:Ignorable="d"
              d:DesignHeight="120" d:DesignWidth="400"
@@ -101,7 +102,7 @@
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Foreground" Value="#3498DB" />
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Direction}" Value="{x:Static models:TransferDirection.Upload}">
+                                                    <DataTrigger Binding="{Binding Direction}" Value="{x:Static vm:TransferDirection.Upload}">
                                                         <Setter Property="Foreground" Value="#2ECC71" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
@@ -127,13 +128,13 @@
                                                 <Style TargetType="ProgressBar">
                                                     <Setter Property="Foreground" Value="#3498DB" />
                                                     <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:TransferStatus.Completed}">
+                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:TransferStatus.Completed}">
                                                             <Setter Property="Foreground" Value="#2ECC71" />
                                                         </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:TransferStatus.Failed}">
+                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:TransferStatus.Failed}">
                                                             <Setter Property="Foreground" Value="#E74C3C" />
                                                         </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:TransferStatus.Cancelled}">
+                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:TransferStatus.Cancelled}">
                                                             <Setter Property="Foreground" Value="#95A5A6" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
@@ -155,7 +156,7 @@
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Opacity" Value="0.7" />
                                                     <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static models:TransferStatus.Failed}">
+                                                        <DataTrigger Binding="{Binding Status}" Value="{x:Static vm:TransferStatus.Failed}">
                                                             <Setter Property="Foreground" Value="#E74C3C" />
                                                             <Setter Property="Opacity" Value="1" />
                                                         </DataTrigger>

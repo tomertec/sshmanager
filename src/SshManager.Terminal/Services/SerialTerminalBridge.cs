@@ -29,15 +29,18 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
     /// </summary>
     public event Action? Disconnected;
 
+    private long _totalBytesReceived;
+    private long _totalBytesSent;
+
     /// <summary>
     /// Gets the total number of bytes received through this bridge.
     /// </summary>
-    public long TotalBytesReceived { get; private set; }
+    public long TotalBytesReceived => Interlocked.Read(ref _totalBytesReceived);
 
     /// <summary>
     /// Gets the total number of bytes sent through this bridge.
     /// </summary>
-    public long TotalBytesSent { get; private set; }
+    public long TotalBytesSent => Interlocked.Read(ref _totalBytesSent);
 
     /// <summary>
     /// Gets or sets whether local echo is enabled.
@@ -121,7 +124,7 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
 
                 if (bytesRead > 0)
                 {
-                    TotalBytesReceived += bytesRead;
+                    Interlocked.Add(ref _totalBytesReceived, bytesRead);
 
                     var data = new byte[bytesRead];
                     Array.Copy(buffer, data, bytesRead);
@@ -173,7 +176,7 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
         {
             _stream.Write(data, 0, data.Length);
             _stream.Flush();
-            TotalBytesSent += data.Length;
+            Interlocked.Add(ref _totalBytesSent, data.Length);
 
             // Echo locally if enabled
             if (LocalEcho)
@@ -267,6 +270,7 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
         _logger.LogDebug("Disposing serial terminal bridge (sync)");
 
         _cts.Cancel();
+        try { _readTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
         _cts.Dispose();
     }
 }

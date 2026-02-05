@@ -123,4 +123,11 @@ public interface ISshConnection : IAsyncDisposable, IDisposable
     /// <param name="timeout">Timeout for command execution.</param>
     /// <returns>The command output, or null if execution failed.</returns>
     Task<string?> RunCommandAsync(string command, TimeSpan? timeout = null);
+
+    /// <summary>
+    /// Sends a keep-alive packet to verify the connection is still active.
+    /// This performs an active check by sending an SSH_MSG_IGNORE packet.
+    /// </summary>
+    /// <returns>True if keep-alive was sent successfully, false if the connection is dead.</returns>
+    bool TrySendKeepAlive();
 }

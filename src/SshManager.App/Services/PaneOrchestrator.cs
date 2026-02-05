@@ -124,9 +124,9 @@ public class PaneOrchestrator : IPaneOrchestrator
     public void OnFocusedPaneChanged(PaneLeafNode? focusedPane)
     {
         // When pane focus changes, sync the session tabs selection
-        if (_viewModel != null && focusedPane?.Session != null && _viewModel.CurrentSession != focusedPane.Session)
+        if (_viewModel != null && focusedPane?.Session != null && _viewModel.Session.CurrentSession != focusedPane.Session)
         {
-            _viewModel.CurrentSession = focusedPane.Session;
+            _viewModel.Session.CurrentSession = focusedPane.Session;
         }
     }
 
@@ -135,7 +135,7 @@ public class PaneOrchestrator : IPaneOrchestrator
         if (_viewModel == null || session == null)
             return;
 
-        _viewModel.CurrentSession = session;
+        _viewModel.Session.CurrentSession = session;
 
         // Switch visibility to show only the selected session's pane (for tabbed mode)
         _paneLayoutManager.SetActiveTabbedSession(session);
@@ -156,6 +156,9 @@ public class PaneOrchestrator : IPaneOrchestrator
 
     public async Task ConnectPaneToSessionAsync(PaneLeafNode pane, TerminalSession session, Func<PaneLeafNode, ITerminalPaneTarget?> getPaneControlFunc)
     {
+        if (_viewModel == null)
+            return;
+
         if (session.Host == null)
             return;
 
@@ -176,7 +179,7 @@ public class PaneOrchestrator : IPaneOrchestrator
             }
 
             // Update port forwarding UI for SSH sessions
-            if (session.Host.ConnectionType == ConnectionType.Ssh && session.Connection != null && _viewModel != null)
+            if (session.Host.ConnectionType == ConnectionType.Ssh && session.Connection != null)
             {
                 var activeForwardings = _portForwardingService.GetActiveForwardings(session.Id);
                 foreach (var forwarding in activeForwardings)

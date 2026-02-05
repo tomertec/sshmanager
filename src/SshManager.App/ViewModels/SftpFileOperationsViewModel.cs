@@ -190,9 +190,10 @@ public partial class SftpFileOperationsViewModel : ObservableObject
     [RelayCommand]
     public void UploadSelected()
     {
-        var items = GetSelectedLocalItemsCallback?.Invoke()
+        var allLocalItems = GetSelectedLocalItemsCallback?.Invoke() ?? [];
+        var items = allLocalItems
             .Where(i => !i.IsParentDirectory && !i.IsDirectory)
-            .ToList() ?? [];
+            .ToList();
 
         if (items.Count == 0)
         {
@@ -206,7 +207,11 @@ public partial class SftpFileOperationsViewModel : ObservableObject
 
         if (items.Count == 0)
         {
-            SetErrorMessageAction?.Invoke("No files selected for upload");
+            var hasDirectories = allLocalItems.Any(i => i.IsDirectory && !i.IsParentDirectory);
+            var message = hasDirectories
+                ? "Directory upload is not yet supported. Please select individual files."
+                : "No files selected for upload";
+            SetErrorMessageAction?.Invoke(message);
             return;
         }
 
@@ -219,9 +224,10 @@ public partial class SftpFileOperationsViewModel : ObservableObject
     [RelayCommand]
     public void DownloadSelected()
     {
-        var items = GetSelectedRemoteItemsCallback?.Invoke()
+        var allRemoteItems = GetSelectedRemoteItemsCallback?.Invoke() ?? [];
+        var items = allRemoteItems
             .Where(i => !i.IsParentDirectory && !i.IsDirectory)
-            .ToList() ?? [];
+            .ToList();
 
         if (items.Count == 0)
         {
@@ -235,7 +241,11 @@ public partial class SftpFileOperationsViewModel : ObservableObject
 
         if (items.Count == 0)
         {
-            SetErrorMessageAction?.Invoke("No files selected for download");
+            var hasDirectories = allRemoteItems.Any(i => i.IsDirectory && !i.IsParentDirectory);
+            var message = hasDirectories
+                ? "Directory download is not yet supported. Please select individual files."
+                : "No files selected for download";
+            SetErrorMessageAction?.Invoke(message);
             return;
         }
 

@@ -16,6 +16,12 @@ public sealed class HostRepository : IHostRepository
         _dbFactory = dbFactory;
     }
 
+    public async Task<bool> AnyAsync(CancellationToken ct = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        return await db.Hosts.AnyAsync(ct);
+    }
+
     public async Task<List<HostEntry>> GetAllAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);

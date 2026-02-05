@@ -153,6 +153,26 @@ public partial class TextEditorViewModel : ObservableObject
     /// </summary>
     public event Func<bool?>? SaveChangesRequested;
 
+    /// <summary>
+    /// Cleans up leftover temp files from previous sessions.
+    /// Should be called once at application startup.
+    /// </summary>
+    public static void CleanupStaleEditTempFiles()
+    {
+        try
+        {
+            var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SshManager", "EditTemp");
+            if (System.IO.Directory.Exists(tempDir))
+            {
+                System.IO.Directory.Delete(tempDir, recursive: true);
+            }
+        }
+        catch
+        {
+            // Ignore cleanup failures at startup
+        }
+    }
+
     public TextEditorViewModel(IEditorThemeService themeService)
     {
         _themeService = themeService;
@@ -176,7 +196,7 @@ public partial class TextEditorViewModel : ObservableObject
 
             var content = await File.ReadAllTextAsync(filePath, ct);
             Document = new TextDocument(content);
-            _originalContentHash = ComputeHash(content);
+            _originalContentHash = FileEncodingHelper.ComputeHash(content);
 
             // Detect syntax highlighting
             var extension = Path.GetExtension(filePath);
@@ -229,14 +249,14 @@ public partial class TextEditorViewModel : ObservableObject
             var content = await session.ReadAllBytesAsync(remotePath, ct);
 
             // Detect encoding (default to UTF-8)
-            Encoding = DetectEncoding(content);
+            Encoding = FileEncodingHelper.DetectEncoding(content);
             var text = Encoding.GetString(content);
 
             // Save to temp file
             await File.WriteAllTextAsync(tempFile, text, Encoding, ct);
 
             Document = new TextDocument(text);
-            _originalContentHash = ComputeHash(text);
+            _originalContentHash = FileEncodingHelper.ComputeHash(text);
 
             // Detect syntax highlighting
             var extension = Path.GetExtension(remotePath);
@@ -273,7 +293,7 @@ public partial class TextEditorViewModel : ObservableObject
     {
         if (Document == null) return;
 
-        var currentHash = ComputeHash(Document.Text);
+        var currentHash = FileEncodingHelper.ComputeHash(Document.Text);
         IsDirty = currentHash != _originalContentHash;
         TotalLines = Document.LineCount;
     }
@@ -308,7 +328,7 @@ public partial class TextEditorViewModel : ObservableObject
                 StatusMessage = "Saved successfully";
             }
 
-            _originalContentHash = ComputeHash(content);
+            _originalContentHash = FileEncodingHelper.ComputeHash(content);
             IsDirty = false;
 
             // Clear status after a delay
@@ -354,7 +374,7 @@ public partial class TextEditorViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Close()
+    private async Task CloseAsync()
     {
         if (IsDirty)
         {
@@ -363,8 +383,7 @@ public partial class TextEditorViewModel : ObservableObject
 
             if (result == true)
             {
-                // Save synchronously (or fire and forget the async version)
-                Task.Run(async () => await SaveAsync()).Wait();
+                await SaveAsync();
             }
         }
 
@@ -387,12 +406,48 @@ public partial class TextEditorViewModel : ObservableObject
 
             if (result == true)
             {
-                Task.Run(async () => await SaveAsync()).Wait();
+                SaveSynchronous();
             }
         }
 
         CleanupTempFile();
         return true;
+    }
+
+    /// <summary>
+    /// Performs a synchronous save without updating UI-bound properties.
+    /// Used by TryClose to avoid deadlocks when called from the UI thread.
+    /// </summary>
+    private void SaveSynchronous()
+    {
+        if (Document == null) return;
+
+        try
+        {
+            var content = Document.Text;
+
+            if (IsRemoteFile && _sftpSession != null && _sftpSession.IsConnected && !string.IsNullOrEmpty(RemotePath))
+            {
+                File.WriteAllText(FilePath, content, Encoding);
+                var bytes = Encoding.GetBytes(content);
+                _ = _sftpSession.WriteAllBytesAsync(RemotePath, bytes).ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                        MessageRequested?.Invoke("Warning", $"Remote save may have failed: {t.Exception?.InnerException?.Message}");
+                }, TaskContinuationOptions.OnlyOnFaulted);
+            }
+            else
+            {
+                File.WriteAllText(FilePath, content, Encoding);
+            }
+
+            _originalContentHash = FileEncodingHelper.ComputeHash(content);
+            IsDirty = false;
+        }
+        catch (Exception ex)
+        {
+            MessageRequested?.Invoke("Error", $"Failed to save: {ex.Message}");
+        }
     }
 
     private void CleanupTempFile()
@@ -410,24 +465,5 @@ public partial class TextEditorViewModel : ObservableObject
         }
     }
 
-    private static string ComputeHash(string content)
-    {
-        var bytes = Encoding.UTF8.GetBytes(content);
-        var hash = SHA256.HashData(bytes);
-        return Convert.ToBase64String(hash);
-    }
 
-    private static Encoding DetectEncoding(byte[] bytes)
-    {
-        // Check for BOM
-        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-            return Encoding.UTF8;
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-            return Encoding.Unicode; // UTF-16 LE
-        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
-            return Encoding.BigEndianUnicode; // UTF-16 BE
-
-        // Default to UTF-8
-        return Encoding.UTF8;
-    }
 }

@@ -19,7 +19,7 @@
         <!-- Notes -->
         <TextBlock Text="Notes"
                    Style="{StaticResource SectionLabelStyle}" />
-        <ui:TextBox Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}"
+        <ui:TextBox Text="{Binding Metadata.Notes, UpdateSourceTrigger=PropertyChanged}"
                     PlaceholderText="Optional notes about this host..."
                     AcceptsReturn="True"
                     TextWrapping="Wrap"
@@ -45,11 +45,11 @@
             <ui:Button Grid.Column="1"
                        Icon="{ui:SymbolIcon Eye24}"
                        ToolTip="Toggle visibility"
-                       Command="{Binding ToggleSecureNotesVisibilityCommand}"
+                       Command="{Binding Metadata.ToggleSecureNotesVisibilityCommand}"
                        Width="32" Height="28"
                        Padding="0" />
         </Grid>
-        <ui:TextBox Text="{Binding DisplayedSecureNotes, UpdateSourceTrigger=PropertyChanged}"
+        <ui:TextBox Text="{Binding Metadata.DisplayedSecureNotes, UpdateSourceTrigger=PropertyChanged}"
                     PlaceholderText="Encrypted notes (passwords, keys, etc.)"
                     AcceptsReturn="True"
                     TextWrapping="Wrap"

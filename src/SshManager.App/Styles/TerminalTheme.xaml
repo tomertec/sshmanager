@@ -1,0 +1,86 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- 
+    Terminal Theme Resources
+    These brushes adapt to Light, Dark, and High Contrast themes via WPF-UI system colors.
+    -->
+
+    <!-- Terminal Background Colors -->
+    <!-- Dark: #0C0C0C (near black), Light: #FAFAFA (near white), HighContrast: SystemColors -->
+    <SolidColorBrush x:Key="TerminalBackgroundBrush" Color="{DynamicResource ControlFillColorDefault}" />
+    <SolidColorBrush x:Key="TerminalBackgroundDarkBrush" Color="{DynamicResource SolidBackgroundFillColorBase}" />
+    
+    <!-- Terminal Secondary Background (for panels, status bars, overlays) -->
+    <SolidColorBrush x:Key="TerminalSecondaryBackgroundBrush" Color="{DynamicResource ControlFillColorSecondary}" />
+    
+    <!-- Terminal Border Colors -->
+    <SolidColorBrush x:Key="TerminalBorderBrush" Color="{DynamicResource ControlStrokeColorDefault}" />
+    <SolidColorBrush x:Key="TerminalBorderFocusBrush" Color="{DynamicResource SystemAccentColor}" />
+    
+    <!-- Terminal Text Colors -->
+    <SolidColorBrush x:Key="TerminalForegroundBrush" Color="{DynamicResource TextFillColorPrimary}" />
+    <SolidColorBrush x:Key="TerminalForegroundSecondaryBrush" Color="{DynamicResource TextFillColorSecondary}" />
+    <SolidColorBrush x:Key="TerminalForegroundTertiaryBrush" Color="{DynamicResource TextFillColorTertiary}" />
+    <SolidColorBrush x:Key="TerminalForegroundDisabledBrush" Color="{DynamicResource TextFillColorDisabled}" />
+    
+    <!-- Status Bar Colors -->
+    <SolidColorBrush x:Key="TerminalStatusBarBackgroundBrush" Color="{DynamicResource LayerFillColorDefault}" />
+    <SolidColorBrush x:Key="TerminalStatusBarSeparatorBrush" Color="{DynamicResource ControlStrokeColorSecondary}" />
+    
+    <!-- Overlay Colors -->
+    <SolidColorBrush x:Key="TerminalOverlayBackgroundBrush" Color="{DynamicResource SmokeFillColorDefault}" />
+    
+    <!-- Header/Panel Background with transparency -->
+    <SolidColorBrush x:Key="TerminalHeaderBackgroundBrush" Color="{DynamicResource SubtleFillColorSecondary}" />
+
+    <!-- Semantic Colors (these remain constant across themes for clarity) -->
+    <!-- SSH Focus Border: Blue -->
+    <SolidColorBrush x:Key="TerminalSshFocusBorderBrush" Color="#0078D4" />
+    <Color x:Key="TerminalSshFocusBorderColor">#0078D4</Color>
+    
+    <!-- Serial Focus Border: Yellow -->
+    <SolidColorBrush x:Key="TerminalSerialFocusBorderBrush" Color="#D7F227" />
+    <Color x:Key="TerminalSerialFocusBorderColor">#D7F227</Color>
+    
+    <!-- Broadcast Mode Border: Orange -->
+    <SolidColorBrush x:Key="TerminalBroadcastBorderBrush" Color="#FF5500" />
+    <Color x:Key="TerminalBroadcastBorderColor">#FF5500</Color>
+    
+    <!-- Connection Status: Connected (Green) -->
+    <SolidColorBrush x:Key="TerminalConnectedStatusBrush" Color="#4CAF50" />
+    <Color x:Key="TerminalConnectedStatusColor">#4CAF50</Color>
+    
+    <!-- Connection Status: Disconnected (Gray) -->
+    <SolidColorBrush x:Key="TerminalDisconnectedStatusBrush" Color="#999999" />
+    <Color x:Key="TerminalDisconnectedStatusColor">#999999</Color>
+    
+    <!-- Recording Indicator: Red -->
+    <SolidColorBrush x:Key="TerminalRecordingBrush" Color="#E81123" />
+    <Color x:Key="TerminalRecordingColor">#E81123</Color>
+    
+    <!-- Primary Badge Colors -->
+    <SolidColorBrush x:Key="TerminalPrimaryBadgeBackgroundBrush" Color="#204CAF50" />
+    <SolidColorBrush x:Key="TerminalPrimaryBadgeBorderBrush" Color="#404CAF50" />
+    <SolidColorBrush x:Key="TerminalPrimaryBadgeForegroundBrush" Color="#4CAF50" />
+    
+    <!-- Recording Badge Colors -->
+    <SolidColorBrush x:Key="TerminalRecordingBadgeBackgroundBrush" Color="#20E81123" />
+    <SolidColorBrush x:Key="TerminalRecordingBadgeBorderBrush" Color="#40E81123" />
+    
+    <!-- Serial Indicator: Orange -->
+    <SolidColorBrush x:Key="TerminalSerialIndicatorBrush" Color="#FF9800" />
+    
+    <!-- Throughput Indicators -->
+    <SolidColorBrush x:Key="TerminalUploadIndicatorBrush" Color="#4CAF50" />
+    <SolidColorBrush x:Key="TerminalDownloadIndicatorBrush" Color="#2196F3" />
+    
+    <!-- Button Hover Colors -->
+    <SolidColorBrush x:Key="TerminalCloseButtonHoverBrush" Color="#E81123" />
+    <SolidColorBrush x:Key="TerminalSplitButtonHoverBrush" Color="#0078D4" />
+    <SolidColorBrush x:Key="TerminalRecordButtonHoverBrush" Color="#E81123" />
+
+    <!-- Border Color for unfocused state - adapts to theme -->
+    <Color x:Key="TerminalBorderDefaultColor">#2A2A2A</Color>
+
+</ResourceDictionary>

@@ -74,28 +74,24 @@ public partial class HostEditDialog : FluentWindow
 
         // AuthenticationSection events
         AuthenticationSection.SelectKeyRequested += (_, _) => SelectKey();
-        AuthenticationSection.PasswordChanged += (_, password) => _viewModel.Password = password;
+        // Password is now in SshSettings child ViewModel
+        AuthenticationSection.PasswordChanged += (_, password) => _viewModel.SshSettings.Password = password;
 
         // AdvancedOptionsSection events
         AdvancedOptionsSection.ManageProxyJumpProfilesRequested += (_, _) => ManageProxyJumpProfiles();
         AdvancedOptionsSection.ManagePortForwardingRequested += (_, _) => ManagePortForwarding();
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        // Set the password in the AuthenticationSection
-        if (!string.IsNullOrEmpty(_viewModel.Password))
+        // Set the password in the AuthenticationSection from SshSettings child ViewModel
+        if (!string.IsNullOrEmpty(_viewModel.SshSettings.Password))
         {
-            AuthenticationSection.SetPassword(_viewModel.Password);
+            AuthenticationSection.SetPassword(_viewModel.SshSettings.Password);
         }
 
-        // Load host profiles, ProxyJump profiles and port forwarding count
-        await _viewModel.LoadHostProfilesAsync();
-        await _viewModel.LoadProxyJumpProfilesAsync();
-        await _viewModel.LoadPortForwardingCountAsync();
-
-        // Initialize SSH agent status check if using SSH Agent auth
-        await _viewModel.InitializeAgentStatusAsync();
+        // Note: Data loading is now handled by HostManagementViewModel calling LoadDataAsync()
+        // before showing the dialog, so we don't need to load here anymore.
     }
 
     private void OnRequestClose()
@@ -114,121 +110,150 @@ public partial class HostEditDialog : FluentWindow
 
     private async void SelectKey()
     {
-        if (_keyManager == null)
+        try
         {
-            System.Windows.MessageBox.Show(
-                "SSH key manager is not available.",
-                "Feature Not Available",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
-            return;
+            if (_keyManager == null)
+            {
+                System.Windows.MessageBox.Show(
+                    "SSH key manager is not available.",
+                    "Feature Not Available",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var keys = await _keyManager.GetExistingKeysAsync();
+
+            if (keys.Count == 0)
+            {
+                System.Windows.MessageBox.Show(
+                    "No SSH keys found in your ~/.ssh directory.\n\nYou can generate a new key using the SSH Key Manager (Ctrl+K).",
+                    "No Keys Found",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            // Create a simple selection dialog
+            var dialog = new KeySelectionDialog(keys)
+            {
+                Owner = this
+            };
+
+            if (dialog.ShowDialog() == true && dialog.SelectedKey != null)
+            {
+                // PrivateKeyPath is now in SshSettings child ViewModel
+                _viewModel.SshSettings.PrivateKeyPath = dialog.SelectedKey.PrivateKeyPath;
+            }
         }
-
-        var keys = await _keyManager.GetExistingKeysAsync();
-
-        if (keys.Count == 0)
+        catch (Exception ex)
         {
-            System.Windows.MessageBox.Show(
-                "No SSH keys found in your ~/.ssh directory.\n\nYou can generate a new key using the SSH Key Manager (Ctrl+K).",
-                "No Keys Found",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
-            return;
-        }
-
-        // Create a simple selection dialog
-        var dialog = new KeySelectionDialog(keys)
-        {
-            Owner = this
-        };
-
-        if (dialog.ShowDialog() == true && dialog.SelectedKey != null)
-        {
-            _viewModel.PrivateKeyPath = dialog.SelectedKey.PrivateKeyPath;
+            System.Diagnostics.Debug.WriteLine($"Error in SelectKey: {ex}");
         }
     }
 
     private async void ManageHostProfiles()
     {
-        if (_hostProfileRepo == null || _proxyJumpRepo == null)
+        try
         {
-            System.Windows.MessageBox.Show(
-                "Host profile management is not available.\n\nPlease ensure repositories are properly configured.",
-                "Feature Not Available",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
-            return;
+            if (_hostProfileRepo == null || _proxyJumpRepo == null)
+            {
+                System.Windows.MessageBox.Show(
+                    "Host profile management is not available.\n\nPlease ensure repositories are properly configured.",
+                    "Feature Not Available",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            // Use null logger if view model doesn't expose a logger factory
+            var managerVm = new HostProfileManagerViewModel(_hostProfileRepo, _proxyJumpRepo, null);
+            var dialog = new HostProfileManagerDialog
+            {
+                DataContext = managerVm,
+                Owner = this
+            };
+
+            managerVm.RequestClose += () => dialog.Close();
+            await managerVm.LoadProfilesAsync();
+
+            dialog.ShowDialog();
+
+            // Reload profiles after management via the SshSettings child ViewModel
+            await _viewModel.SshSettings.LoadHostProfilesAsync();
         }
-
-        // Use null logger if view model doesn't expose a logger factory
-        var managerVm = new HostProfileManagerViewModel(_hostProfileRepo, _proxyJumpRepo, null);
-        var dialog = new HostProfileManagerDialog
+        catch (Exception ex)
         {
-            DataContext = managerVm,
-            Owner = this
-        };
-
-        managerVm.RequestClose += () => dialog.Close();
-        await managerVm.LoadProfilesAsync();
-
-        dialog.ShowDialog();
-
-        // Reload profiles after management
-        await _viewModel.LoadHostProfilesAsync();
+            System.Diagnostics.Debug.WriteLine($"Error in ManageHostProfiles: {ex}");
+        }
     }
 
     private async void ManageProxyJumpProfiles()
     {
-        if (_proxyJumpRepo == null || _hostRepo == null)
+        try
         {
-            System.Windows.MessageBox.Show(
-                "ProxyJump profile management is not available.\n\nPlease ensure repositories are properly configured.",
-                "Feature Not Available",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
-            return;
+            if (_proxyJumpRepo == null || _hostRepo == null)
+            {
+                System.Windows.MessageBox.Show(
+                    "ProxyJump profile management is not available.\n\nPlease ensure repositories are properly configured.",
+                    "Feature Not Available",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            // Get available hosts for the profile editor
+            var hosts = _availableHosts ?? await _hostRepo.GetAllAsync();
+
+            var profileVm = new ProxyJumpProfileDialogViewModel(_proxyJumpRepo, _hostRepo);
+            var dialog = new ProxyJumpProfileDialog(profileVm)
+            {
+                Owner = this
+            };
+
+            dialog.ShowDialog();
+
+            // Reload profiles after management via the SshSettings child ViewModel
+            await _viewModel.SshSettings.LoadProxyJumpProfilesAsync();
         }
-
-        // Get available hosts for the profile editor
-        var hosts = _availableHosts ?? await _hostRepo.GetAllAsync();
-
-        var profileVm = new ProxyJumpProfileDialogViewModel(_proxyJumpRepo, _hostRepo);
-        var dialog = new ProxyJumpProfileDialog(profileVm)
+        catch (Exception ex)
         {
-            Owner = this
-        };
-
-        dialog.ShowDialog();
-
-        // Reload profiles after management
-        await _viewModel.LoadProxyJumpProfilesAsync();
+            System.Diagnostics.Debug.WriteLine($"Error in ManageProxyJumpProfiles: {ex}");
+        }
     }
 
     private async void ManagePortForwarding()
     {
-        if (_portForwardingRepo == null || _hostRepo == null)
+        try
         {
-            System.Windows.MessageBox.Show(
-                "Port forwarding management is not available.\n\nPlease ensure repositories are properly configured.",
-                "Feature Not Available",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
-            return;
+            if (_portForwardingRepo == null || _hostRepo == null)
+            {
+                System.Windows.MessageBox.Show(
+                    "Port forwarding management is not available.\n\nPlease ensure repositories are properly configured.",
+                    "Feature Not Available",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            // Get available hosts for the profile editor
+            var hosts = _availableHosts ?? await _hostRepo.GetAllAsync();
+
+            var managerVm = new PortForwardingManagerViewModel(_portForwardingRepo);
+            var dialog = new PortForwardingListDialog(managerVm, _portForwardingRepo, hosts)
+            {
+                Owner = this
+            };
+
+            dialog.ShowDialog();
+
+            // Reload count after management via the SshSettings child ViewModel
+            await _viewModel.SshSettings.LoadPortForwardingCountAsync();
         }
-
-        // Get available hosts for the profile editor
-        var hosts = _availableHosts ?? await _hostRepo.GetAllAsync();
-
-        var managerVm = new PortForwardingManagerViewModel(_portForwardingRepo);
-        var dialog = new PortForwardingListDialog(managerVm, _portForwardingRepo, hosts)
+        catch (Exception ex)
         {
-            Owner = this
-        };
-
-        dialog.ShowDialog();
-
-        // Reload count after management
-        await _viewModel.LoadPortForwardingCountAsync();
+            System.Diagnostics.Debug.WriteLine($"Error in ManagePortForwarding: {ex}");
+        }
     }
 
     #endregion

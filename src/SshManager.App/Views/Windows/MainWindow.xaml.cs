@@ -95,27 +95,41 @@ public partial class MainWindow : FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        // Initialize PaneContainer with required dependencies
-        PaneContainer.SetLayoutManager(_paneLayoutManager);
-        PaneContainer.SetServiceProvider(_serviceProvider);
+        try
+        {
+            // Initialize PaneContainer with required dependencies
+            PaneContainer.SetLayoutManager(_paneLayoutManager);
+            PaneContainer.SetServiceProvider(_serviceProvider);
 
-        _viewModel.IsLoadingHosts = true;
-        await _viewModel.LoadDataAsync();
-        _viewModel.IsLoadingHosts = false;
+            _viewModel.IsLoadingHosts = true;
+            await _viewModel.LoadDataAsync();
+            _viewModel.IsLoadingHosts = false;
 
-        // Load window state (position, size, minimize to tray setting)
-        await _windowStateManager.LoadWindowStateAsync(this);
+            // Load window state (position, size, minimize to tray setting)
+            await _windowStateManager.LoadWindowStateAsync(this);
 
-        // Update tray menu with current hosts
-        _trayService.UpdateContextMenu(_viewModel.Hosts, _viewModel.Groups);
-        _trayService.Show();
+            // Load left panel width
+            var savedPanelWidth = await _windowStateManager.GetLeftPanelWidthAsync();
+            if (savedPanelWidth.HasValue && savedPanelWidth.Value >= LeftPanelColumn.MinWidth && savedPanelWidth.Value <= LeftPanelColumn.MaxWidth)
+            {
+                LeftPanelColumn.Width = new GridLength(savedPanelWidth.Value);
+            }
 
-        // Initialize group filter dropdown
-        RefreshGroupFilter();
+            // Update tray menu with current hosts
+            _trayService.UpdateContextMenu(_viewModel.HostManagement.Hosts, _viewModel.HostManagement.Groups);
+            _trayService.Show();
 
-        // Subscribe to groups collection changes
-        _viewModel.Groups.CollectionChanged += Groups_CollectionChanged;
-        _viewModel.Hosts.CollectionChanged += Hosts_CollectionChanged;
+            // Initialize group filter dropdown
+            RefreshGroupFilter();
+
+            // Subscribe to groups collection changes
+            _viewModel.HostManagement.Groups.CollectionChanged += Groups_CollectionChanged;
+            _viewModel.HostManagement.Hosts.CollectionChanged += Hosts_CollectionChanged;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in OnLoaded: {ex}");
+        }
     }
 
     private void Groups_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -144,14 +158,14 @@ public partial class MainWindow : FluentWindow
             items.Add(GroupFilterItem.CreateAllItem(totalCount));
 
             // Add individual groups with host counts from unfiltered data
-            foreach (var group in _viewModel.Groups.OrderBy(g => g.Name))
+            foreach (var group in _viewModel.HostManagement.Groups.OrderBy(g => g.Name))
             {
                 var hostCount = countsByGroup.TryGetValue(group.Id, out var count) ? count : 0;
                 items.Add(GroupFilterItem.CreateGroupItem(group, hostCount));
             }
 
             // Update dropdown menu items via the HostListPanel
-            HostListPanel.UpdateGroupFilterMenu(items, _viewModel.SelectedGroupFilter, OnGroupFilterItemClick);
+            HostListPanel.UpdateGroupFilterMenu(items, _viewModel.HostManagement.SelectedGroupFilter, OnGroupFilterItemClick);
 
             // Update the button text to show current selection
             UpdateGroupFilterButtonText();
@@ -164,21 +178,28 @@ public partial class MainWindow : FluentWindow
 
     private async void OnGroupFilterItemClick(GroupFilterItem item)
     {
-        if (_isUpdatingGroupFilter)
-            return;
+        try
+        {
+            if (_isUpdatingGroupFilter)
+                return;
 
-        await _viewModel.FilterByGroupCommand.ExecuteAsync(item.Group);
-        UpdateGroupFilterButtonText();
+            await _viewModel.HostManagement.FilterByGroupCommand.ExecuteAsync(item.Group);
+            UpdateGroupFilterButtonText();
 
-        // Refresh the menu to update the checkmark
-        await RefreshGroupFilterAsync();
+            // Refresh the menu to update the checkmark
+            await RefreshGroupFilterAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in OnGroupFilterItemClick: {ex}");
+        }
     }
 
     private void UpdateGroupFilterButtonText()
     {
-        var text = _viewModel.SelectedGroupFilter == null 
+        var text = _viewModel.HostManagement.SelectedGroupFilter == null 
             ? "All Groups" 
-            : _viewModel.SelectedGroupFilter.Name;
+            : _viewModel.HostManagement.SelectedGroupFilter.Name;
         HostListPanel.UpdateGroupFilterButtonText(text);
     }
 
@@ -204,42 +225,66 @@ public partial class MainWindow : FluentWindow
 
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        // Show confirmation dialog
-        var result = System.Windows.MessageBox.Show(
-            "Are you sure you want to exit SSH Manager?",
-            "Confirm Exit",
-            System.Windows.MessageBoxButton.YesNo,
-            System.Windows.MessageBoxImage.Question);
-
-        if (result != System.Windows.MessageBoxResult.Yes)
+        try
         {
-            e.Cancel = true;
-            return;
+            // Show confirmation dialog
+            var result = System.Windows.MessageBox.Show(
+                "Are you sure you want to exit SSH Manager?",
+                "Confirm Exit",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question);
+
+            if (result != System.Windows.MessageBoxResult.Yes)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            // Save window state - wrapped in try-catch as window properties may be unreliable during teardown
+            try
+            {
+                await _windowStateManager.SaveWindowStateAsync(this);
+            }
+            catch (Exception saveEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error saving window state: {saveEx}");
+            }
+
+            // Save left panel width - wrapped in try-catch as properties may be unreliable during teardown
+            try
+            {
+                await _windowStateManager.SaveLeftPanelWidthAsync(LeftPanelColumn.ActualWidth);
+            }
+            catch (Exception saveEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error saving panel width: {saveEx}");
+            }
+
+            // Unsubscribe from all events
+            _keyboardHandler.ActionRequested -= OnShortcutActionRequested;
+            _keyboardHandler.Detach();
+
+            _viewModel.QuickConnectOverlay.PropertyChanged -= QuickConnectOverlay_PropertyChanged;
+            _viewModel.SessionCreated -= OnSessionCreated;
+            _sessionManager.SessionClosed -= OnSessionClosed;
+            _paneLayoutManager.FocusedPaneChanged -= OnFocusedPaneChanged;
+            _paneOrchestrator.SessionPickerRequested -= OnSessionPickerRequested;
+
+            Loaded -= OnLoaded;
+            StateChanged -= OnStateChanged;
+
+            _viewModel.HostManagement.Groups.CollectionChanged -= Groups_CollectionChanged;
+            _viewModel.HostManagement.Hosts.CollectionChanged -= Hosts_CollectionChanged;
+
+            _trayService.QuickConnectRequested -= OnQuickConnectRequested;
+            _trayService.ShowWindowRequested -= OnShowWindowRequested;
+            _trayService.ExitRequested -= OnExitRequested;
+            _trayService.SettingsRequested -= OnSettingsRequested;
         }
-
-        // Save window state
-        await _windowStateManager.SaveWindowStateAsync(this);
-
-        // Unsubscribe from all events
-        _keyboardHandler.ActionRequested -= OnShortcutActionRequested;
-        _keyboardHandler.Detach();
-        
-        _viewModel.QuickConnectOverlay.PropertyChanged -= QuickConnectOverlay_PropertyChanged;
-        _viewModel.SessionCreated -= OnSessionCreated;
-        _sessionManager.SessionClosed -= OnSessionClosed;
-        _paneLayoutManager.FocusedPaneChanged -= OnFocusedPaneChanged;
-        _paneOrchestrator.SessionPickerRequested -= OnSessionPickerRequested;
-
-        Loaded -= OnLoaded;
-        StateChanged -= OnStateChanged;
-
-        _viewModel.Groups.CollectionChanged -= Groups_CollectionChanged;
-        _viewModel.Hosts.CollectionChanged -= Hosts_CollectionChanged;
-
-        _trayService.QuickConnectRequested -= OnQuickConnectRequested;
-        _trayService.ShowWindowRequested -= OnShowWindowRequested;
-        _trayService.ExitRequested -= OnExitRequested;
-        _trayService.SettingsRequested -= OnSettingsRequested;
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in OnClosing: {ex}");
+        }
     }
 
     #region Keyboard Shortcut Handler
@@ -256,7 +301,7 @@ public partial class MainWindow : FluentWindow
             case ShortcutAction.ClearSearch:
                 if (HostListPanel.SearchBoxControl.IsFocused)
                 {
-                    _viewModel.SearchText = "";
+                    _viewModel.HostManagement.SearchText = "";
                 }
                 break;
                 
@@ -281,25 +326,25 @@ public partial class MainWindow : FluentWindow
                 break;
                 
             case ShortcutAction.AddHost:
-                _viewModel.AddHostCommand.Execute(null);
+                _viewModel.HostManagement.AddHostCommand.Execute(null);
                 break;
                 
             case ShortcutAction.EditHost:
-                if (_viewModel.SelectedHost != null)
+                if (_viewModel.HostManagement.SelectedHost != null)
                 {
-                    _viewModel.EditHostCommand.Execute(_viewModel.SelectedHost);
+                    _viewModel.HostManagement.EditHostCommand.Execute(_viewModel.HostManagement.SelectedHost);
                 }
                 break;
                 
             case ShortcutAction.DeleteHost:
-                if (_viewModel.SelectedHost != null)
+                if (_viewModel.HostManagement.SelectedHost != null)
                 {
-                    _viewModel.DeleteHostCommand.Execute(_viewModel.SelectedHost);
+                    _viewModel.HostManagement.DeleteHostCommand.Execute(_viewModel.HostManagement.SelectedHost);
                 }
                 break;
                 
             case ShortcutAction.OpenSftpBrowser:
-                _viewModel.OpenSftpBrowserCommand.Execute(null);
+                _viewModel.SftpLauncher.OpenSftpBrowserCommand.Execute(null);
                 break;
                 
             case ShortcutAction.ShowKeyboardShortcuts:
@@ -335,8 +380,15 @@ public partial class MainWindow : FluentWindow
 
     private async void OnQuickConnectRequested(object? sender, HostEntry host)
     {
-        ShowAndActivate();
-        await _viewModel.ConnectCommand.ExecuteAsync(host);
+        try
+        {
+            ShowAndActivate();
+            await _viewModel.Session.ConnectCommand.ExecuteAsync(host);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in OnQuickConnectRequested: {ex}");
+        }
     }
 
     private void OnShowWindowRequested(object? sender, EventArgs e)
@@ -400,7 +452,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnFocusedPaneChanged(object? sender, PaneLeafNode? focusedPane)
     {
-        if (focusedPane?.Session != null && _viewModel.CurrentSession != focusedPane.Session)
+        if (focusedPane?.Session != null && _viewModel.Session.CurrentSession != focusedPane.Session)
         {
             _isSyncingSessionFromPaneFocus = true;
             try
@@ -426,7 +478,7 @@ public partial class MainWindow : FluentWindow
             return;
 
         var viewModel = new SessionPickerViewModel();
-        viewModel.Initialize(_viewModel.Hosts, _viewModel.Sessions);
+        viewModel.Initialize(_viewModel.HostManagement.Hosts, _viewModel.Session.Sessions);
 
         var dialog = new SessionPickerDialog(viewModel) { Owner = this };
 
@@ -444,7 +496,7 @@ public partial class MainWindow : FluentWindow
         if (result.Result == SessionPickerResult.NewConnection && result.SelectedHost != null)
         {
             // Find the newly created session's pane and connect it
-            var newSession = _viewModel.Sessions.LastOrDefault();
+            var newSession = _viewModel.Session.Sessions.LastOrDefault();
             if (newSession != null)
             {
                 var newPane = _paneLayoutManager.FindPanesForSession(newSession).LastOrDefault();
@@ -467,14 +519,28 @@ public partial class MainWindow : FluentWindow
 
     private async void PaneContainer_PaneCloseRequested(object? sender, PaneLeafNode e)
     {
-        await _paneOrchestrator.OnPaneCloseRequestedAsync(e);
+        try
+        {
+            await _paneOrchestrator.OnPaneCloseRequestedAsync(e);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in PaneContainer_PaneCloseRequested: {ex}");
+        }
     }
 
     private async void PaneContainer_SessionDisconnected(object? sender, TerminalSession session)
     {
-        if (session != null)
+        try
         {
-            await _paneOrchestrator.OnSessionDisconnectedAsync(session);
+            if (session != null)
+            {
+                await _paneOrchestrator.OnSessionDisconnectedAsync(session);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in PaneContainer_SessionDisconnected: {ex}");
         }
     }
 
@@ -564,20 +630,34 @@ public partial class MainWindow : FluentWindow
 
     private async void TerminalToolbar_TunnelBuilderRequested(object? sender, EventArgs e)
     {
-        var viewModel = _serviceProvider.GetRequiredService<TunnelBuilderViewModel>();
-        var snackbarService = _serviceProvider.GetRequiredService<ISnackbarService>();
-        var dialog = new TunnelBuilderDialog(viewModel, snackbarService) { Owner = this };
-        await viewModel.InitializeAsync();
-        dialog.ShowDialog();
+        try
+        {
+            var viewModel = _serviceProvider.GetRequiredService<TunnelBuilderViewModel>();
+            var snackbarService = _serviceProvider.GetRequiredService<ISnackbarService>();
+            var dialog = new TunnelBuilderDialog(viewModel, snackbarService) { Owner = this };
+            await viewModel.InitializeAsync();
+            dialog.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in TerminalToolbar_TunnelBuilderRequested: {ex}");
+        }
     }
 
     private async void TerminalToolbar_ManagePortForwardingProfilesRequested(object? sender, EventArgs e)
     {
-        var portForwardingRepo = _serviceProvider.GetRequiredService<IPortForwardingProfileRepository>();
-        var managerVm = new PortForwardingManagerViewModel(portForwardingRepo);
-        var dialog = new PortForwardingListDialog(managerVm, portForwardingRepo, _viewModel.Hosts) { Owner = this };
-        dialog.ShowDialog();
-        await _viewModel.PortForwardingManager.LoadProfilesAsync();
+        try
+        {
+            var portForwardingRepo = _serviceProvider.GetRequiredService<IPortForwardingProfileRepository>();
+            var managerVm = new PortForwardingManagerViewModel(portForwardingRepo);
+            var dialog = new PortForwardingListDialog(managerVm, portForwardingRepo, _viewModel.HostManagement.Hosts) { Owner = this };
+            dialog.ShowDialog();
+            await _viewModel.PortForwardingManager.LoadProfilesAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in TerminalToolbar_ManagePortForwardingProfilesRequested: {ex}");
+        }
     }
 
     #endregion
@@ -591,17 +671,38 @@ public partial class MainWindow : FluentWindow
 
     private async void WelcomePanel_ImportFromFileRequested(object? sender, EventArgs e)
     {
-        await _viewModel.ImportHostsAsync();
+        try
+        {
+            await _viewModel.ImportHostsAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in WelcomePanel_ImportFromFileRequested: {ex}");
+        }
     }
 
     private async void WelcomePanel_ImportFromSshConfigRequested(object? sender, EventArgs e)
     {
-        await _viewModel.ImportFromSshConfigAsync();
+        try
+        {
+            await _viewModel.ImportFromSshConfigAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in WelcomePanel_ImportFromSshConfigRequested: {ex}");
+        }
     }
 
     private async void WelcomePanel_ImportFromPuttyRequested(object? sender, EventArgs e)
     {
-        await _viewModel.ImportFromPuttyAsync();
+        try
+        {
+            await _viewModel.ImportFromPuttyAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in WelcomePanel_ImportFromPuttyRequested: {ex}");
+        }
     }
 
     #endregion
@@ -630,7 +731,7 @@ public partial class MainWindow : FluentWindow
         var dialog = new ConnectionHistoryDialog(viewModel) { Owner = this };
         dialog.OnConnectRequested += async (host) =>
         {
-            await _viewModel.ConnectCommand.ExecuteAsync(host);
+            await _viewModel.Session.ConnectCommand.ExecuteAsync(host);
         };
         dialog.ShowDialog();
     }
@@ -679,40 +780,54 @@ public partial class MainWindow : FluentWindow
 
     private async void ShowSerialQuickConnectDialog()
     {
-        var serialService = _serviceProvider.GetRequiredService<ISerialConnectionService>();
-        var viewModel = new SerialQuickConnectViewModel(serialService);
-        var dialog = new SerialQuickConnectDialog(viewModel) { Owner = this };
-
-        if (dialog.ShowDialog() == true)
+        try
         {
-            var hostEntry = viewModel.CreateHostEntry();
+            var serialService = _serviceProvider.GetRequiredService<ISerialConnectionService>();
+            var viewModel = new SerialQuickConnectViewModel(serialService);
+            var dialog = new SerialQuickConnectDialog(viewModel) { Owner = this };
 
-            if (viewModel.ShouldSaveToHosts)
+            if (dialog.ShowDialog() == true)
             {
-                await _viewModel.SaveTransientHostAsync(hostEntry);
-            }
+                var hostEntry = viewModel.CreateHostEntry();
 
-            await _viewModel.ConnectCommand.ExecuteAsync(hostEntry);
+                if (viewModel.ShouldSaveToHosts)
+                {
+                    await _viewModel.SaveTransientHostAsync(hostEntry);
+                }
+
+                await _viewModel.Session.ConnectCommand.ExecuteAsync(hostEntry);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in ShowSerialQuickConnectDialog: {ex}");
         }
     }
 
     private async void ShowQuickConnectDialog()
     {
-        var serialService = _serviceProvider.GetRequiredService<ISerialConnectionService>();
-        var viewModel = new ViewModels.Dialogs.QuickConnectViewModel(serialService);
-        var dialog = new QuickConnectDialog(viewModel) { Owner = this };
-
-        if (dialog.ShowDialog() == true && viewModel.CreatedHostEntry != null)
+        try
         {
-            var hostEntry = viewModel.CreatedHostEntry;
+            var serialService = _serviceProvider.GetRequiredService<ISerialConnectionService>();
+            var viewModel = new ViewModels.Dialogs.QuickConnectViewModel(serialService);
+            var dialog = new QuickConnectDialog(viewModel) { Owner = this };
 
-            if (!string.IsNullOrEmpty(viewModel.Password) && viewModel.IsSshMode)
+            if (dialog.ShowDialog() == true && viewModel.CreatedHostEntry != null)
             {
-                var secretProtector = _serviceProvider.GetRequiredService<ISecretProtector>();
-                hostEntry.PasswordProtected = secretProtector.Protect(viewModel.Password);
-            }
+                var hostEntry = viewModel.CreatedHostEntry;
 
-            await _viewModel.ConnectCommand.ExecuteAsync(hostEntry);
+                if (!string.IsNullOrEmpty(viewModel.Password) && viewModel.IsSshMode)
+                {
+                    var secretProtector = _serviceProvider.GetRequiredService<ISecretProtector>();
+                    hostEntry.PasswordProtected = secretProtector.Protect(viewModel.Password);
+                }
+
+                await _viewModel.Session.ConnectCommand.ExecuteAsync(hostEntry);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in ShowQuickConnectDialog: {ex}");
         }
     }
 

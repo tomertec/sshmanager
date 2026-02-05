@@ -90,7 +90,11 @@ public sealed class SnippetRepository : ISnippetRepository
         snippet.UpdatedAt = DateTimeOffset.UtcNow;
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        db.Snippets.Update(snippet);
+        var existing = await db.Snippets.FindAsync([snippet.Id], ct);
+        if (existing == null)
+            return;
+
+        db.Entry(existing).CurrentValues.SetValues(snippet);
         await db.SaveChangesAsync(ct);
     }
 

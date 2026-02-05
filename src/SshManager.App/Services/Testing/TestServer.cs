@@ -55,7 +55,7 @@ public class TestServer : ITestServer
         IsRunning = true;
 
         // Link external cancellation token
-        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, cancellationToken);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, cancellationToken);
 
         _listenerTask = Task.Run(() => ListenAsync(linkedCts.Token), linkedCts.Token);
 
@@ -256,7 +256,7 @@ public class TestServer : ITestServer
         }
 
         _disposed = true;
-        StopAsync().GetAwaiter().GetResult();
+        Task.Run(async () => await StopAsync().ConfigureAwait(false)).GetAwaiter().GetResult();
         _cts.Dispose();
         _pipeReadyEvent.Dispose();
     }

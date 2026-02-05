@@ -62,8 +62,8 @@ public sealed class SerialConnectionService : ISerialConnectionService
             info.PortName,
             info.BaudRate,
             info.DataBits,
-            GetParityChar(info.Parity),
-            GetStopBitsString(info.StopBits));
+            SerialPortFormatHelper.GetParityChar(info.Parity),
+            SerialPortFormatHelper.GetStopBitsString(info.StopBits));
 
         // Try System.IO.Ports first (more compatible with USB adapters), then fall back to RJCP
         try
@@ -301,35 +301,6 @@ public sealed class SerialConnectionService : ISerialConnectionService
         _logger.LogDebug(ex, "Full exception details for serial port {PortName}", info.PortName);
     }
 
-    /// <summary>
-    /// Gets a single character representation of the parity setting.
-    /// </summary>
-    private static char GetParityChar(Parity parity)
-    {
-        return parity switch
-        {
-            Parity.None => 'N',
-            Parity.Odd => 'O',
-            Parity.Even => 'E',
-            Parity.Mark => 'M',
-            Parity.Space => 'S',
-            _ => '?'
-        };
-    }
-
-    /// <summary>
-    /// Gets a string representation of the stop bits setting.
-    /// </summary>
-    private static string GetStopBitsString(StopBits stopBits)
-    {
-        return stopBits switch
-        {
-            StopBits.One => "1",
-            StopBits.One5 => "1.5",
-            StopBits.Two => "2",
-            _ => "?"
-        };
-    }
 
     /// <summary>
     /// Attempts to set a serial port property, logging a warning if it fails.

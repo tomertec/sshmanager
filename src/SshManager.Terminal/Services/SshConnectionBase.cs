@@ -31,9 +31,19 @@ public abstract class SshConnectionBase : ISshConnection
     protected readonly List<IDisposable> Disposables = new();
 
     /// <summary>
+    /// Lock for thread-safe access to the Disposables list.
+    /// </summary>
+    private readonly object _disposablesLock = new();
+
+    /// <summary>
     /// Indicates whether this connection has been disposed.
     /// </summary>
-    protected bool Disposed;
+    private int _disposed;
+
+    /// <summary>
+    /// Gets whether this connection has been disposed.
+    /// </summary>
+    protected bool Disposed => _disposed != 0;
 
     /// <summary>
     /// Gets the shell stream for terminal I/O.
@@ -68,6 +78,10 @@ public abstract class SshConnectionBase : ISshConnection
         Logger = logger ?? throw new ArgumentNullException(nameof(logger));
         ResizeService = resizeService ?? throw new ArgumentNullException(nameof(resizeService));
 
+        // Do NOT set KeepAliveInterval here — it is already configured by
+        // SshConnectionService.ConnectAsync from user/per-host settings.
+        // Setting it here would overwrite the user's configuration.
+
         // Subscribe to error/disconnect events
         Client.ErrorOccurred += OnClientError;
         ShellStream.Closed += OnStreamClosed;
@@ -82,7 +96,10 @@ public abstract class SshConnectionBase : ISshConnection
     {
         if (disposable != null)
         {
-            Disposables.Add(disposable);
+            lock (_disposablesLock)
+            {
+                Disposables.Add(disposable);
+            }
         }
     }
 
@@ -137,6 +154,22 @@ public abstract class SshConnectionBase : ISshConnection
             Logger.LogDebug(ex, "Failed to run command: {Command}", command);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Checks whether the connection is still active.
+    /// Keep-alive packets are sent automatically by SSH.NET via <see cref="BaseClient.KeepAliveInterval"/>,
+    /// so this method only needs to verify connectivity.
+    /// </summary>
+    /// <returns>True if the connection is alive, false if dead.</returns>
+    public bool TrySendKeepAlive()
+    {
+        if (Disposed || !Client.IsConnected)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -212,8 +245,14 @@ public abstract class SshConnectionBase : ISshConnection
     /// </summary>
     protected void DisposeTrackedResources()
     {
-        var disposableCount = Disposables.Count;
-        foreach (var disposable in Disposables)
+        List<IDisposable> toDispose;
+        lock (_disposablesLock)
+        {
+            toDispose = new List<IDisposable>(Disposables);
+            Disposables.Clear();
+        }
+
+        foreach (var disposable in toDispose)
         {
             try
             {
@@ -224,18 +263,17 @@ public abstract class SshConnectionBase : ISshConnection
                 Logger.LogDebug(ex, "Error disposing tracked resource");
             }
         }
-        Disposables.Clear();
-        if (disposableCount > 0)
+
+        if (toDispose.Count > 0)
         {
-            Logger.LogDebug("Tracked disposables disposed ({Count} items)", disposableCount);
+            Logger.LogDebug("Tracked disposables disposed ({Count} items)", toDispose.Count);
         }
     }
 
     /// <inheritdoc />
     public void Dispose()
     {
-        if (Disposed) return;
-        Disposed = true;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
 
         DisposeCore();
 
@@ -244,6 +282,12 @@ public abstract class SshConnectionBase : ISshConnection
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Wraps synchronous Dispose in Task.Run intentionally: SSH.NET's
+    /// SshClient.Disconnect() performs a blocking TCP shutdown that can
+    /// take several seconds. Task.Run prevents blocking the caller
+    /// (typically the UI thread) during disconnection.
+    /// </remarks>
     public async ValueTask DisposeAsync()
     {
         await Task.Run(Dispose);

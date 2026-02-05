@@ -95,8 +95,9 @@ public partial class QuickConnectOverlayViewModel : ObservableObject
         {
             _hostStats = await _connectionHistoryRepository.GetAllHostStatsAsync();
         }
-        catch
+        catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"Error loading host stats: {ex}");
             _hostStats = new Dictionary<Guid, HostConnectionStats>();
         }
     }
@@ -267,9 +268,9 @@ public partial class QuickConnectOverlayViewModel : ObservableObject
             }
             OnPropertyChanged(nameof(ShowRecentSection));
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail if unable to load recent hosts
+            System.Diagnostics.Debug.WriteLine($"Error loading recent hosts: {ex}");
             RecentHosts.Clear();
         }
     }

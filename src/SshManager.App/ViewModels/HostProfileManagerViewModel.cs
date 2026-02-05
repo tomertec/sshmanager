@@ -15,6 +15,7 @@ public partial class HostProfileManagerViewModel : ObservableObject
     private readonly IHostProfileRepository _profileRepository;
     private readonly IProxyJumpProfileRepository _proxyJumpRepository;
     private readonly ILogger<HostProfileManagerViewModel> _logger;
+    private readonly ILoggerFactory _loggerFactory;
 
     [ObservableProperty]
     private ObservableCollection<HostProfile> _profiles = [];
@@ -33,11 +34,13 @@ public partial class HostProfileManagerViewModel : ObservableObject
     public HostProfileManagerViewModel(
         IHostProfileRepository profileRepository,
         IProxyJumpProfileRepository proxyJumpRepository,
-        ILogger<HostProfileManagerViewModel>? logger)
+        ILogger<HostProfileManagerViewModel>? logger,
+        ILoggerFactory? loggerFactory = null)
     {
         _profileRepository = profileRepository;
         _proxyJumpRepository = proxyJumpRepository;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<HostProfileManagerViewModel>.Instance;
+        _loggerFactory = loggerFactory ?? Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
     }
 
     /// <summary>
@@ -78,7 +81,7 @@ public partial class HostProfileManagerViewModel : ObservableObject
 
         var viewModel = new HostProfileDialogViewModel(
             _proxyJumpRepository,
-            _logger);
+            _loggerFactory.CreateLogger<HostProfileDialogViewModel>());
 
         dialog.DataContext = viewModel;
         await viewModel.LoadProxyJumpProfilesAsync();
@@ -118,7 +121,7 @@ public partial class HostProfileManagerViewModel : ObservableObject
 
         var viewModel = new HostProfileDialogViewModel(
             _proxyJumpRepository,
-            _logger,
+            _loggerFactory.CreateLogger<HostProfileDialogViewModel>(),
             SelectedProfile);
 
         dialog.DataContext = viewModel;

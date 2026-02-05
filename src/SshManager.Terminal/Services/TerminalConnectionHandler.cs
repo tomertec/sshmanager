@@ -41,8 +41,13 @@ public sealed class TerminalConnectionHandler : ITerminalConnectionHandler
             rows,
             ct);
 
-        // Create SSH bridge for data flow
-        var bridge = new SshTerminalBridge(connection.ShellStream);
+        // Create SSH bridge for data flow with connection health monitoring
+        // The health check uses TrySendKeepAlive() which sends an actual packet to detect stale connections
+        // (e.g., when remote host reboots during an idle session)
+        var bridge = new SshTerminalBridge(
+            connection.ShellStream,
+            logger: null,
+            connectionHealthCheck: () => connection.TrySendKeepAlive());
 
         _logger.LogInformation("Connected to {Host}", connectionInfo.Hostname);
 
@@ -78,8 +83,12 @@ public sealed class TerminalConnectionHandler : ITerminalConnectionHandler
             rows,
             ct);
 
-        // Create SSH bridge for data flow
-        var bridge = new SshTerminalBridge(connection.ShellStream);
+        // Create SSH bridge for data flow with connection health monitoring
+        // The health check uses TrySendKeepAlive() which sends an actual packet to detect stale connections
+        var bridge = new SshTerminalBridge(
+            connection.ShellStream,
+            logger: null,
+            connectionHealthCheck: () => connection.TrySendKeepAlive());
 
         var hosts = string.Join(" → ", connectionChain.Select(c => c.Hostname));
         _logger.LogInformation("Connected through proxy chain: {Chain}", hosts);
@@ -109,7 +118,11 @@ public sealed class TerminalConnectionHandler : ITerminalConnectionHandler
         // Fallback: create new bridge if session doesn't have one
         if (session.Connection?.ShellStream != null)
         {
-            var bridge = new SshTerminalBridge(session.Connection.ShellStream);
+            var connection = session.Connection;
+            var bridge = new SshTerminalBridge(
+                connection.ShellStream,
+                logger: null,
+                connectionHealthCheck: () => connection.TrySendKeepAlive());
             session.Bridge = bridge;
             _logger.LogDebug("Created new bridge for session: {Title}", session.Title);
             return new TerminalAttachResult(bridge, OwnsBridge: true, NeedsStartReading: true);

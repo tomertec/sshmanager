@@ -21,14 +21,14 @@
          terminal/bash shortcuts are defined here. -->
     <ui:FluentWindow.InputBindings>
         <!-- Host Management - Enter to connect (doesn't conflict with terminal) -->
-        <KeyBinding Key="Return" Command="{Binding ConnectCommand}" CommandParameter="{Binding SelectedHost}" />
+        <KeyBinding Key="Return" Command="{Binding Session.ConnectCommand}" CommandParameter="{Binding HostManagement.SelectedHost}" />
 
         <!-- Terminal Sessions -->
         <!-- Note: Ctrl+W is NOT used for closing - it passes through to terminal for nano, vim, etc. Use Ctrl+F4 instead -->
-        <KeyBinding Key="F4" Modifiers="Ctrl" Command="{Binding CloseSessionCommand}" CommandParameter="{Binding CurrentSession}" />
+        <KeyBinding Key="F4" Modifiers="Ctrl" Command="{Binding Session.CloseSessionCommand}" CommandParameter="{Binding Session.CurrentSession}" />
 
         <!-- Refresh -->
-        <KeyBinding Key="F5" Command="{Binding SearchCommand}" />
+        <KeyBinding Key="F5" Command="{Binding HostManagement.SearchCommand}" />
     </ui:FluentWindow.InputBindings>
 
     <Grid>
@@ -51,7 +51,7 @@
         <!-- Main Content -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280" MinWidth="260" MaxWidth="400" />
+                <ColumnDefinition x:Name="LeftPanelColumn" Width="280" MinWidth="260" MaxWidth="400" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" MinWidth="300" />
             </Grid.ColumnDefinitions>
@@ -80,7 +80,7 @@
             <!-- Right Panel: Terminal Area -->
             <Grid Grid.Column="2">
                 <!-- Session Tabs and Terminal - using separate tab strip and content for reliable switching -->
-                <Grid Visibility="{Binding HasActiveSessions, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid Visibility="{Binding Session.HasActiveSessions, Converter={StaticResource BoolToVisibilityConverter}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
@@ -109,18 +109,18 @@
 
                     <!-- Terminal Pane Container - supports split panes -->
                     <Border Grid.Row="1"
-                            Background="#0C0C0C"
+                            Background="{DynamicResource TerminalBackgroundDarkBrush}"
                             CornerRadius="4"
                             Margin="4,0,4,4"
                             ClipToBounds="True">
                         <Border.Style>
                             <Style TargetType="Border">
-                                <Setter Property="BorderBrush" Value="#2A2A2A" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource TerminalBorderBrush}" />
                                 <Setter Property="BorderThickness" Value="1" />
                                 <Style.Triggers>
                                     <!-- Orange border when broadcast mode is active -->
-                                    <DataTrigger Binding="{Binding IsBroadcastMode}" Value="True">
-                                        <Setter Property="BorderBrush" Value="#FF5500" />
+                                    <DataTrigger Binding="{Binding BroadcastInput.IsBroadcastMode}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{DynamicResource TerminalBroadcastBorderBrush}" />
                                         <Setter Property="BorderThickness" Value="2" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -136,7 +136,7 @@
                 <!-- Welcome Message (when no sessions) -->
                 <controls:WelcomePanel x:Name="WelcomePanel"
                                        DataContext="{Binding}"
-                                       Visibility="{Binding HasActiveSessions, Converter={StaticResource InverseBoolToVisibilityConverter}}"
+                                       Visibility="{Binding Session.HasActiveSessions, Converter={StaticResource InverseBoolToVisibilityConverter}}"
                                        QuickConnectRequested="WelcomePanel_QuickConnectRequested"
                                        ImportFromFileRequested="WelcomePanel_ImportFromFileRequested"
                                        ImportFromSshConfigRequested="WelcomePanel_ImportFromSshConfigRequested"

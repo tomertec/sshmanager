@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
+using SshManager.Core;
 
 namespace SshManager.App.Services;
 
@@ -10,7 +11,7 @@ namespace SshManager.App.Services;
 /// Service that monitors host online/offline status using ICMP ping with TCP fallback.
 /// Uses parallel checking with configurable concurrency for better performance with large host lists.
 /// </summary>
-public class HostStatusService : IHostStatusService
+public class HostStatusService : IHostStatusService, IDisposable
 {
     private readonly ILogger<HostStatusService> _logger;
     private readonly ConcurrentDictionary<Guid, HostRegistration> _registeredHosts = new();
@@ -19,8 +20,12 @@ public class HostStatusService : IHostStatusService
     // Configurable concurrency limiter - allows tuning based on network conditions
     private readonly SemaphoreSlim _concurrencyLimiter;
     private const int DefaultMaxConcurrency = 10;
-    private const int PingTimeoutMs = 1000;
-    private const int TcpTimeoutMs = 1500;
+
+    // Timeout values optimized for quick host reachability checks
+    // These are kept as constants rather than user-configurable to ensure consistent
+    // status reporting behavior. Users should adjust the check interval, not the timeouts.
+    private const int PingTimeoutMs = Constants.ConnectionDefaults.StatusCheckTimeouts.PingTimeoutMs;
+    private const int TcpTimeoutMs = Constants.ConnectionDefaults.StatusCheckTimeouts.TcpTimeoutMs;
 
     private sealed record HostRegistration(string Hostname, int Port, TimeSpan CheckInterval);
 
@@ -196,5 +201,10 @@ public class HostStatusService : IHostStatusService
         }
 
         return now - status.LastChecked.Value >= registration.CheckInterval;
+    }
+
+    public void Dispose()
+    {
+        _concurrencyLimiter?.Dispose();
     }
 }

@@ -74,26 +74,44 @@ sshmanager/
 │   │   └── Models/
 │   │       ├── HostEntry.cs            # SSH host configuration
 │   │       ├── HostGroup.cs            # Host grouping
-│   │       ├── AuthType.cs             # Authentication enum
-│   │       ├── AppSettings.cs          # Application settings model
+│   │       ├── AuthType.cs             # Authentication enum (SshAgent, PrivateKeyFile, Password, Kerberos)
+│   │       ├── ConnectionType.cs       # Connection type enum (Ssh, Serial)
+│   │       ├── AppSettings.cs          # Application settings model (~100+ properties)
 │   │       ├── ConnectionHistory.cs    # Connection history entries
 │   │       ├── CommandSnippet.cs       # Saved command snippets
+│   │       ├── CommandHistoryEntry.cs  # Per-host command history
 │   │       ├── HostFingerprint.cs      # SSH host key fingerprints
 │   │       ├── ManagedSshKey.cs        # Managed SSH key metadata
 │   │       ├── ProxyJumpProfile.cs     # Jump host configurations
-│   │       └── PortForwardingProfile.cs # Port forwarding configs
+│   │       ├── ProxyJumpHop.cs         # Individual hops in proxy chain
+│   │       ├── PortForwardingProfile.cs # Port forwarding configs
+│   │       ├── SavedSession.cs         # Session state for crash recovery
+│   │       ├── TunnelProfile.cs        # Visual tunnel builder profiles
+│   │       ├── TunnelNode.cs           # Tunnel graph nodes
+│   │       ├── TunnelEdge.cs           # Tunnel graph edges
+│   │       ├── TerminalTheme.cs        # Custom terminal color schemes
+│   │       ├── HostProfile.cs          # Reusable host templates
+│   │       └── SerialPortSettings.cs   # Serial port configuration
 │   │
 │   ├── SshManager.Data/                 # Data access layer
-│   │   ├── AppDbContext.cs             # EF Core DbContext
+│   │   ├── AppDbContext.cs             # EF Core DbContext (17+ DbSets)
 │   │   ├── DbPaths.cs                  # Database file location helper
-│   │   └── Repositories/
-│   │       ├── IHostRepository.cs      # Host CRUD interface
-│   │       ├── HostRepository.cs       # Host CRUD implementation
-│   │       ├── IGroupRepository.cs     # Group CRUD interface
-│   │       ├── GroupRepository.cs      # Group CRUD implementation
-│   │       ├── ISettingsRepository.cs  # Settings interface
-│   │       ├── SettingsRepository.cs   # Settings implementation
-│   │       └── ...                     # Other repositories
+│   │   ├── Configurations/             # EF Core entity configurations (19 files)
+│   │   │   ├── HostEntryConfiguration.cs
+│   │   │   ├── HostFingerprintConfiguration.cs
+│   │   │   ├── SavedSessionConfiguration.cs
+│   │   │   ├── TunnelProfileConfiguration.cs
+│   │   │   └── ...                     # Other configurations
+│   │   ├── Repositories/
+│   │   │   ├── IHostRepository.cs      # Host CRUD interface
+│   │   │   ├── HostRepository.cs       # Host CRUD implementation
+│   │   │   ├── ISavedSessionRepository.cs # Crash recovery sessions
+│   │   │   ├── ITunnelProfileRepository.cs # Tunnel profiles
+│   │   │   ├── ICommandHistoryRepository.cs # Command history
+│   │   │   └── ...                     # 16+ repositories
+│   │   └── Services/
+│   │       ├── ConnectionHistoryCleanupService.cs
+│   │       └── HostCacheService.cs
 │   │
 │   ├── SshManager.Security/             # Security layer
 │   │   ├── ISecretProtector.cs         # Encryption interface
@@ -115,19 +133,28 @@ sshmanager/
 │   │   │   └── TerminalStatusBar.xaml  # Status bar control
 │   │   │
 │   │   ├── Services/
-│   │   │   ├── ISshConnectionService.cs # SSH connection interface
-│   │   │   ├── SshConnectionService.cs  # SSH.NET connection logic
-│   │   │   ├── SshTerminalBridge.cs     # SSH <-> Terminal bridge
-│   │   │   ├── WebTerminalBridge.cs     # C# <-> JavaScript bridge
-│   │   │   ├── ITerminalSessionManager.cs # Session management
-│   │   │   ├── TerminalSessionManager.cs  # Active sessions
-│   │   │   ├── IAgentKeyService.cs      # SSH agent key management interface
-│   │   │   ├── AgentKeyService.cs       # Add/remove keys from agents
-│   │   │   ├── IAgentDiagnosticsService.cs # Agent status interface
-│   │   │   ├── AgentDiagnosticsService.cs  # Agent availability & key enumeration
-│   │   │   ├── IProxyJumpService.cs     # Jump host tunneling
-│   │   │   ├── IPortForwardingService.cs # Port forwarding
-│   │   │   └── ISftpService.cs          # SFTP operations
+│   │   │   ├── Connection/             # SSH connection abstractions
+│   │   │   ├── Display/                # Terminal theme and display
+│   │   │   ├── Lifecycle/              # Session lifecycle hooks
+│   │   │   ├── Processing/             # Terminal output processing
+│   │   │   ├── Recording/              # ASCIINEMA v2 session recording
+│   │   │   ├── Playback/               # Session playback with speed control
+│   │   │   ├── Search/                 # Terminal text search
+│   │   │   ├── Stats/                  # Terminal and server statistics
+│   │   │   ├── ISshConnectionService.cs
+│   │   │   ├── SshConnectionService.cs
+│   │   │   ├── ISerialConnectionService.cs
+│   │   │   ├── SerialConnectionService.cs
+│   │   │   ├── SshTerminalBridge.cs
+│   │   │   ├── SerialTerminalBridge.cs
+│   │   │   ├── WebTerminalBridge.cs
+│   │   │   ├── IKerberosAuthService.cs  # Kerberos/GSSAPI auth
+│   │   │   ├── IConnectionPool.cs       # Connection reuse
+│   │   │   ├── IX11ForwardingService.cs # X11 display forwarding
+│   │   │   ├── ITunnelBuilderService.cs # Visual tunnel execution
+│   │   │   ├── IAutocompletionService.cs # Command completion
+│   │   │   ├── IBroadcastInputService.cs # Multi-terminal input
+│   │   │   └── ...                      # 25+ services
 │   │   │
 │   │   └── Resources/
 │   │       └── Terminal/
@@ -135,46 +162,59 @@ sshmanager/
 │   │
 │   └── SshManager.App/                  # Application layer
 │       ├── App.xaml                     # Application resources
-│       ├── App.xaml.cs                  # DI setup, startup logic
+│       ├── App.xaml.cs                  # Application entry, hosting
+│       │
+│       ├── Infrastructure/              # Modular DI service extensions
+│       │   ├── AppServiceExtensions.cs
+│       │   ├── DataServiceExtensions.cs
+│       │   ├── SecurityServiceExtensions.cs
+│       │   ├── TerminalServiceExtensions.cs
+│       │   ├── HostedServiceExtensions.cs
+│       │   ├── DbMigrator.cs
+│       │   └── Bootstrapper.cs
+│       │
+│       ├── Services/
+│       │   ├── Hosting/                 # Background and startup services
+│       │   │   ├── DatabaseInitializationHostedService.cs
+│       │   │   ├── ThemeInitializationHostedService.cs
+│       │   │   ├── SystemTrayHostedService.cs
+│       │   │   ├── CredentialCacheHostedService.cs
+│       │   │   └── StartupTasksHostedService.cs
+│       │   ├── IExportImportService.cs
+│       │   ├── ICloudSyncService.cs
+│       │   ├── IBackupService.cs
+│       │   ├── ISystemTrayService.cs
+│       │   └── ...                      # Other app services
 │       │
 │       ├── Views/
 │       │   ├── Windows/
+│       │   │   ├── StartupWindow.xaml   # Splash screen during init
 │       │   │   ├── MainWindow.xaml      # Main application window
-│       │   │   ├── SftpBrowserWindow.xaml # SFTP file browser
-│       │   │   └── TextEditorWindow.xaml  # Remote file editor
+│       │   │   ├── SftpBrowserWindow.xaml
+│       │   │   └── TextEditorWindow.xaml
 │       │   │
-│       │   ├── Dialogs/
-│       │   │   ├── HostEditDialog.xaml  # Add/edit host
-│       │   │   ├── GroupDialog.xaml     # Add/edit group
-│       │   │   ├── SettingsDialog.xaml  # Application settings
-│       │   │   ├── PpkImportWizardDialog.xaml # Batch PPK import wizard
-│       │   │   └── ...                  # Other dialogs
+│       │   ├── Dialogs/                 # 35+ dialogs
+│       │   │   ├── HostEditDialog.xaml
+│       │   │   ├── TunnelBuilderDialog.xaml
+│       │   │   ├── PpkImportWizardDialog.xaml
+│       │   │   └── ...
 │       │   │
 │       │   └── Controls/
-│       │       ├── TerminalPane.xaml    # Terminal tab content
-│       │       ├── TerminalPaneContainer.xaml # Split pane container
-│       │       └── ...                  # Other controls
+│       │       ├── TerminalPane.xaml
+│       │       ├── TerminalPaneContainer.xaml
+│       │       ├── TunnelCanvas.xaml
+│       │       └── ...
 │       │
-│       ├── ViewModels/
-│       │   ├── MainWindowViewModel.cs   # Main window logic
-│       │   ├── HostEditViewModel.cs     # Host editing logic
-│       │   ├── PpkImportWizardViewModel.cs # PPK import wizard logic
-│       │   └── ...                      # Other view models
+│       ├── ViewModels/                  # 60+ view models
 │       │
-│       ├── Services/
-│       │   ├── IExportImportService.cs  # Import/export interface
-│       │   ├── ExportImportService.cs   # Import/export logic
-│       │   ├── ISshConfigParser.cs      # SSH config parser interface
-│       │   ├── SshConfigParser.cs       # Parse ~/.ssh/config
-│       │   ├── IBackupService.cs        # Backup interface
-│       │   ├── BackupService.cs         # Database backup
-│       │   ├── ICloudSyncService.cs     # Cloud sync interface
-│       │   └── CloudSyncService.cs      # OneDrive sync
+│       ├── Styles/
+│       │   └── TerminalTheme.xaml       # Terminal color resource dictionary
 │       │
-│       └── Converters/                  # XAML value converters
+│       └── Converters/                  # 34+ XAML value converters
 │
 ├── tests/
-│   └── SshManager.Terminal.Tests/       # Terminal unit tests
+│   ├── SshManager.Terminal.Tests/
+│   └── SshManager.Security.Tests/
 │
 └── docs/                                # Documentation
 ```
@@ -271,8 +311,15 @@ sshmanager/
 - Views (Windows, Dialogs, Controls)
 - ViewModels
 - Application services (import/export, backup, etc.)
-- DI configuration
+- DI configuration in `Infrastructure/` folder
+- Hosted services in `Services/Hosting/` folder
 - Application lifecycle management
+- XAML styles and resources in `Styles/` folder
+
+**Key Folders:**
+- `Infrastructure/` - Modular DI extension methods (AddDataServices, AddSecurityServices, etc.)
+- `Services/Hosting/` - IHostedService implementations for startup and background tasks
+- `Styles/` - XAML resource dictionaries (TerminalTheme.xaml)
 
 **What doesn't go here:**
 - Low-level SSH code (put in Terminal)
@@ -381,27 +428,62 @@ SshTerminalBridge ←→ WebTerminalBridge ←→ xterm.js
 
 ### Dependency Injection Setup
 
-All services are registered in `App.xaml.cs`:
+Services are registered using modular extension methods in `SshManager.App/Infrastructure/`:
 
 ```csharp
-// Database (scoped via factory)
-services.AddDbContextFactory<AppDbContext>();
+// In App.xaml.cs or Bootstrapper.cs
+services
+    .AddDataServices()      // EF Core, repositories, data services
+    .AddSecurityServices()  // DPAPI, credentials, SSH key management
+    .AddTerminalServices()  // SSH, serial, terminal controls
+    .AddAppServices()       // WPF-UI, ViewModels, Windows
+    .AddHostedServices();   // Startup and background services
+```
 
-// Repositories (singletons using DbContextFactory)
-services.AddSingleton<IHostRepository, HostRepository>();
-services.AddSingleton<IGroupRepository, GroupRepository>();
+**Extension Modules:**
 
-// Security (singletons)
-services.AddSingleton<ISecretProtector, DpapiSecretProtector>();
-services.AddSingleton<ICredentialCache, SecureCredentialCache>();
+| Extension | File | Responsibilities |
+|-----------|------|------------------|
+| `AddDataServices()` | `DataServiceExtensions.cs` | DbContextFactory, 16+ repositories, data services |
+| `AddSecurityServices()` | `SecurityServiceExtensions.cs` | DPAPI, credential cache, SSH key management, PPK |
+| `AddTerminalServices()` | `TerminalServiceExtensions.cs` | SSH/serial connections, sessions, recording |
+| `AddAppServices()` | `AppServiceExtensions.cs` | WPF-UI, ViewModels, cloud sync, system tray |
+| `AddHostedServices()` | `HostedServiceExtensions.cs` | Startup tasks, background services |
 
-// Terminal services (singletons)
-services.AddSingleton<ISshConnectionService, SshConnectionService>();
-services.AddSingleton<ITerminalSessionManager, TerminalSessionManager>();
+**Hosted Services (startup order matters):**
 
-// ViewModels (singletons for main, transient for dialogs)
-services.AddSingleton<MainWindowViewModel>();
-services.AddTransient<HostEditViewModel>();
+1. `DatabaseInitializationHostedService` - Creates DB, applies migrations, seeds data
+2. `ThemeInitializationHostedService` - Loads app and terminal themes
+3. `SystemTrayHostedService` - Initializes system tray icon
+4. `CredentialCacheHostedService` - Sets up credential cache with session lock monitoring
+5. `StartupTasksHostedService` - Connection history cleanup, other startup tasks
+
+**Background Services:**
+
+- `AutoBackupHostedService` - Scheduled database backups
+- `CloudSyncHostedService` - OneDrive sync at intervals
+- `HostStatusHostedService` - Host availability monitoring
+
+**Startup Flow:**
+
+```
+App.OnStartup()
+    │
+    ├─→ Show StartupWindow (splash screen)
+    │
+    ├─→ Build Generic Host
+    │       └─→ ConfigureServices() with extension methods
+    │
+    ├─→ Start Hosted Services (in order)
+    │       ├─→ DatabaseInitializationHostedService
+    │       ├─→ ThemeInitializationHostedService
+    │       ├─→ SystemTrayHostedService
+    │       ├─→ CredentialCacheHostedService
+    │       └─→ StartupTasksHostedService
+    │
+    ├─→ Close StartupWindow
+    │
+    └─→ Show MainWindow
 ```
 
 ## Key Design Decisions
@@ -547,15 +629,17 @@ Core has no dependencies on other projects.
 |---------|---------|---------|---------|
 | Microsoft.EntityFrameworkCore.Sqlite | 9.0.0 | Data | Database access |
 | SSH.NET | 2024.2.0 | Terminal | SSH connections |
-| System.IO.Ports | Latest | Terminal | Serial port support (primary driver) |
+| System.IO.Ports | 9.0.0 | Terminal | Serial port support (primary driver) |
 | RJCP.SerialPortStream | Latest | Terminal | Serial port support (fallback driver) |
 | Microsoft.Web.WebView2 | 1.0.2739.15 | Terminal | Terminal rendering |
 | WPF-UI | 4.1.0 | App | UI controls |
 | CommunityToolkit.Mvvm | 8.4.0 | App | MVVM framework |
-| Serilog | Various | App | Logging |
-| H.NotifyIcon.Wpf | 2.1.3 | App | System tray |
-| AvalonEdit | 6.3.0 | App | Text editor |
+| Serilog.Extensions.Hosting | 8.0.0 | App | Structured logging |
+| Serilog.Sinks.File | Various | App | Log file output |
+| H.NotifyIcon.Wpf | 2.1.3 | App | System tray icon |
+| AvalonEdit | 6.3.0 | App | Text editor for remote files |
 | FuzzySharp | 2.0.2 | App | Fuzzy search for quick connect |
+| Konscious.Security.Cryptography.Argon2 | 1.3.1 | Security | PPK v3 key derivation |
 
 ## Extension Points
 
@@ -584,7 +668,21 @@ Core has no dependencies on other projects.
 1. **Create interface** in `SshManager.Data/Repositories/INewRepository.cs`
 2. **Create implementation** in `SshManager.Data/Repositories/NewRepository.cs`
 3. **Add DbSet** to `AppDbContext.cs` if new entity
-4. **Register in DI** in `App.xaml.cs:ConfigureServices()`
+4. **Add entity configuration** in `SshManager.Data/Configurations/`
+5. **Register in DI** in `DataServiceExtensions.cs`
+
+### Adding a Hosted Service
+
+1. **Create service class** in `SshManager.App/Services/Hosting/`
+   - Implement `IHostedService` or inherit from `BackgroundService`
+2. **Register in DI** in `HostedServiceExtensions.cs`
+   - Use `AddHostedService<T>()` for startup services
+   - Consider startup order if dependencies exist
+3. **For singleton access**, register as singleton first, then resolve:
+   ```csharp
+   services.AddSingleton<MyService>();
+   services.AddHostedService(sp => sp.GetRequiredService<MyService>());
+   ```
 
 ### Adding SSH Key Import/Conversion Support
 

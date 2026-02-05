@@ -31,4 +31,15 @@ public interface IWindowStateManager
     /// Refreshes the minimize to tray setting from storage.
     /// </summary>
     Task RefreshSettingsAsync();
+
+    /// <summary>
+    /// Gets the saved left panel width, or null if not saved.
+    /// </summary>
+    Task<double?> GetLeftPanelWidthAsync();
+
+    /// <summary>
+    /// Saves the left panel width to settings.
+    /// </summary>
+    /// <param name="width">The width of the left panel.</param>
+    Task SaveLeftPanelWidthAsync(double width);
 }

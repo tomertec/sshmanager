@@ -686,13 +686,21 @@ public sealed class PaneLayoutManager : IPaneLayoutManager
             var shouldBeVisible = pane.Session == session;
             pane.IsVisible = shouldBeVisible;
 
+            // Reset focus state for all panes to ensure clean animation trigger
+            // This prevents storyboard state issues when visibility changes
+            pane.IsFocused = false;
+
             if (shouldBeVisible)
             {
                 activePane = pane;
             }
         }
 
-        // Focus the active pane
+        // Clear the focused pane reference since we've reset all focus states
+        // This ensures SetFocusedPane doesn't early-return
+        _focusedPane = null;
+
+        // Focus the active pane - the false→true transition will properly trigger the border animation
         if (activePane != null)
         {
             SetFocusedPane(activePane);

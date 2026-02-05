@@ -25,7 +25,7 @@
                     <DataTrigger.Binding>
                         <MultiBinding Converter="{StaticResource HostHasActiveSessionConverter}">
                             <Binding Path="Id" />
-                            <Binding Path="DataContext.Sessions" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                            <Binding Path="DataContext.Session.Sessions" RelativeSource="{RelativeSource AncestorType=ListBox}" />
                         </MultiBinding>
                     </DataTrigger.Binding>
                     <DataTrigger.EnterActions>
@@ -122,7 +122,7 @@
             <ui:TextBox x:Name="SearchBox"
                        Grid.Column="0"
                        PlaceholderText="Search hosts... (Ctrl+F)"
-                       Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                       Text="{Binding HostManagement.SearchText, UpdateSourceTrigger=PropertyChanged}"
                        Icon="{ui:SymbolIcon Search24}" />
             <ui:Button Grid.Column="1"
                       Icon="{ui:SymbolIcon Settings24}"
@@ -140,11 +140,11 @@
                 BorderThickness="1"
                 CornerRadius="6"
                 Padding="8,6"
-                Visibility="{Binding AllTags.Count, Converter={StaticResource NullToBoolConverter}, ConverterParameter=Inverse, FallbackValue=Collapsed}">
+                Visibility="{Binding HostManagement.AllTags.Count, Converter={StaticResource NullToBoolConverter}, ConverterParameter=Inverse, FallbackValue=Collapsed}">
             <StackPanel>
                 <!-- Selected Filter Tags (with remove buttons) -->
-                <ItemsControl ItemsSource="{Binding SelectedFilterTags}"
-                             Visibility="{Binding SelectedFilterTags.Count, Converter={StaticResource NullToBoolConverter}, FallbackValue=Collapsed}"
+                <ItemsControl ItemsSource="{Binding HostManagement.SelectedFilterTags}"
+                             Visibility="{Binding HostManagement.SelectedFilterTags.Count, Converter={StaticResource NullToBoolConverter}, FallbackValue=Collapsed}"
                              Margin="0,0,0,4">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -171,7 +171,7 @@
                                               VerticalAlignment="Center"
                                               Foreground="#FFFFFF" />
                                     <ui:Button Icon="{ui:SymbolIcon Dismiss12}"
-                                              Command="{Binding DataContext.ToggleTagFilterCommand, RelativeSource={RelativeSource AncestorType=Border, AncestorLevel=3}}"
+                                              Command="{Binding DataContext.HostManagement.ToggleTagFilterCommand, RelativeSource={RelativeSource AncestorType=Border, AncestorLevel=3}}"
                                               CommandParameter="{Binding}"
                                               Width="16" Height="16"
                                               Padding="0"
@@ -199,7 +199,7 @@
                               Margin="0,0,6,0" />
 
                     <ItemsControl Grid.Column="1"
-                                 ItemsSource="{Binding AllTags}">
+                                 ItemsSource="{Binding HostManagement.AllTags}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel Orientation="Horizontal" />
@@ -219,7 +219,7 @@
                                        ToolTip="Click to filter by this tag">
                                     <Border.InputBindings>
                                         <MouseBinding MouseAction="LeftClick"
-                                                    Command="{Binding DataContext.ToggleTagFilterCommand, RelativeSource={RelativeSource AncestorType=Border, AncestorLevel=4}}"
+                                                    Command="{Binding DataContext.HostManagement.ToggleTagFilterCommand, RelativeSource={RelativeSource AncestorType=Border, AncestorLevel=4}}"
                                                     CommandParameter="{Binding}" />
                                     </Border.InputBindings>
                                     <Border.Style>
@@ -274,9 +274,9 @@
                         <Ellipse Width="10" Height="10"
                                 Margin="0,0,5,0"
                                 VerticalAlignment="Center"
-                                Visibility="{Binding SelectedGroupFilter.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                Visibility="{Binding HostManagement.SelectedGroupFilter.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
                             <Ellipse.Fill>
-                                <Binding Path="SelectedGroupFilter.Color" Converter="{StaticResource GroupColorConverter}" />
+                                <Binding Path="HostManagement.SelectedGroupFilter.Color" Converter="{StaticResource GroupColorConverter}" />
                             </Ellipse.Fill>
                         </Ellipse>
                         <ui:SymbolIcon Symbol="Grid24" Margin="0,0,6,0" FontSize="14" />
@@ -288,17 +288,17 @@
                         <!-- Group Management Section -->
                         <ui:MenuItem Header="Add New Group"
                                     Icon="{ui:SymbolIcon Add16}"
-                                    Command="{Binding AddGroupCommand}" />
+                                    Command="{Binding HostManagement.AddGroupCommand}" />
                         <ui:MenuItem Header="Edit Selected Group"
                                     Icon="{ui:SymbolIcon Edit16}"
-                                    Command="{Binding EditGroupCommand}"
-                                    CommandParameter="{Binding SelectedGroupFilter}"
-                                    IsEnabled="{Binding SelectedGroupFilter, Converter={StaticResource NullToBoolConverter}}" />
+                                    Command="{Binding HostManagement.EditGroupCommand}"
+                                    CommandParameter="{Binding HostManagement.SelectedGroupFilter}"
+                                    IsEnabled="{Binding HostManagement.SelectedGroupFilter, Converter={StaticResource NullToBoolConverter}}" />
                         <ui:MenuItem Header="Delete Selected Group"
                                     Icon="{ui:SymbolIcon Delete16}"
-                                    Command="{Binding DeleteGroupCommand}"
-                                    CommandParameter="{Binding SelectedGroupFilter}"
-                                    IsEnabled="{Binding SelectedGroupFilter, Converter={StaticResource NullToBoolConverter}}" />
+                                    Command="{Binding HostManagement.DeleteGroupCommand}"
+                                    CommandParameter="{Binding HostManagement.SelectedGroupFilter}"
+                                    IsEnabled="{Binding HostManagement.SelectedGroupFilter, Converter={StaticResource NullToBoolConverter}}" />
                         <Separator />
                         <!-- Groups list will be populated in code-behind -->
                     </ContextMenu>
@@ -318,7 +318,7 @@
                 <!-- Add Host Button -->
                 <ui:Button Icon="{ui:SymbolIcon Add24}"
                           ToolTip="Add Host (Ctrl+N)"
-                          Command="{Binding AddHostCommand}"
+                          Command="{Binding HostManagement.AddHostCommand}"
                           Padding="8,6"
                           Margin="0,0,4,0" />
                 <!-- Help Button -->
@@ -358,7 +358,7 @@
             </ItemsControl>
 
             <!-- Empty State (when no hosts and not loading) -->
-            <StackPanel Visibility="{Binding HasNoHosts, Converter={StaticResource BoolToVisibilityConverter}}"
+            <StackPanel Visibility="{Binding HostManagement.HasNoHosts, Converter={StaticResource BoolToVisibilityConverter}}"
                         HorizontalAlignment="Center" VerticalAlignment="Center"
                         Margin="20">
                 <ui:SymbolIcon Symbol="DesktopSignal24" FontSize="48" Opacity="0.2"/>
@@ -371,7 +371,7 @@
                            HorizontalAlignment="Center"
                            Opacity="0.4" TextWrapping="Wrap" TextAlignment="Center"
                            MaxWidth="200"/>
-                <Button Command="{Binding AddHostCommand}"
+                <Button Command="{Binding HostManagement.AddHostCommand}"
                         Padding="16,10"
                         FontSize="14"
                         Margin="0,20,0,0"
@@ -406,8 +406,8 @@
 
             <!-- Actual Host List -->
             <ListBox x:Name="HostListBox"
-                     ItemsSource="{Binding Hosts}"
-                     SelectedItem="{Binding SelectedHost}"
+                     ItemsSource="{Binding HostManagement.Hosts}"
+                     SelectedItem="{Binding HostManagement.SelectedHost}"
                      Margin="8,8,8,0"
                      Background="Transparent"
                      BorderThickness="0"
@@ -418,8 +418,8 @@
                      VirtualizingPanel.CacheLength="20,20"
                      VirtualizingPanel.CacheLengthUnit="Item"
                      behaviors:ListBoxDragDropBehavior.IsEnabled="True"
-                     behaviors:ListBoxDragDropBehavior.ReorderCommand="{Binding ReorderHostsCommand}"
-                     Visibility="{Binding HasNoHosts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                     behaviors:ListBoxDragDropBehavior.ReorderCommand="{Binding HostManagement.ReorderHostsCommand}"
+                     Visibility="{Binding HostManagement.HasNoHosts, Converter={StaticResource InverseBoolToVisibilityConverter}}">
                 <ListBox.ItemContainerStyle>
                 <Style TargetType="ListBoxItem">
                     <Setter Property="Padding" Value="0" />
@@ -445,11 +445,11 @@
                             <ContextMenu>
                                 <ui:MenuItem Header="Connect"
                                             Icon="{ui:SymbolIcon Play16}"
-                                            Command="{Binding Data.ConnectCommand, Source={StaticResource ViewModelProxy}}"
+                                            Command="{Binding Data.Session.ConnectCommand, Source={StaticResource ViewModelProxy}}"
                                             CommandParameter="{Binding}"
                                             FontWeight="SemiBold"
-                                            IsEnabled="{Binding Data.IsConnecting, Source={StaticResource ViewModelProxy}, Converter={StaticResource InverseBoolConverter}}" />
-                                <ui:MenuItem Command="{Binding Data.ToggleFavoriteCommand, Source={StaticResource ViewModelProxy}}"
+                                            IsEnabled="{Binding Data.Session.IsConnecting, Source={StaticResource ViewModelProxy}, Converter={StaticResource InverseBoolConverter}}" />
+                                <ui:MenuItem Command="{Binding Data.HostManagement.ToggleFavoriteCommand, Source={StaticResource ViewModelProxy}}"
                                             CommandParameter="{Binding}">
                                     <ui:MenuItem.Style>
                                         <Style TargetType="ui:MenuItem">
@@ -467,36 +467,36 @@
                                 <Separator />
                                 <ui:MenuItem Header="Copy Hostname"
                                             Icon="{ui:SymbolIcon Copy16}"
-                                            Command="{Binding Data.CopyHostnameCommand, Source={StaticResource ViewModelProxy}}"
+                                            Command="{Binding Data.HostManagement.CopyHostnameCommand, Source={StaticResource ViewModelProxy}}"
                                             CommandParameter="{Binding}" />
                                 <ui:MenuItem Header="Copy IP Address"
                                             Icon="{ui:SymbolIcon Globe16}"
-                                            Command="{Binding Data.CopyIpAddressCommand, Source={StaticResource ViewModelProxy}}"
+                                            Command="{Binding Data.HostManagement.CopyIpAddressCommand, Source={StaticResource ViewModelProxy}}"
                                             CommandParameter="{Binding}" />
                                 <Separator />
                                 <ui:MenuItem Header="Duplicate Host"
                                             Icon="{ui:SymbolIcon DocumentCopy16}"
-                                            Command="{Binding Data.DuplicateHostCommand, Source={StaticResource ViewModelProxy}}"
+                                            Command="{Binding Data.HostManagement.DuplicateHostCommand, Source={StaticResource ViewModelProxy}}"
                                             CommandParameter="{Binding}" />
                                 <ui:MenuItem Header="Edit"
                                             Icon="{ui:SymbolIcon Edit16}"
-                                            Command="{Binding Data.EditHostCommand, Source={StaticResource ViewModelProxy}}"
+                                            Command="{Binding Data.HostManagement.EditHostCommand, Source={StaticResource ViewModelProxy}}"
                                             CommandParameter="{Binding}" />
                                 <ui:MenuItem Header="SFTP Browser"
                                             Icon="{ui:SymbolIcon FolderOpen16}"
-                                            Command="{Binding Data.OpenSftpBrowserForHostCommand, Source={StaticResource ViewModelProxy}}"
+                                            Command="{Binding Data.SftpLauncher.OpenSftpBrowserForHostCommand, Source={StaticResource ViewModelProxy}}"
                                             CommandParameter="{Binding}" />
                                 <Separator />
                                 <ui:MenuItem Header="Delete"
                                             Icon="{ui:SymbolIcon Delete16}"
-                                            Command="{Binding Data.DeleteHostCommand, Source={StaticResource ViewModelProxy}}"
+                                            Command="{Binding Data.HostManagement.DeleteHostCommand, Source={StaticResource ViewModelProxy}}"
                                             CommandParameter="{Binding}" />
                             </ContextMenu>
                         </Border.ContextMenu>
                         <Border.BorderBrush>
                             <MultiBinding Converter="{StaticResource HostActiveSessionBorderConverter}">
                                 <Binding Path="Id" />
-                                <Binding Path="DataContext.Sessions" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                <Binding Path="DataContext.Session.Sessions" RelativeSource="{RelativeSource AncestorType=ListBox}" />
                             </MultiBinding>
                         </Border.BorderBrush>
                     <Grid>
@@ -637,7 +637,7 @@
                                        VerticalAlignment="Center"
                                        Margin="4,0,0,0">
                                 <!-- Favorite toggle button -->
-                                <ui:Button Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                <ui:Button Command="{Binding DataContext.HostManagement.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                           CommandParameter="{Binding}"
                                           Width="24" Height="24"
                                           Padding="0"
@@ -676,7 +676,7 @@
                                 <ui:Button Width="24" Height="24"
                                           Padding="0"
                                           CornerRadius="4"
-                                          Command="{Binding DataContext.OpenSftpBrowserForHostCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                          Command="{Binding DataContext.SftpLauncher.OpenSftpBrowserForHostCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                           CommandParameter="{Binding}"
                                           ToolTip="SFTP Browser"
                                           Margin="0,0,2,0">
@@ -693,19 +693,19 @@
                                     <ui:SymbolIcon Symbol="FolderOpen16" FontSize="12" Foreground="White" />
                                 </ui:Button>
                                 <ui:Button Icon="{ui:SymbolIcon Edit16}"
-                                          Command="{Binding DataContext.EditHostCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                          Command="{Binding DataContext.HostManagement.EditHostCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                           CommandParameter="{Binding}"
                                           ToolTip="Edit (Ctrl+E)"
                                           Width="24" Height="24"
                                           Padding="0"
                                           Margin="0,0,2,0" />
-                                <ui:Button Command="{Binding DataContext.ConnectCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                <ui:Button Command="{Binding DataContext.Session.ConnectCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                           CommandParameter="{Binding}"
                                           ToolTip="Connect (Enter)"
                                           Width="24" Height="24"
                                           Padding="0"
                                           CornerRadius="4"
-                                          IsEnabled="{Binding DataContext.IsConnecting, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource InverseBoolConverter}}">
+                                          IsEnabled="{Binding DataContext.Session.IsConnecting, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource InverseBoolConverter}}">
                                     <ui:Button.Style>
                                         <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                                             <Setter Property="Background" Value="#0078D4" />

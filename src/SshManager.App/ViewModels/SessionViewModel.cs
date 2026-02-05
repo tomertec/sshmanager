@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SshManager.Core;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
@@ -158,10 +159,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
 
         // Acquire connection lock to serialize connection attempts
-        // Use timeout to prevent indefinite blocking
-        if (!await _connectionLock.WaitAsync(TimeSpan.FromSeconds(30)))
+        // Use timeout to prevent indefinite blocking if a previous connection is stuck
+        if (!await _connectionLock.WaitAsync(TimeSpan.FromSeconds(Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds)))
         {
-            _logger.LogWarning("Failed to acquire connection lock for {DisplayName} within timeout", host.DisplayName);
+            _logger.LogWarning("Failed to acquire connection lock for {DisplayName} within {Timeout}s timeout", host.DisplayName, Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds);
             return;
         }
 
@@ -277,9 +278,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
 
         // Acquire connection lock for thread safety
-        if (!await _connectionLock.WaitAsync(TimeSpan.FromSeconds(30)))
+        // Use timeout to prevent indefinite blocking if a previous connection is stuck
+        if (!await _connectionLock.WaitAsync(TimeSpan.FromSeconds(Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds)))
         {
-            _logger.LogWarning("Failed to acquire connection lock for session creation of {DisplayName}", host.DisplayName);
+            _logger.LogWarning("Failed to acquire connection lock for session creation of {DisplayName} within {Timeout}s timeout", host.DisplayName, Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds);
             return null;
         }
 
@@ -445,75 +447,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// </summary>
     public HostKeyVerificationCallback CreateHostKeyVerificationCallback(Guid hostId)
     {
-        return async (hostname, port, algorithm, fingerprint, keyBytes) =>
-        {
-            _logger.LogDebug("Verifying host key for {Hostname}:{Port} - {Algorithm}", hostname, port, algorithm);
-
-            // Look up fingerprint by host AND algorithm (supports multiple key types per host)
-            var existingFingerprint = await _fingerprintRepo.GetByHostAndAlgorithmAsync(hostId, algorithm);
-
-            // Check if fingerprint matches for this specific algorithm
-            if (existingFingerprint != null && existingFingerprint.Fingerprint == fingerprint)
-            {
-                // Fingerprint matches - update last seen and trust
-                await _fingerprintRepo.UpdateLastSeenAsync(existingFingerprint.Id);
-                _logger.LogDebug("Host key verified - fingerprint matches stored value for {Algorithm}", algorithm);
-                return true;
-            }
-
-            // Check if application is available before showing dialog
-            if (Application.Current?.Dispatcher == null)
-            {
-                _logger.LogWarning("Cannot show host key verification dialog - application is shutting down");
-                return false;
-            }
-
-            // Show verification dialog on UI thread
-            // Pass existingFingerprint to show if key changed for this algorithm
-            var accepted = await Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                var dialog = new HostKeyVerificationDialog();
-                dialog.Owner = Application.Current.MainWindow;
-                dialog.Initialize(hostname, port, algorithm, fingerprint, existingFingerprint);
-                dialog.ShowDialog();
-                return dialog.IsAccepted;
-            });
-
-            if (accepted)
-            {
-                if (existingFingerprint != null)
-                {
-                    // Update existing fingerprint for this algorithm (key changed)
-                    existingFingerprint.Fingerprint = fingerprint;
-                    existingFingerprint.LastSeen = DateTimeOffset.UtcNow;
-                    existingFingerprint.IsTrusted = true;
-                    await _fingerprintRepo.UpdateAsync(existingFingerprint);
-                    _logger.LogInformation("Updated host key fingerprint for {Hostname}:{Port} ({Algorithm})", hostname, port, algorithm);
-                }
-                else
-                {
-                    // Add new fingerprint for this algorithm
-                    // This allows storing multiple algorithms per host (RSA, ED25519, ECDSA, etc.)
-                    var newFingerprint = new HostFingerprint
-                    {
-                        HostId = hostId,
-                        Algorithm = algorithm,
-                        Fingerprint = fingerprint,
-                        FirstSeen = DateTimeOffset.UtcNow,
-                        LastSeen = DateTimeOffset.UtcNow,
-                        IsTrusted = true
-                    };
-                    await _fingerprintRepo.AddAsync(newFingerprint);
-                    _logger.LogInformation("Stored new host key fingerprint for {Hostname}:{Port} ({Algorithm})", hostname, port, algorithm);
-                }
-            }
-            else
-            {
-                _logger.LogWarning("Host key rejected by user for {Hostname}:{Port} ({Algorithm})", hostname, port, algorithm);
-            }
-
-            return accepted;
-        };
+        return HostKeyVerificationHelper.CreateCallback(hostId, _fingerprintRepo, _logger);
     }
 
     /// <summary>

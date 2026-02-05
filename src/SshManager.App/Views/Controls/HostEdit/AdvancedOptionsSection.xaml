@@ -28,8 +28,8 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <ComboBox Grid.Column="0"
-                          ItemsSource="{Binding AvailableProxyJumpProfiles}"
-                          SelectedItem="{Binding SelectedProxyJumpProfile}"
+                          ItemsSource="{Binding SshSettings.AvailableProxyJumpProfiles}"
+                          SelectedItem="{Binding SshSettings.SelectedProxyJumpProfile}"
                           Margin="0,0,4,0">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
@@ -43,7 +43,7 @@
                 <ui:Button Grid.Column="1"
                            Icon="{ui:SymbolIcon Dismiss16}"
                            ToolTip="Clear selection"
-                           Command="{Binding ClearProxyJumpProfileCommand}"
+                           Command="{Binding SshSettings.ClearProxyJumpProfileCommand}"
                            Width="32" Height="32"
                            Padding="0"
                            Margin="0,0,4,0" />
@@ -69,7 +69,7 @@
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0"
                         Style="{StaticResource StatusBorderStyle}">
-                    <TextBlock Text="{Binding PortForwardingStatusText}"
+                    <TextBlock Text="{Binding SshSettings.PortForwardingStatusText}"
                                Opacity="0.8"
                                VerticalAlignment="Center" />
                 </Border>
@@ -90,7 +90,7 @@
             <TextBlock Text="Shell Type"
                        Style="{StaticResource SectionLabelStyle}" />
             <ComboBox ItemsSource="{Binding ShellTypes}"
-                      SelectedItem="{Binding ShellType}"
+                      SelectedItem="{Binding SshSettings.ShellType}"
                       Margin="0,0,0,4">
                 <ComboBox.ItemTemplate>
                     <DataTemplate>
@@ -137,10 +137,10 @@
                            Margin="0,0,0,8" />
 
                 <CheckBox Content="Use global setting"
-                          IsChecked="{Binding UseGlobalKeepAliveSetting, Mode=TwoWay}"
+                          IsChecked="{Binding SshSettings.UseGlobalKeepAliveSetting, Mode=TwoWay}"
                           Margin="0,0,0,8" />
 
-                <StackPanel Visibility="{Binding UseGlobalKeepAliveSetting, Converter={StaticResource InverseBoolToVisibilityConverter}}"
+                <StackPanel Visibility="{Binding SshSettings.UseGlobalKeepAliveSetting, Converter={StaticResource InverseBoolToVisibilityConverter}}"
                             Margin="0,0,0,8">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -150,13 +150,13 @@
                         <Slider Grid.Column="0"
                                 Minimum="0"
                                 Maximum="300"
-                                Value="{Binding KeepAliveIntervalSeconds, Mode=TwoWay}"
+                                Value="{Binding SshSettings.KeepAliveIntervalSeconds, Mode=TwoWay}"
                                 TickFrequency="30"
                                 IsSnapToTickEnabled="True"
                                 AutoToolTipPlacement="TopLeft"
                                 Margin="0,0,8,0" />
                         <TextBlock Grid.Column="1"
-                                   Text="{Binding KeepAliveIntervalSeconds, StringFormat='{}{0} sec'}"
+                                   Text="{Binding SshSettings.KeepAliveIntervalSeconds, StringFormat='{}{0} sec'}"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center"
                                    MinWidth="60"
@@ -192,12 +192,12 @@
                                    FontSize="12"/>
                     </StackPanel>
                     <CheckBox Grid.Column="1"
-                              IsChecked="{Binding X11ForwardingEnabled, Mode=TwoWay}"
+                              IsChecked="{Binding SshSettings.X11ForwardingEnabled, Mode=TwoWay}"
                               VerticalAlignment="Center"/>
                 </Grid>
 
                 <!-- X11 Options (visible when enabled) -->
-                <StackPanel Visibility="{Binding X11ForwardingEnabled, Converter={StaticResource BoolToVisibilityConverter}}"
+                <StackPanel Visibility="{Binding SshSettings.X11ForwardingEnabled, Converter={StaticResource BoolToVisibilityConverter}}"
                             Margin="0,0,0,8">
 
                     <!-- Trusted Forwarding -->
@@ -213,7 +213,7 @@
                                        FontSize="12"/>
                         </StackPanel>
                         <CheckBox Grid.Column="1"
-                                  IsChecked="{Binding X11TrustedForwarding, Mode=TwoWay}"
+                                  IsChecked="{Binding SshSettings.X11TrustedForwarding, Mode=TwoWay}"
                                   VerticalAlignment="Center"/>
                     </Grid>
 
@@ -226,7 +226,7 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <ui:NumberBox Grid.Column="0"
-                                      Value="{Binding X11DisplayNumber}"
+                                      Value="{Binding SshSettings.X11DisplayNumber}"
                                       Minimum="0"
                                       Maximum="63"
                                       SpinButtonPlacementMode="Compact"
@@ -255,7 +255,7 @@
                 <StackPanel>
                     <!-- Header Row -->
                     <Grid Margin="0,0,0,8"
-                          Visibility="{Binding EnvironmentVariables.Count, Converter={StaticResource BoolToVisibilityConverter}}">
+                          Visibility="{Binding EnvironmentVariables.Items.Count, Converter={StaticResource BoolToVisibilityConverter}}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
@@ -268,7 +268,7 @@
                     </Grid>
 
                     <!-- Environment Variables Items -->
-                    <ItemsControl ItemsSource="{Binding EnvironmentVariables}">
+                    <ItemsControl ItemsSource="{Binding EnvironmentVariables.Items}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Grid Margin="0,0,0,6">
@@ -293,7 +293,7 @@
                                     <ui:Button Grid.Column="3"
                                                Icon="{ui:SymbolIcon Delete16}"
                                                ToolTip="Remove variable"
-                                               Command="{Binding DataContext.RemoveEnvironmentVariableCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                               Command="{Binding DataContext.EnvironmentVariables.RemoveEnvironmentVariableCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                CommandParameter="{Binding}"
                                                Width="28" Height="28"
                                                Padding="0" />
@@ -308,12 +308,12 @@
                                Opacity="0.5"
                                HorizontalAlignment="Center"
                                Margin="0,8"
-                               Visibility="{Binding HasNoEnvironmentVariables, Converter={StaticResource BoolToVisibilityConverter}}" />
+                               Visibility="{Binding EnvironmentVariables.HasNoEnvironmentVariables, Converter={StaticResource BoolToVisibilityConverter}}" />
 
                     <!-- Add Button -->
                     <ui:Button Icon="{ui:SymbolIcon Add16}"
                                Content="Add Variable"
-                               Command="{Binding AddEnvironmentVariableCommand}"
+                               Command="{Binding EnvironmentVariables.AddEnvironmentVariableCommand}"
                                Margin="0,8,0,0"
                                Padding="8,4" />
                 </StackPanel>
@@ -326,7 +326,7 @@
                            VerticalAlignment="Center"
                            Margin="0,0,8,0" />
                 <ui:Button Content="TERM=xterm-256color"
-                           Command="{Binding AddPresetEnvironmentVariableCommand}"
+                           Command="{Binding EnvironmentVariables.AddPresetEnvironmentVariableCommand}"
                            CommandParameter="TERM=xterm-256color"
                            Appearance="Secondary"
                            FontSize="11"
@@ -334,7 +334,7 @@
                            Height="26"
                            Margin="0,0,4,0" />
                 <ui:Button Content="LANG=en_US.UTF-8"
-                           Command="{Binding AddPresetEnvironmentVariableCommand}"
+                           Command="{Binding EnvironmentVariables.AddPresetEnvironmentVariableCommand}"
                            CommandParameter="LANG=en_US.UTF-8"
                            Appearance="Secondary"
                            FontSize="11"

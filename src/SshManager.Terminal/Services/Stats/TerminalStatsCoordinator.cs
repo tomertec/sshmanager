@@ -22,7 +22,7 @@ namespace SshManager.Terminal.Services.Stats;
 /// </remarks>
 public sealed class TerminalStatsCoordinator : ITerminalStatsCoordinator
 {
-    private readonly IServerStatsService? _serverStatsService;
+    private IServerStatsService? _serverStatsService;
     private readonly ILogger<TerminalStatsCoordinator> _logger;
 
     private ITerminalStatsCollector? _statsCollector;
@@ -52,6 +52,15 @@ public sealed class TerminalStatsCoordinator : ITerminalStatsCoordinator
     {
         _serverStatsService = serverStatsService;
         _logger = logger ?? NullLogger<TerminalStatsCoordinator>.Instance;
+    }
+
+    /// <summary>
+    /// Sets the server stats service for collecting server-side statistics.
+    /// Must be called before starting stats collection.
+    /// </summary>
+    public void SetServerStatsService(IServerStatsService? service)
+    {
+        _serverStatsService = service;
     }
 
     /// <inheritdoc />

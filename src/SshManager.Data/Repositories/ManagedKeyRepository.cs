@@ -48,7 +48,11 @@ public sealed class ManagedKeyRepository : IManagedKeyRepository
     public async Task UpdateAsync(ManagedSshKey key, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        db.ManagedSshKeys.Update(key);
+        var existing = await db.ManagedSshKeys.FindAsync([key.Id], ct);
+        if (existing == null)
+            return;
+
+        db.Entry(existing).CurrentValues.SetValues(key);
         await db.SaveChangesAsync(ct);
     }
 

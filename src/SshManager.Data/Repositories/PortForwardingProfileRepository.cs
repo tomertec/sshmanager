@@ -71,11 +71,14 @@ public sealed class PortForwardingProfileRepository : IPortForwardingProfileRepo
         profile.UpdatedAt = DateTimeOffset.UtcNow;
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var existing = await db.PortForwardingProfiles.FindAsync([profile.Id], ct);
+        if (existing == null)
+            return;
 
         // Clear navigation property to prevent EF from trying to insert existing entities
         profile.Host = null;
 
-        db.PortForwardingProfiles.Update(profile);
+        db.Entry(existing).CurrentValues.SetValues(profile);
         await db.SaveChangesAsync(ct);
     }
 

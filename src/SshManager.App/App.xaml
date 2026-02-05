@@ -10,6 +10,7 @@
                 <ui:ControlsDictionary />
                 <ResourceDictionary Source="Styles/Animations.xaml" />
                 <ResourceDictionary Source="Styles/Converters.xaml" />
+                <ResourceDictionary Source="Styles/TerminalTheme.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

@@ -108,11 +108,11 @@ public class TestCommandHandler : ITestCommandHandler
             {
                 IsReady = _mainWindow.IsLoaded,
                 MainWindowTitle = _mainWindow.Title,
-                HostCount = _viewModel.Hosts.Count,
-                SessionCount = _viewModel.Sessions.Count,
-                ActiveSessionId = _viewModel.CurrentSession?.Id,
-                SelectedHostId = _viewModel.SelectedHost?.Id,
-                IsConnecting = _viewModel.IsConnecting,
+                HostCount = _viewModel.HostManagement.Hosts.Count,
+                SessionCount = _viewModel.Session.Sessions.Count,
+                ActiveSessionId = _viewModel.Session.CurrentSession?.Id,
+                SelectedHostId = _viewModel.HostManagement.SelectedHost?.Id,
+                IsConnecting = _viewModel.Session.IsConnecting,
                 OpenDialogs = GetOpenDialogNames()
             };
             return TestResponse.Ok(state);
@@ -945,7 +945,7 @@ public class TestCommandHandler : ITestCommandHandler
 
     private TestResponse HandleGetHosts()
     {
-        var hosts = _viewModel.Hosts.Select(h => new HostInfo
+        var hosts = _viewModel.HostManagement.Hosts.Select(h => new HostInfo
         {
             Id = h.Id,
             DisplayName = h.DisplayName,
@@ -954,7 +954,7 @@ public class TestCommandHandler : ITestCommandHandler
             Username = h.Username,
             ConnectionType = h.ConnectionType.ToString(),
             GroupId = h.GroupId,
-            GroupName = _viewModel.Groups.FirstOrDefault(g => g.Id == h.GroupId)?.Name
+            GroupName = _viewModel.HostManagement.Groups.FirstOrDefault(g => g.Id == h.GroupId)?.Name
         }).ToList();
 
         return TestResponse.Ok(hosts);
@@ -974,11 +974,11 @@ public class TestCommandHandler : ITestCommandHandler
             // Try by ID
             if (Guid.TryParse(command.Target, out var hostId))
             {
-                host = _viewModel.Hosts.FirstOrDefault(h => h.Id == hostId);
+                host = _viewModel.HostManagement.Hosts.FirstOrDefault(h => h.Id == hostId);
             }
 
             // Try by display name
-            host ??= _viewModel.Hosts.FirstOrDefault(h =>
+            host ??= _viewModel.HostManagement.Hosts.FirstOrDefault(h =>
                 h.DisplayName.Equals(command.Target, StringComparison.OrdinalIgnoreCase));
 
             if (host == null)
@@ -986,7 +986,7 @@ public class TestCommandHandler : ITestCommandHandler
                 return TestResponse.Fail($"Host not found: {command.Target}");
             }
 
-            _viewModel.SelectedHost = host;
+            _viewModel.HostManagement.SelectedHost = host;
             return TestResponse.Ok(new { selected = host.DisplayName, id = host.Id });
         });
     }
@@ -1003,11 +1003,11 @@ public class TestCommandHandler : ITestCommandHandler
         // Try by ID
         if (Guid.TryParse(command.Target, out var hostId))
         {
-            host = _viewModel.Hosts.FirstOrDefault(h => h.Id == hostId);
+            host = _viewModel.HostManagement.Hosts.FirstOrDefault(h => h.Id == hostId);
         }
 
         // Try by display name
-        host ??= _viewModel.Hosts.FirstOrDefault(h =>
+        host ??= _viewModel.HostManagement.Hosts.FirstOrDefault(h =>
             h.DisplayName.Equals(command.Target, StringComparison.OrdinalIgnoreCase));
 
         if (host == null)
@@ -1017,7 +1017,7 @@ public class TestCommandHandler : ITestCommandHandler
 
         try
         {
-            await _viewModel.ConnectCommand.ExecuteAsync(host);
+            await _viewModel.Session.ConnectCommand.ExecuteAsync(host);
             return TestResponse.Ok(new { connecting = host.DisplayName, id = host.Id });
         }
         catch (Exception ex)
@@ -1031,13 +1031,13 @@ public class TestCommandHandler : ITestCommandHandler
         if (string.IsNullOrEmpty(command.Target))
         {
             // Disconnect current session
-            var current = _viewModel.CurrentSession;
+            var current = _viewModel.Session.CurrentSession;
             if (current == null)
             {
                 return TestResponse.Fail("No active session");
             }
 
-            _viewModel.CloseSessionCommand.Execute(current);
+            _viewModel.Session.CloseSessionCommand.Execute(current);
             return TestResponse.Ok(new { disconnected = current.Title });
         }
 
@@ -1047,7 +1047,7 @@ public class TestCommandHandler : ITestCommandHandler
             return TestResponse.Fail("Invalid session ID");
         }
 
-        var session = _viewModel.Sessions.FirstOrDefault(s => s.Id == sessionId);
+        var session = _viewModel.Session.Sessions.FirstOrDefault(s => s.Id == sessionId);
         if (session == null)
         {
             return TestResponse.Fail($"Session not found: {command.Target}");
@@ -1055,7 +1055,7 @@ public class TestCommandHandler : ITestCommandHandler
 
         await RunOnUIThreadAsync(() =>
         {
-            _viewModel.CloseSessionCommand.Execute(session);
+            _viewModel.Session.CloseSessionCommand.Execute(session);
             return TestResponse.Ok();
         });
 
@@ -1068,7 +1068,7 @@ public class TestCommandHandler : ITestCommandHandler
 
     private TestResponse HandleGetSessions()
     {
-        var sessions = _viewModel.Sessions.Select(s => new SessionInfo
+        var sessions = _viewModel.Session.Sessions.Select(s => new SessionInfo
         {
             Id = s.Id,
             Title = s.Title,
@@ -1096,13 +1096,13 @@ public class TestCommandHandler : ITestCommandHandler
 
         return await RunOnUIThreadAsync(() =>
         {
-            var session = _viewModel.Sessions.FirstOrDefault(s => s.Id == sessionId);
+            var session = _viewModel.Session.Sessions.FirstOrDefault(s => s.Id == sessionId);
             if (session == null)
             {
                 return TestResponse.Fail($"Session not found: {command.Target}");
             }
 
-            _viewModel.CurrentSession = session;
+            _viewModel.Session.CurrentSession = session;
             return TestResponse.Ok(new { selected = session.Title, id = session.Id });
         });
     }
@@ -1114,10 +1114,10 @@ public class TestCommandHandler : ITestCommandHandler
             return Task.FromResult(TestResponse.Fail("Text to send is required"));
         }
 
-        var session = _viewModel.CurrentSession;
+        var session = _viewModel.Session.CurrentSession;
         if (!string.IsNullOrEmpty(command.Target) && Guid.TryParse(command.Target, out var sessionId))
         {
-            session = _viewModel.Sessions.FirstOrDefault(s => s.Id == sessionId);
+            session = _viewModel.Session.Sessions.FirstOrDefault(s => s.Id == sessionId);
         }
 
         if (session == null)
@@ -1160,10 +1160,10 @@ public class TestCommandHandler : ITestCommandHandler
 
     private Task<TestResponse> HandleGetTerminalOutputAsync(TestCommand command)
     {
-        var session = _viewModel.CurrentSession;
+        var session = _viewModel.Session.CurrentSession;
         if (!string.IsNullOrEmpty(command.Target) && Guid.TryParse(command.Target, out var sessionId))
         {
-            session = _viewModel.Sessions.FirstOrDefault(s => s.Id == sessionId);
+            session = _viewModel.Session.Sessions.FirstOrDefault(s => s.Id == sessionId);
         }
 
         if (session == null)
@@ -1278,9 +1278,9 @@ public class TestCommandHandler : ITestCommandHandler
 
     private async Task<TestResponse> InvokeAddHostDialogAsync()
     {
-        if (_viewModel.AddHostCommand.CanExecute(null))
+        if (_viewModel.HostManagement.AddHostCommand.CanExecute(null))
         {
-            await _viewModel.AddHostCommand.ExecuteAsync(null);
+            await _viewModel.HostManagement.AddHostCommand.ExecuteAsync(null);
             return TestResponse.Ok(new { opened = "addhost" });
         }
         return TestResponse.Fail("Cannot open add host dialog");
@@ -1288,15 +1288,15 @@ public class TestCommandHandler : ITestCommandHandler
 
     private async Task<TestResponse> InvokeEditHostDialogAsync()
     {
-        if (_viewModel.SelectedHost == null)
+        if (_viewModel.HostManagement.SelectedHost == null)
         {
             return TestResponse.Fail("No host selected");
         }
 
-        if (_viewModel.EditHostCommand.CanExecute(_viewModel.SelectedHost))
+        if (_viewModel.HostManagement.EditHostCommand.CanExecute(_viewModel.HostManagement.SelectedHost))
         {
-            await _viewModel.EditHostCommand.ExecuteAsync(_viewModel.SelectedHost);
-            return TestResponse.Ok(new { opened = "edithost", host = _viewModel.SelectedHost.DisplayName });
+            await _viewModel.HostManagement.EditHostCommand.ExecuteAsync(_viewModel.HostManagement.SelectedHost);
+            return TestResponse.Ok(new { opened = "edithost", host = _viewModel.HostManagement.SelectedHost.DisplayName });
         }
         return TestResponse.Fail("Cannot open edit host dialog");
     }

@@ -252,35 +252,42 @@ public sealed class AutoReconnectManager : IAutoReconnectManager, INotifyPropert
             return;
         }
 
-        _attemptCount++;
-        OnPropertyChanged(nameof(AttemptCount));
-        OnPropertyChanged(nameof(CanReconnect));
-        OnPropertyChanged(nameof(NextDelay));
-
-        // Calculate delay with exponential backoff and jitter
-        var delay = CalculateDelay(_attemptCount - 1);
-
-        _logger.LogInformation(
-            "Auto-reconnecting (attempt {Attempt}/{Max}) after {Delay:F1}s delay",
-            _attemptCount, _maxAttempts, delay.TotalSeconds);
-
-        context.ShowStatus($"Reconnecting in {delay.TotalSeconds:F0}s (attempt {_attemptCount}/{_maxAttempts})...");
-
-        // Wait before attempting reconnection
-        await Task.Delay(delay);
-
-        // Check if we got paused during the delay
-        if (_isPaused)
+        // Iterate through reconnection attempts instead of recursion
+        while (_attemptCount < _maxAttempts && !_isPaused)
         {
-            _logger.LogDebug("Reconnection paused during delay, aborting attempt");
-            return;
-        }
+            _attemptCount++;
+            OnPropertyChanged(nameof(AttemptCount));
+            OnPropertyChanged(nameof(CanReconnect));
+            OnPropertyChanged(nameof(NextDelay));
 
-        // Attempt reconnection
-        var result = await ReconnectAsync(context);
+            // Calculate delay with exponential backoff and jitter
+            var delay = CalculateDelay(_attemptCount - 1);
 
-        if (!result.Success)
-        {
+            _logger.LogInformation(
+                "Auto-reconnecting (attempt {Attempt}/{Max}) after {Delay:F1}s delay",
+                _attemptCount, _maxAttempts, delay.TotalSeconds);
+
+            context.ShowStatus($"Reconnecting in {delay.TotalSeconds:F0}s (attempt {_attemptCount}/{_maxAttempts})...");
+
+            // Wait before attempting reconnection
+            await Task.Delay(delay);
+
+            // Check if we got paused during the delay
+            if (_isPaused)
+            {
+                _logger.LogDebug("Reconnection paused during delay, aborting attempt");
+                return;
+            }
+
+            // Attempt reconnection
+            var result = await ReconnectAsync(context);
+
+            if (result.Success)
+            {
+                // Success - exit the loop
+                return;
+            }
+
             _logger.LogWarning("Auto-reconnect attempt {Attempt} failed: {Error}",
                 _attemptCount, result.ErrorMessage ?? "Unknown error");
 
@@ -289,12 +296,10 @@ public sealed class AutoReconnectManager : IAutoReconnectManager, INotifyPropert
             {
                 context.ShowStatus($"Reconnection failed after {_maxAttempts} attempts");
                 ReconnectExhausted?.Invoke(this, EventArgs.Empty);
+                return;
             }
-            else
-            {
-                // Recursively try again if we have attempts remaining
-                await HandleDisconnectionAsync(context);
-            }
+
+            // Otherwise, continue to next iteration of the while loop
         }
     }
 

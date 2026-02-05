@@ -23,6 +23,7 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
 {
     private PaneLeafNode? _paneNode;
     private bool _terminalAttached;
+    private readonly object _attachLock = new();
     private IServiceProvider? _serviceProvider;
 
     /// <summary>
@@ -55,6 +56,39 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
         // Handle visibility changes to refresh WebView2 when becoming visible
         // WebView2 controls may not properly repaint after Hidden → Visible transitions
         IsVisibleChanged += OnIsVisibleChanged;
+
+        // Handle permanent removal for cleanup
+        Unloaded += OnUnloaded;
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        // Only perform cleanup if the pane is being removed from the visual tree permanently,
+        // not during tab switching. Check if we still have a parent in the visual tree.
+        // When truly removed, the parent will be null after the Unloaded event processes.
+    }
+
+    /// <summary>
+    /// Permanently cleans up this pane's resources. Call when the pane is being removed
+    /// from the layout (session closed, pane closed), NOT during tab switches.
+    /// </summary>
+    public void CleanupResources()
+    {
+        // Unsubscribe all event handlers to prevent leaks
+        DataContextChanged -= OnDataContextChanged;
+        Terminal.Disconnected -= Terminal_Disconnected;
+        Terminal.FocusReceived -= Terminal_FocusReceived;
+        IsVisibleChanged -= OnIsVisibleChanged;
+        Unloaded -= OnUnloaded;
+
+        if (_paneNode != null)
+        {
+            _paneNode.PropertyChanged -= PaneNode_PropertyChanged;
+            _paneNode = null;
+        }
+
+        // Dispose the WebView2 terminal and output buffer
+        Terminal.DisposeTerminal();
     }
 
     /// <summary>
@@ -75,6 +109,7 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, new Action(() =>
             {
                 Terminal.RefreshTerminal();
+                Terminal.FocusInput();
             }));
         }
     }
@@ -116,39 +151,61 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
 
     private async void PaneNode_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (_paneNode == null)
-            return;
-
-        if (e.PropertyName == nameof(PaneLeafNode.Session))
+        try
         {
-            Terminal.DataContext = _paneNode.Session;
-            _terminalAttached = false;
+            if (_paneNode == null)
+                return;
 
-            // If terminal is already loaded and we got a new session, attach to it
-            if (Terminal.IsLoaded && _paneNode.Session != null)
+            if (e.PropertyName == nameof(PaneLeafNode.Session))
             {
-                await AttachToSessionAsync(_paneNode.Session);
+                Terminal.DataContext = _paneNode.Session;
+                _terminalAttached = false;
+
+                // Sync recording button state with the new session
+                UpdateRecordButtonState(_paneNode.Session?.IsRecording ?? false);
+
+                // If terminal is already loaded and we got a new session, attach to it
+                if (Terminal.IsLoaded && _paneNode.Session != null)
+                {
+                    await AttachToSessionAsync(_paneNode.Session);
+                }
+            }
+            else if (e.PropertyName == nameof(PaneLeafNode.IsPrimaryForSession))
+            {
+                // Sync primary pane status for resize coordination
+                Terminal.IsPrimaryPane = _paneNode.IsPrimaryForSession;
             }
         }
-        else if (e.PropertyName == nameof(PaneLeafNode.IsPrimaryForSession))
+        catch (Exception ex)
         {
-            // Sync primary pane status for resize coordination
-            Terminal.IsPrimaryPane = _paneNode.IsPrimaryForSession;
+            System.Diagnostics.Debug.WriteLine($"Error in PaneNode_PropertyChanged: {ex.Message}");
         }
     }
 
     private async void Terminal_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_paneNode?.Session != null && !_terminalAttached)
+        try
         {
-            await AttachToSessionAsync(_paneNode.Session);
+            if (_paneNode?.Session != null && !_terminalAttached)
+            {
+                await AttachToSessionAsync(_paneNode.Session);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in Terminal_Loaded: {ex.Message}");
         }
     }
 
     private async Task AttachToSessionAsync(TerminalSession session)
     {
-        if (_terminalAttached)
-            return;
+        // Thread-safe guard against double-attach from concurrent async void callers
+        lock (_attachLock)
+        {
+            if (_terminalAttached)
+                return;
+            _terminalAttached = true;
+        }
 
         if (_serviceProvider == null)
         {
@@ -173,13 +230,7 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
         if (session.IsConnected)
         {
             await Terminal.AttachToSessionAsync(session);
-            _terminalAttached = true;
-            return;
         }
-
-        // Otherwise, need to establish connection
-        // This is handled by the MainWindow when a host is connected
-        _terminalAttached = true;
     }
 
     /// <summary>

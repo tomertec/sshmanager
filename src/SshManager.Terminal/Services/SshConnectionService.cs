@@ -744,8 +744,7 @@ public sealed class SshConnectionService : ISshConnectionService
         }
 
         // DNS resolution failures
-        if (ex is System.Net.Sockets.SocketException ||
-            ex.Message.Contains("No such host is known", StringComparison.OrdinalIgnoreCase) ||
+        if (ex.Message.Contains("No such host is known", StringComparison.OrdinalIgnoreCase) ||
             ex.Message.Contains("getaddrinfo", StringComparison.OrdinalIgnoreCase))
         {
             return new Core.Exceptions.SshConnectionException(

@@ -6,31 +6,32 @@ using SshManager.Data.Repositories;
 
 namespace SshManager.Terminal.Services;
 
-/// <summary>
-/// Thread-safe pool of SSH connections for reuse across terminal sessions.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This service manages a pool of SSH connections to improve performance when opening
-/// multiple terminal sessions to the same hosts. Instead of creating a new TCP connection
-/// and SSH handshake for each session, connections can be reused from the pool.
-/// </para>
-/// <para>
-/// <b>Threading:</b> All public methods are thread-safe. The pool uses ConcurrentDictionary
-/// and per-host locks to safely manage connections across multiple UI threads.
-/// </para>
-/// <para>
-/// <b>Resource Management:</b> Idle connections are automatically cleaned up by a background
-/// timer. The cleanup interval is fixed at 30 seconds, while the idle timeout is configurable
-/// via settings (default: 5 minutes).
-/// </para>
-/// <para>
-/// <b>Configuration:</b> Pool behavior is controlled by three settings:
-/// - EnableConnectionPooling: Master on/off switch
-/// - ConnectionPoolMaxPerHost: Max connections per unique host (default: 3)
-/// - ConnectionPoolIdleTimeoutSeconds: Idle timeout before cleanup (default: 300)
-/// </para>
-/// </remarks>
+    /// <summary>
+    /// Thread-safe pool of SSH connections for reuse across terminal sessions.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This service manages a pool of SSH connections to improve performance when opening
+    /// multiple terminal sessions to the same hosts. Instead of creating a new TCP connection
+    /// and SSH handshake for each session, connections can be reused from the pool.
+    /// </para>
+    /// <para>
+    /// <b>Threading:</b> All public methods are thread-safe. The pool uses ConcurrentDictionary
+    /// and per-host locks to safely manage connections across multiple UI threads.
+    /// </para>
+    /// <para>
+    /// <b>Resource Management:</b> Idle connections are automatically cleaned up by a background
+    /// timer. The cleanup interval is fixed at 30 seconds (technical implementation detail - not
+    /// user-configurable), while the idle timeout is configurable via settings (default: 5 minutes).
+    /// The 30-second interval provides timely cleanup without excessive overhead.
+    /// </para>
+    /// <para>
+    /// <b>Configuration:</b> Pool behavior is controlled by three settings:
+    /// - EnableConnectionPooling: Master on/off switch
+    /// - ConnectionPoolMaxPerHost: Max connections per unique host (default: 3)
+    /// - ConnectionPoolIdleTimeoutSeconds: Idle timeout before cleanup (default: 300)
+    /// </para>
+    /// </remarks>
 public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposable
 {
     private readonly ILogger<ConnectionPool> _logger;
@@ -43,6 +44,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
     private int _maxPerHost = 3;
     private TimeSpan _idleTimeout = TimeSpan.FromSeconds(300);
     private bool _disposed;
+    private Task? _initTask;
 
     public ConnectionPool(
         ISettingsRepository settingsRepo,
@@ -51,12 +53,14 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         _settingsRepo = settingsRepo ?? throw new ArgumentNullException(nameof(settingsRepo));
         _logger = logger ?? NullLogger<ConnectionPool>.Instance;
 
-        // Run cleanup every 30 seconds
-        _cleanupTimer = new Timer(CleanupIdleConnections, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        // Run cleanup every 30 seconds (internal technical detail - not user-configurable)
+        // This interval balances timely cleanup of idle connections with minimal CPU overhead
+        var cleanupInterval = TimeSpan.FromSeconds(TerminalConstants.ConnectionPoolDefaults.CleanupIntervalSeconds);
+        _cleanupTimer = new Timer(CleanupIdleConnections, null, cleanupInterval, cleanupInterval);
 
         // Load initial settings asynchronously without blocking constructor
         // Fire-and-forget with proper exception handling
-        _ = LoadSettingsWithExceptionHandlingAsync();
+        _initTask = LoadSettingsWithExceptionHandlingAsync();
     }
 
     /// <summary>
@@ -84,6 +88,13 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         Func<Task<SshClient>> factory,
         CancellationToken ct = default)
     {
+        // Ensure settings have been loaded before making pooling decisions
+        if (_initTask is { IsCompleted: false })
+        {
+            try { await _initTask.ConfigureAwait(false); }
+            catch { /* Already logged in LoadSettingsWithExceptionHandlingAsync */ }
+        }
+
         if (!_isEnabled)
         {
             // Pooling disabled - create new connection directly
@@ -288,6 +299,13 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
 
         _logger.LogDebug("Disposing ConnectionPool (synchronous)");
 
+        // Wait for initialization to complete before disposing resources
+        if (_initTask is { IsCompleted: false })
+        {
+            try { Task.Run(() => _initTask).GetAwaiter().GetResult(); }
+            catch { /* Already logged in LoadSettingsWithExceptionHandlingAsync */ }
+        }
+
         _cleanupTimer.Dispose();
 
         var totalClosed = 0;
@@ -311,6 +329,13 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
 
         _logger.LogDebug("Disposing ConnectionPool (asynchronous)");
 
+        // Wait for initialization to complete before disposing resources
+        if (_initTask is not null)
+        {
+            try { await _initTask.ConfigureAwait(false); }
+            catch { /* Already logged in LoadSettingsWithExceptionHandlingAsync */ }
+        }
+
         // Dispose the timer synchronously (doesn't have async dispose)
         await _cleanupTimer.DisposeAsync().ConfigureAwait(false);
 
@@ -320,7 +345,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         var drainTasks = new List<Task<int>>();
         foreach (var entry in _pools.Values)
         {
-            drainTasks.Add(Task.Run(() => entry.DrainAsync()));
+            drainTasks.Add(Task.Run(() => entry.DrainOutsideLock()));
         }
 
         // Wait for all drain operations to complete
@@ -472,11 +497,11 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         }
 
         /// <summary>
-        /// Drains all connections from this entry asynchronously.
-        /// Allows SSH connections to disconnect gracefully without blocking.
+        /// Drains all connections from this entry, disposing outside the lock
+        /// to avoid blocking other pool operations.
         /// </summary>
         /// <returns>Number of connections drained.</returns>
-        public int DrainAsync()
+        public int DrainOutsideLock()
         {
             List<PooledClient> clientsToDispose;
 

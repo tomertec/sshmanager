@@ -53,7 +53,7 @@ public partial class SshConfigExportDialogViewModel : ObservableObject
     /// <summary>
     /// Event raised when the dialog should be closed.
     /// </summary>
-    public event EventHandler? RequestClose;
+    public event Action? RequestClose;
 
     public SshConfigExportDialogViewModel(
         ISshConfigExportService exportService,
@@ -192,7 +192,7 @@ public partial class SshConfigExportDialogViewModel : ObservableObject
 
             // Close the dialog with success
             DialogResult = true;
-            RequestClose?.Invoke(this, EventArgs.Empty);
+            RequestClose?.Invoke();
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -231,7 +231,7 @@ public partial class SshConfigExportDialogViewModel : ObservableObject
     private void Cancel()
     {
         DialogResult = false;
-        RequestClose?.Invoke(this, EventArgs.Empty);
+        RequestClose?.Invoke();
     }
 
     /// <summary>
@@ -240,7 +240,9 @@ public partial class SshConfigExportDialogViewModel : ObservableObject
     /// </summary>
     partial void OnIncludeCommentsChanged(bool value)
     {
-        _ = RefreshPreviewAsync();
+        _ = RefreshPreviewAsync().ContinueWith(t =>
+            System.Diagnostics.Debug.WriteLine($"Preview refresh error: {t.Exception}"),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
     /// <summary>
@@ -249,7 +251,9 @@ public partial class SshConfigExportDialogViewModel : ObservableObject
     /// </summary>
     partial void OnIncludeGroupsChanged(bool value)
     {
-        _ = RefreshPreviewAsync();
+        _ = RefreshPreviewAsync().ContinueWith(t =>
+            System.Diagnostics.Debug.WriteLine($"Preview refresh error: {t.Exception}"),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
     /// <summary>
@@ -258,7 +262,9 @@ public partial class SshConfigExportDialogViewModel : ObservableObject
     /// </summary>
     partial void OnIncludePortForwardingChanged(bool value)
     {
-        _ = RefreshPreviewAsync();
+        _ = RefreshPreviewAsync().ContinueWith(t =>
+            System.Diagnostics.Debug.WriteLine($"Preview refresh error: {t.Exception}"),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
     /// <summary>
@@ -267,6 +273,8 @@ public partial class SshConfigExportDialogViewModel : ObservableObject
     /// </summary>
     partial void OnUseProxyJumpChanged(bool value)
     {
-        _ = RefreshPreviewAsync();
+        _ = RefreshPreviewAsync().ContinueWith(t =>
+            System.Diagnostics.Debug.WriteLine($"Preview refresh error: {t.Exception}"),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 }

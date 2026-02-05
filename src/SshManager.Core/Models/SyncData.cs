@@ -51,7 +51,7 @@ public sealed class SyncHostEntry
     public Guid Id { get; set; }
     public string DisplayName { get; set; } = "";
     public string Hostname { get; set; } = "";
-    public int Port { get; set; } = 22;
+    public int Port { get; set; } = Constants.Network.DefaultSshPort;
     public string Username { get; set; } = "";
     public AuthType AuthType { get; set; }
     public string? PrivateKeyPath { get; set; }

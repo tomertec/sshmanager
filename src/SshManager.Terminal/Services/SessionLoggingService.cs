@@ -100,7 +100,11 @@ public class SessionLoggingService : ISessionLoggingService
         if (_loggers.TryRemove(sessionId, out var logger))
         {
             _logger.LogInformation("Stopping session logging for {SessionId}", sessionId);
-            _ = logger.DisposeAsync();
+            Task.Run(async () =>
+            {
+                try { await logger.DisposeAsync().ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogDebug(ex, "Error disposing session logger"); }
+            }).Wait(TimeSpan.FromSeconds(2));
         }
     }
 

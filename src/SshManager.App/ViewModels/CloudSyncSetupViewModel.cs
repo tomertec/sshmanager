@@ -380,8 +380,9 @@ public partial class CloudSyncSetupViewModel : ObservableObject
 
     private async Task UpdateDerivedPropertiesAsync()
     {
-        // Update ShowConfirmPassphrase asynchronously to avoid blocking
-        var syncFileExists = await _cloudSyncService.SyncFileExistsAsync().ConfigureAwait(false);
+        // Update ShowConfirmPassphrase asynchronously
+        // Note: OnPropertyChanged must run on UI thread, so we don't use ConfigureAwait(false)
+        var syncFileExists = await _cloudSyncService.SyncFileExistsAsync();
         ShowConfirmPassphrase = !IsSyncEnabled || !syncFileExists;
 
         OnPropertyChanged(nameof(IsSyncNotEnabled));

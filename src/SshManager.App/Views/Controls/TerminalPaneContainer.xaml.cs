@@ -127,10 +127,14 @@ public partial class TerminalPaneContainer : UserControl
                     EnsureDetachedFromParent(pane);
                 }
 
-                // Remove panes that no longer exist
+                // Remove panes that no longer exist and clean up their resources
                 var removedIds = existingPaneIds.Except(currentPaneIds).ToList();
                 foreach (var id in removedIds)
                 {
+                    if (_paneControls.TryGetValue(id, out var removedPane))
+                    {
+                        removedPane.CleanupResources();
+                    }
                     _paneControls.Remove(id);
                 }
 
@@ -188,10 +192,14 @@ public partial class TerminalPaneContainer : UserControl
             var neededPaneIds = new HashSet<Guid>();
             CollectLeafIds(_layoutManager.RootNode, neededPaneIds);
 
-            // Remove panes that are no longer in the tree
+            // Remove panes that are no longer in the tree and clean up their resources
             var toRemove = _paneControls.Keys.Except(neededPaneIds).ToList();
             foreach (var id in toRemove)
             {
+                if (_paneControls.TryGetValue(id, out var removedPane))
+                {
+                    removedPane.CleanupResources();
+                }
                 _paneControls.Remove(id);
             }
 

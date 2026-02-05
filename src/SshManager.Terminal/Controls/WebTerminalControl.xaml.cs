@@ -374,6 +374,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
             var resourceNames = assembly.GetManifestResourceNames();
             _logger.LogDebug("Available embedded resources: {Resources}", string.Join(", ", resourceNames));
 
+#if DEBUG
             // Enable DevTools console logging to capture JavaScript errors
             WebViewControl.CoreWebView2.Settings.AreDevToolsEnabled = true;
             WebViewControl.CoreWebView2.GetDevToolsProtocolEventReceiver("Console.messageAdded")
@@ -382,6 +383,9 @@ public partial class WebTerminalControl : UserControl, IDisposable
                     _logger.LogDebug("JS Console: {Message}", e.ParameterObjectAsJson);
                 };
             await WebViewControl.CoreWebView2.CallDevToolsProtocolMethodAsync("Console.enable", "{}");
+#else
+            WebViewControl.CoreWebView2.Settings.AreDevToolsEnabled = false;
+#endif
 
             // Log navigation errors
             WebViewControl.CoreWebView2.NavigationCompleted += (s, e) =>
@@ -595,6 +599,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
             _bridge.InputReceived -= OnBridgeInputReceived;
             _bridge.TerminalReady -= OnBridgeTerminalReady;
             _bridge.TerminalResized -= OnBridgeTerminalResized;
+            _bridge.DataWritten -= OnBridgeDataWritten;
             _bridge.Dispose();
             _bridge = null;
         }

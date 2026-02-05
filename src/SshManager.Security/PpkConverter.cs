@@ -407,7 +407,7 @@ public sealed class PpkConverter : IPpkConverter
         var mac = lines[lineIndex++].Split(':', 2)[1].Trim();
 
         // Parse Argon2 parameters for v3
-        Argon2Parameters? argon2Params = null;
+        PpkArgon2Parameters? argon2Params = null;
         if (version == 3 && isEncrypted)
         {
             argon2Params = ParseArgon2Parameters(lines, ref lineIndex);
@@ -425,7 +425,7 @@ public sealed class PpkConverter : IPpkConverter
             Argon2Params: argon2Params);
     }
 
-    private Argon2Parameters ParseArgon2Parameters(string[] lines, ref int lineIndex)
+    private PpkArgon2Parameters ParseArgon2Parameters(string[] lines, ref int lineIndex)
     {
         // PPK v3 includes: Key-Derivation, Argon2-Memory, Argon2-Passes, Argon2-Parallelism, Argon2-Salt
         if (lineIndex >= lines.Length || !lines[lineIndex].StartsWith("Key-Derivation:"))
@@ -452,7 +452,7 @@ public sealed class PpkConverter : IPpkConverter
         var saltHex = lines[lineIndex++].Split(':')[1].Trim();
         var salt = Convert.FromHexString(saltHex);
 
-        return new Argon2Parameters(
+        return new PpkArgon2Parameters(
             Flavor: keyDerivation,
             Memory: memory,
             Passes: passes,
@@ -938,9 +938,9 @@ public sealed class PpkConverter : IPpkConverter
         byte[] PublicKeyBlob,
         byte[] PrivateKeyBlob,
         string Mac,
-        Argon2Parameters? Argon2Params);
+        PpkArgon2Parameters? Argon2Params);
 
-    private record Argon2Parameters(
+    private record PpkArgon2Parameters(
         string Flavor,
         int Memory,
         int Passes,
@@ -1255,7 +1255,7 @@ public sealed class PpkConverter : IPpkConverter
         // Prepare private key blob (encrypted or not)
         byte[] finalPrivateKeyBlob;
         byte[] macKey;
-        Argon2Parameters? argon2Params = null;
+        PpkArgon2Parameters? argon2Params = null;
 
         if (isEncrypted)
         {
@@ -1265,7 +1265,7 @@ public sealed class PpkConverter : IPpkConverter
                 var salt = new byte[32];
                 RandomNumberGenerator.Fill(salt);
 
-                argon2Params = new Argon2Parameters(
+                argon2Params = new PpkArgon2Parameters(
                     Flavor: "Argon2id",
                     Memory: 8192,
                     Passes: 13,

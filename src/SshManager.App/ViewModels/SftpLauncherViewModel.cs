@@ -25,6 +25,7 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
     private readonly ISecretProtector _secretProtector;
     private readonly IEditorThemeService _editorThemeService;
     private readonly ILogger<SftpLauncherViewModel> _logger;
+    private readonly ILoggerFactory _loggerFactory;
 
     public SftpLauncherViewModel(
         SessionViewModel sessionViewModel,
@@ -32,7 +33,8 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
         ISettingsRepository settingsRepo,
         ISecretProtector secretProtector,
         IEditorThemeService editorThemeService,
-        ILogger<SftpLauncherViewModel>? logger = null)
+        ILogger<SftpLauncherViewModel>? logger = null,
+        ILoggerFactory? loggerFactory = null)
     {
         _sessionViewModel = sessionViewModel;
         _sftpService = sftpService;
@@ -40,6 +42,7 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
         _secretProtector = secretProtector;
         _editorThemeService = editorThemeService;
         _logger = logger ?? NullLogger<SftpLauncherViewModel>.Instance;
+        _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
 
         // Subscribe to CurrentSession changes to update command availability
         _sessionViewModel.PropertyChanged += OnSessionViewModelPropertyChanged;
@@ -65,47 +68,13 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
         if (session?.Host == null) return;
 
         var host = session.Host;
-        _logger.LogInformation("Opening SFTP browser window for host {DisplayName}", host.DisplayName);
+        // SECURITY NOTE: Converting SecureString to a managed string defeats the purpose of SecureString,
+        // as the plaintext remains in memory until GC. Consider passing SecureString through to SSH.NET
+        // or using a pinned byte array that can be explicitly zeroed after use.
+        string? password = session.DecryptedPassword?.ToUnsecureString();
 
-        try
-        {
-            // Get password from session if available (convert SecureString to string for API)
-            string? password = session.DecryptedPassword?.ToUnsecureString();
-
-            // Create connection info
-            var connectionInfo = await _sessionViewModel.CreateConnectionInfoAsync(host, password);
-
-            // Connect SFTP
-            var sftpSession = await _sftpService.ConnectAsync(connectionInfo);
-
-            // Create ViewModels
-            var sftpBrowserVm = new SftpBrowserViewModel(
-                sftpSession,
-                host.DisplayName,
-                _editorThemeService);
-
-            // Initialize the browsers
-            await sftpBrowserVm.InitializeAsync();
-
-            var windowVm = new SftpBrowserWindowViewModel(sftpBrowserVm, host.DisplayName);
-
-            // Create and show window (no Owner so user can freely switch between windows)
-            var window = new SftpBrowserWindow(windowVm);
-            window.Show();
-
-            _logger.LogInformation("SFTP browser window opened for {DisplayName}", host.DisplayName);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to open SFTP browser for host {DisplayName}", host.DisplayName);
-
-            var messageBox = new Wpf.Ui.Controls.MessageBox
-            {
-                Title = "SFTP Connection Failed",
-                Content = $"Could not connect to SFTP:\n\n{ex.Message}"
-            };
-            await messageBox.ShowDialogAsync();
-        }
+        var connectionInfo = await _sessionViewModel.CreateConnectionInfoAsync(host, password);
+        await LaunchSftpWindowAsync(connectionInfo, host.DisplayName);
     }
 
     private bool CanOpenSftpBrowser() => _sessionViewModel.CurrentSession?.Host != null;
@@ -118,74 +87,90 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
     {
         if (host == null) return;
 
-        _logger.LogInformation("Opening SFTP browser window for host {DisplayName} from host list", host.DisplayName);
+        string? password = await ResolvePasswordForHostAsync(host);
+        var connectionInfo = await _sessionViewModel.CreateConnectionInfoAsync(host, password);
+        await LaunchSftpWindowAsync(connectionInfo, host.DisplayName);
+    }
+
+    /// <summary>
+    /// Resolves the password for a host entry, checking cache first then stored credentials.
+    /// </summary>
+    private async Task<string?> ResolvePasswordForHostAsync(HostEntry host)
+    {
+        if (host.AuthType != AuthType.Password) return null;
+
+        var settings = await _settingsRepo.GetAsync();
+
+        // Try cached credential first
+        if (settings.EnableCredentialCaching)
+        {
+            var cachedCredential = _sessionViewModel.CredentialCache.GetCachedCredential(host.Id);
+            if (cachedCredential != null && cachedCredential.Type == CredentialType.Password)
+            {
+                _logger.LogDebug("Using cached password for SFTP to host {DisplayName}", host.DisplayName);
+                return cachedCredential.GetValue();
+            }
+        }
+
+        // Fall back to stored password
+        if (string.IsNullOrEmpty(host.PasswordProtected)) return null;
+
+        var password = _secretProtector.TryUnprotect(host.PasswordProtected);
+        if (password == null)
+        {
+            _logger.LogWarning("Failed to decrypt password for SFTP to host {DisplayName}", host.DisplayName);
+            return null;
+        }
+
+        // Cache for future connections if enabled
+        if (settings.EnableCredentialCaching)
+        {
+            _sessionViewModel.CacheCredentialForHost(host.Id, password, CredentialType.Password);
+        }
+
+        return password;
+    }
+
+    /// <summary>
+    /// Shared logic for connecting SFTP, creating the browser VM, and showing the window.
+    /// </summary>
+    private async Task LaunchSftpWindowAsync(TerminalConnectionInfo connectionInfo, string displayName)
+    {
+        _logger.LogInformation("Opening SFTP browser window for {DisplayName}", displayName);
 
         try
         {
-            // Get password - check cache first, then fall back to stored password
-            string? password = null;
-            var settings = await _settingsRepo.GetAsync();
-
-            if (host.AuthType == AuthType.Password)
-            {
-                // Try to get cached credential first
-                if (settings.EnableCredentialCaching)
-                {
-                    var cachedCredential = _sessionViewModel.CredentialCache.GetCachedCredential(host.Id);
-                    if (cachedCredential != null && cachedCredential.Type == CredentialType.Password)
-                    {
-                        password = cachedCredential.GetValue();
-                        _logger.LogDebug("Using cached password for SFTP to host {DisplayName}", host.DisplayName);
-                    }
-                }
-
-                // Fall back to stored password if no cached credential
-                if (password == null && !string.IsNullOrEmpty(host.PasswordProtected))
-                {
-                    password = _secretProtector.TryUnprotect(host.PasswordProtected);
-                    if (password == null)
-                    {
-                        _logger.LogWarning("Failed to decrypt password for SFTP to host {DisplayName}", host.DisplayName);
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Password decrypted successfully for SFTP to host {DisplayName}", host.DisplayName);
-
-                        // Cache the credential for future connections if caching is enabled
-                        if (settings.EnableCredentialCaching)
-                        {
-                            _sessionViewModel.CacheCredentialForHost(host.Id, password, CredentialType.Password);
-                        }
-                    }
-                }
-            }
-
-            // Create connection info
-            var connectionInfo = await _sessionViewModel.CreateConnectionInfoAsync(host, password);
-
-            // Connect SFTP
             var sftpSession = await _sftpService.ConnectAsync(connectionInfo);
 
-            // Create ViewModels
             var sftpBrowserVm = new SftpBrowserViewModel(
                 sftpSession,
-                host.DisplayName,
-                _editorThemeService);
+                displayName,
+                _editorThemeService,
+                _loggerFactory);
 
-            // Initialize the browsers
             await sftpBrowserVm.InitializeAsync();
 
-            var windowVm = new SftpBrowserWindowViewModel(sftpBrowserVm, host.DisplayName);
+            // Wire up settings persistence
+            var settings = await _settingsRepo.GetAsync();
+            sftpBrowserVm.SetSettingsCallbacks(
+                () => settings.SftpMirrorNavigation,
+                value => { settings.SftpMirrorNavigation = value; _ = _settingsRepo.UpdateAsync(settings).ContinueWith(t =>
+                    System.Diagnostics.Debug.WriteLine($"Settings save error: {t.Exception}"),
+                    TaskContinuationOptions.OnlyOnFaulted); },
+                () => settings.SftpFavorites ?? "",
+                value => { settings.SftpFavorites = value; _ = _settingsRepo.UpdateAsync(settings).ContinueWith(t =>
+                    System.Diagnostics.Debug.WriteLine($"Settings save error: {t.Exception}"),
+                    TaskContinuationOptions.OnlyOnFaulted); });
 
-            // Create and show window (no Owner so user can freely switch between windows)
+            var windowVm = new SftpBrowserWindowViewModel(sftpBrowserVm, displayName);
             var window = new SftpBrowserWindow(windowVm);
             window.Show();
 
-            _logger.LogInformation("SFTP browser window opened for {DisplayName} from host list", host.DisplayName);
+            _logger.LogInformation("SFTP browser window opened for {DisplayName}", displayName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to open SFTP browser for host {DisplayName}", host.DisplayName);
+            _logger.LogError(ex, "Failed to open SFTP browser for {DisplayName}", displayName);
 
             var messageBox = new Wpf.Ui.Controls.MessageBox
             {

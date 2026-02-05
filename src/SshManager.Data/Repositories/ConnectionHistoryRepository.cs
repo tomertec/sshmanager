@@ -18,43 +18,45 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
     public async Task<List<ConnectionHistory>> GetRecentAsync(int count = 20, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var history = await db.ConnectionHistory
+        return await db.ConnectionHistory
             .Include(h => h.Host)
-            .ToListAsync(ct);
-        return history
             .OrderByDescending(h => h.ConnectedAt)
             .Take(count)
-            .ToList();
+            .ToListAsync(ct);
     }
 
     public async Task<List<ConnectionHistory>> GetByHostAsync(Guid hostId, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var history = await db.ConnectionHistory
+        return await db.ConnectionHistory
             .Include(h => h.Host)
             .Where(h => h.HostId == hostId)
+            .OrderByDescending(h => h.ConnectedAt)
             .ToListAsync(ct);
-        return history.OrderByDescending(h => h.ConnectedAt).ToList();
     }
 
     public async Task<List<HostEntry>> GetRecentUniqueHostsAsync(int count = 5, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var recentHosts = await db.ConnectionHistory
-            .Include(h => h.Host)
-                .ThenInclude(h => h!.Group)
-            .Where(h => h.Host != null && h.WasSuccessful)
-            .OrderByDescending(h => h.ConnectedAt)
+
+        // Get the most recent successful connection per host (in SQL)
+        var recentIds = await db.ConnectionHistory
+            .Where(h => h.WasSuccessful && h.Host != null)
+            .GroupBy(h => h.HostId)
+            .Select(g => new { HostId = g.Key, LastConnected = g.Max(h => h.ConnectedAt) })
+            .OrderByDescending(x => x.LastConnected)
+            .Take(count)
+            .Select(x => x.HostId)
             .ToListAsync(ct);
 
-        // Get unique hosts in order of most recent connection
-        var uniqueHosts = recentHosts
+        // Fetch the hosts with their groups
+        return await db.ConnectionHistory
+            .Include(h => h.Host)
+                .ThenInclude(h => h!.Group)
+            .Where(h => recentIds.Contains(h.HostId))
             .GroupBy(h => h.HostId)
-            .Select(g => g.First().Host!)
-            .Take(count)
-            .ToList();
-
-        return uniqueHosts;
+            .Select(g => g.OrderByDescending(h => h.ConnectedAt).First().Host!)
+            .ToListAsync(ct);
     }
 
     public async Task AddAsync(ConnectionHistory entry, CancellationToken ct = default)
@@ -96,45 +98,55 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
     public async Task<HostConnectionStats> GetHostStatsAsync(Guid hostId, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var history = await db.ConnectionHistory
-            .Where(h => h.HostId == hostId)
-            .ToListAsync(ct);
 
-        if (history.Count == 0)
+        // Aggregate in SQL
+        var stats = await db.ConnectionHistory
+            .Where(h => h.HostId == hostId)
+            .GroupBy(h => 1)
+            .Select(g => new
+            {
+                LastConnected = g.Max(h => (DateTimeOffset?)h.ConnectedAt),
+                TotalConnections = g.Count(),
+                SuccessfulConnections = g.Count(h => h.WasSuccessful)
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (stats == null)
         {
             return new HostConnectionStats(null, 0, 0, 0);
         }
 
-        var lastConnected = history.Max(h => h.ConnectedAt);
-        var totalConnections = history.Count;
-        var successfulConnections = history.Count(h => h.WasSuccessful);
-        var successRate = totalConnections > 0 
-            ? Math.Round((double)successfulConnections / totalConnections * 100, 1) 
+        var successRate = stats.TotalConnections > 0
+            ? Math.Round((double)stats.SuccessfulConnections / stats.TotalConnections * 100, 1)
             : 0;
 
-        return new HostConnectionStats(lastConnected, totalConnections, successfulConnections, successRate);
+        return new HostConnectionStats(stats.LastConnected, stats.TotalConnections, stats.SuccessfulConnections, successRate);
     }
 
     public async Task<Dictionary<Guid, HostConnectionStats>> GetAllHostStatsAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var history = await db.ConnectionHistory.ToListAsync(ct);
 
-        var stats = history
+        // Aggregate in SQL
+        var stats = await db.ConnectionHistory
             .GroupBy(h => h.HostId)
-            .ToDictionary(
-                g => g.Key,
-                g =>
-                {
-                    var lastConnected = g.Max(h => h.ConnectedAt);
-                    var totalConnections = g.Count();
-                    var successfulConnections = g.Count(h => h.WasSuccessful);
-                    var successRate = totalConnections > 0 
-                        ? Math.Round((double)successfulConnections / totalConnections * 100, 1) 
-                        : 0;
-                    return new HostConnectionStats(lastConnected, totalConnections, successfulConnections, successRate);
-                });
+            .Select(g => new
+            {
+                HostId = g.Key,
+                LastConnected = g.Max(h => (DateTimeOffset?)h.ConnectedAt),
+                TotalConnections = g.Count(),
+                SuccessfulConnections = g.Count(h => h.WasSuccessful)
+            })
+            .ToListAsync(ct);
 
-        return stats;
+        return stats.ToDictionary(
+            s => s.HostId,
+            s =>
+            {
+                var successRate = s.TotalConnections > 0
+                    ? Math.Round((double)s.SuccessfulConnections / s.TotalConnections * 100, 1)
+                    : 0;
+                return new HostConnectionStats(s.LastConnected, s.TotalConnections, s.SuccessfulConnections, successRate);
+            });
     }
 }

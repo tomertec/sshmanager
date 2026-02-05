@@ -37,6 +37,18 @@ public interface ICredentialCache : IDisposable
     void SetTimeout(TimeSpan timeout);
 
     /// <summary>
+    /// Enables or disables credential caching. When enabled, starts the cleanup timer.
+    /// When disabled, stops the cleanup timer and clears any cached credentials.
+    /// </summary>
+    /// <param name="enabled">True to enable caching, false to disable.</param>
+    void EnableCaching(bool enabled);
+
+    /// <summary>
+    /// Gets whether credential caching is currently enabled.
+    /// </summary>
+    bool IsCachingEnabled { get; }
+
+    /// <summary>
     /// Checks if a credential is cached for the specified host.
     /// </summary>
     /// <param name="hostId">The unique identifier of the host.</param>

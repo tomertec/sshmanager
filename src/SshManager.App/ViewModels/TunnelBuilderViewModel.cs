@@ -4,12 +4,13 @@ using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using SshManager.App.Services;
+using SshManager.App.Views.Dialogs;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Terminal.Services;
 using Wpf.Ui;
 using Wpf.Ui.Controls;
-using SshManager.App.Views.Dialogs;
 
 namespace SshManager.App.ViewModels;
 
@@ -785,80 +786,38 @@ public partial class TunnelBuilderViewModel : ObservableObject
 
             var hostId = hostEntry?.Id;
 
-            // If we have a hostId, check for existing fingerprint
-            if (hostId.HasValue)
+            // If we don't have a hostId, we can't use the helper (it requires a hostId)
+            // Fall back to showing the dialog without fingerprint storage
+            if (!hostId.HasValue)
             {
-                var existingFingerprint = await _fingerprintRepository.GetByHostAndAlgorithmAsync(hostId.Value, algorithm);
-
-                // Check if fingerprint matches for this specific algorithm
-                if (existingFingerprint != null && existingFingerprint.Fingerprint == fingerprint)
+                // Check if application is available before showing dialog
+                if (Application.Current?.Dispatcher == null)
                 {
-                    // Fingerprint matches - update last seen and trust
-                    await _fingerprintRepository.UpdateLastSeenAsync(existingFingerprint.Id);
-                    _logger.LogDebug("Host key verified - fingerprint matches stored value for {Algorithm}", algorithm);
-                    return true;
+                    _logger.LogWarning("Cannot show host key verification dialog - application is shutting down");
+                    return false;
                 }
-            }
 
-            // Check if application is available before showing dialog
-            if (Application.Current?.Dispatcher == null)
-            {
-                _logger.LogWarning("Cannot show host key verification dialog - application is shutting down");
-                return false;
-            }
-
-            // Look up existing fingerprint for the dialog (to show if key changed)
-            HostFingerprint? existingFingerprintForDialog = null;
-            if (hostId.HasValue)
-            {
-                existingFingerprintForDialog = await _fingerprintRepository.GetByHostAndAlgorithmAsync(hostId.Value, algorithm);
-            }
-
-            // Show verification dialog on UI thread
-            var accepted = await Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                var dialog = new HostKeyVerificationDialog();
-                dialog.Owner = Application.Current.MainWindow;
-                dialog.Initialize(hostname, port, algorithm, fingerprint, existingFingerprintForDialog);
-                dialog.ShowDialog();
-                return dialog.IsAccepted;
-            });
-
-            if (accepted && hostId.HasValue)
-            {
-                var existingFingerprint = await _fingerprintRepository.GetByHostAndAlgorithmAsync(hostId.Value, algorithm);
-
-                if (existingFingerprint != null)
+                // Show verification dialog on UI thread without storing fingerprint
+                var accepted = await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
-                    // Update existing fingerprint for this algorithm (key changed)
-                    existingFingerprint.Fingerprint = fingerprint;
-                    existingFingerprint.LastSeen = DateTimeOffset.UtcNow;
-                    existingFingerprint.IsTrusted = true;
-                    await _fingerprintRepository.UpdateAsync(existingFingerprint);
-                    _logger.LogInformation("Updated host key fingerprint for {Hostname}:{Port} ({Algorithm})", hostname, port, algorithm);
-                }
-                else
+                    var dialog = new HostKeyVerificationDialog();
+                    dialog.Owner = Application.Current.MainWindow;
+                    dialog.Initialize(hostname, port, algorithm, fingerprint, null);
+                    dialog.ShowDialog();
+                    return dialog.IsAccepted;
+                });
+
+                if (!accepted)
                 {
-                    // Add new fingerprint for this algorithm
-                    var newFingerprint = new HostFingerprint
-                    {
-                        HostId = hostId.Value,
-                        Algorithm = algorithm,
-                        Fingerprint = fingerprint,
-                        FirstSeen = DateTimeOffset.UtcNow,
-                        LastSeen = DateTimeOffset.UtcNow,
-                        IsTrusted = true
-                    };
-                    await _fingerprintRepository.AddAsync(newFingerprint);
-                    _logger.LogInformation("Stored new host key fingerprint for {Hostname}:{Port} ({Algorithm})", hostname, port, algorithm);
+                    _logger.LogWarning("Host key rejected by user for {Hostname}:{Port} ({Algorithm})", hostname, port, algorithm);
                 }
-            }
-            else if (!accepted)
-            {
-                _logger.LogWarning("Host key rejected by user for {Hostname}:{Port} ({Algorithm})", hostname, port, algorithm);
+
+                return accepted;
             }
 
-            return accepted;
+            // Use the shared helper for standard host key verification
+            var callback = HostKeyVerificationHelper.CreateCallback(hostId.Value, _fingerprintRepository, _logger);
+            return await callback(hostname, port, algorithm, fingerprint, keyBytes);
         };
     }
 
@@ -867,15 +826,14 @@ public partial class TunnelBuilderViewModel : ObservableObject
     /// Prevents silent failures by logging any exceptions that occur.
     /// </summary>
     /// <param name="task">The task to execute.</param>
-    private async void SafeFireAndForget(Task task)
+    private void SafeFireAndForget(Task task)
     {
-        try
+        task.ContinueWith(t =>
         {
-            await task;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Background task failed in TunnelBuilderViewModel");
-        }
+            if (t.IsFaulted)
+            {
+                _logger.LogError(t.Exception, "Background task failed in TunnelBuilderViewModel");
+            }
+        }, TaskScheduler.Default);
     }
 }

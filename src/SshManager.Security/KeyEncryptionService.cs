@@ -322,8 +322,47 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
         ArgumentException.ThrowIfNullOrEmpty(privateKeyContent);
 
         // PKCS#8 encrypted keys have "ENCRYPTED PRIVATE KEY" header
-        // OpenSSH format encrypted keys have "OPENSSH PRIVATE KEY" header with "bcrypt" cipher
-        return privateKeyContent.Contains("ENCRYPTED PRIVATE KEY", StringComparison.OrdinalIgnoreCase);
+        if (privateKeyContent.Contains("ENCRYPTED PRIVATE KEY", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Check for OpenSSH format encrypted keys
+        if (privateKeyContent.Contains("OPENSSH PRIVATE KEY", StringComparison.OrdinalIgnoreCase))
+        {
+            // Try to parse to determine if encrypted
+            // Unencrypted OpenSSH keys have "none" as cipher and kdf
+            // Encrypted ones typically use "aes256-ctr" or similar with "bcrypt" kdf
+            try
+            {
+                // Quick heuristic: check if the key can be loaded without a passphrase
+                // If it requires a passphrase, SSH.NET will throw
+                using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(privateKeyContent));
+                try
+                {
+                    using var _ = new PrivateKeyFile(ms);
+                    // If we got here, it's unencrypted
+                    return false;
+                }
+                catch (Renci.SshNet.Common.SshPassPhraseNullOrEmptyException)
+                {
+                    // SSH.NET detected the key is encrypted and requires a passphrase
+                    return true;
+                }
+                catch
+                {
+                    // Some other error - assume it might be encrypted
+                    return true;
+                }
+            }
+            catch
+            {
+                // If we can't determine, assume not encrypted (safer default)
+                return false;
+            }
+        }
+
+        return false;
     }
 
     #region Private Helper Methods
@@ -408,24 +447,7 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
     /// </summary>
     private static string ExportRsaPrivateKey(RSA rsa, string? passphrase)
     {
-        if (string.IsNullOrEmpty(passphrase))
-        {
-            // Export unencrypted
-            var privateKeyBytes = rsa.ExportPkcs8PrivateKey();
-            return FormatPem(privateKeyBytes, "PRIVATE KEY");
-        }
-        else
-        {
-            // Export encrypted with AES-256-CBC (standard for SSH keys)
-            var pbeParams = new PbeParameters(
-                PbeEncryptionAlgorithm.Aes256Cbc,
-                HashAlgorithmName.SHA256,
-                100000);
-            var privateKeyBytes = rsa.ExportEncryptedPkcs8PrivateKey(
-                Encoding.UTF8.GetBytes(passphrase),
-                pbeParams);
-            return FormatPem(privateKeyBytes, "ENCRYPTED PRIVATE KEY");
-        }
+        return CryptoExportHelper.ExportRsaPrivateKey(rsa, passphrase);
     }
 
     /// <summary>
@@ -433,24 +455,7 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
     /// </summary>
     private static string ExportEcdsaPrivateKey(ECDsa ecdsa, string? passphrase)
     {
-        if (string.IsNullOrEmpty(passphrase))
-        {
-            // Export unencrypted
-            var privateKeyBytes = ecdsa.ExportPkcs8PrivateKey();
-            return FormatPem(privateKeyBytes, "PRIVATE KEY");
-        }
-        else
-        {
-            // Export encrypted with AES-256-CBC
-            var pbeParams = new PbeParameters(
-                PbeEncryptionAlgorithm.Aes256Cbc,
-                HashAlgorithmName.SHA256,
-                100000);
-            var privateKeyBytes = ecdsa.ExportEncryptedPkcs8PrivateKey(
-                Encoding.UTF8.GetBytes(passphrase),
-                pbeParams);
-            return FormatPem(privateKeyBytes, "ENCRYPTED PRIVATE KEY");
-        }
+        return CryptoExportHelper.ExportEcdsaPrivateKey(ecdsa, passphrase);
     }
 
     /// <summary>
@@ -458,17 +463,7 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
     /// </summary>
     private static string FormatPem(byte[] data, string label)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine($"-----BEGIN {label}-----");
-
-        var base64 = Convert.ToBase64String(data);
-        for (int i = 0; i < base64.Length; i += 64)
-        {
-            sb.AppendLine(base64.Substring(i, Math.Min(64, base64.Length - i)));
-        }
-
-        sb.AppendLine($"-----END {label}-----");
-        return sb.ToString();
+        return CryptoExportHelper.FormatPem(data, label);
     }
 
     /// <summary>

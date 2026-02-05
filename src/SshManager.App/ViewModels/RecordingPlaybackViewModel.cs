@@ -16,7 +16,7 @@ namespace SshManager.App.ViewModels;
 /// <summary>
 /// ViewModel for playing back recorded terminal sessions.
 /// </summary>
-public partial class RecordingPlaybackViewModel : ObservableObject
+public partial class RecordingPlaybackViewModel : ObservableObject, IDisposable
 {
     private readonly ISessionRecordingService _recordingService;
     private readonly SessionRecording _recording;
@@ -159,7 +159,13 @@ public partial class RecordingPlaybackViewModel : ObservableObject
             {
                 await PauseAsync();
                 await PlayAsync();
-            });
+            }).ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Speed change error: {t.Exception}");
+                }
+            }, TaskContinuationOptions.OnlyOnFaulted);
         }
     }
 
@@ -174,6 +180,7 @@ public partial class RecordingPlaybackViewModel : ObservableObject
             return;
 
         IsPlaying = true;
+        _playbackCts?.Dispose();
         _playbackCts = new CancellationTokenSource();
         _timer?.Start();
 
@@ -197,7 +204,7 @@ public partial class RecordingPlaybackViewModel : ObservableObject
                     if (frame.Timestamp <= targetTime)
                     {
                         // Write frame to terminal on UI thread
-                        dispatcher.Invoke(() =>
+                        await dispatcher.InvokeAsync(() =>
                         {
                             if (!token.IsCancellationRequested && _terminalControl != null)
                             {
@@ -257,7 +264,13 @@ public partial class RecordingPlaybackViewModel : ObservableObject
             return;
 
         // Run seek operation asynchronously but don't block the property setter
-        _ = SeekToAsync(targetPosition);
+        _ = SeekToAsync(targetPosition).ContinueWith(t =>
+        {
+            if (t.IsFaulted)
+            {
+                System.Diagnostics.Debug.WriteLine($"Seek error: {t.Exception}");
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     private async Task SeekToAsync(TimeSpan targetPosition)
@@ -306,5 +319,11 @@ public partial class RecordingPlaybackViewModel : ObservableObject
         // Timer updates position in UI
         OnPropertyChanged(nameof(Position));
         OnPropertyChanged(nameof(PositionSeconds));
+    }
+
+    public void Dispose()
+    {
+        _playbackCts?.Dispose();
+        _timer?.Stop();
     }
 }

@@ -25,15 +25,22 @@ public partial class PpkImportWizardDialog
         };
     }
 
-    private void Window_Drop(object sender, DragEventArgs e)
+    private async void Window_Drop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        try
         {
-            var files = (string[])e.Data.GetData(DataFormats.FileDrop);
-            if (files != null && files.Length > 0)
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
             {
-                _viewModel.AddFiles(files);
+                var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+                if (files != null && files.Length > 0)
+                {
+                    await _viewModel.AddFiles(files);
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in Window_Drop: {ex}");
         }
     }
 

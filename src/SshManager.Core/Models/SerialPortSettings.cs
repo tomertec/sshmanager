@@ -16,12 +16,12 @@ public sealed class SerialPortSettings
     /// Baud rate for serial communication.
     /// Common values: 9600, 19200, 38400, 57600, 115200.
     /// </summary>
-    public int BaudRate { get; set; } = 9600;
+    public int BaudRate { get; set; } = Constants.SerialDefaults.DefaultBaudRate;
 
     /// <summary>
     /// Number of data bits per byte (typically 7 or 8).
     /// </summary>
-    public int DataBits { get; set; } = 8;
+    public int DataBits { get; set; } = Constants.SerialDefaults.DefaultDataBits;
 
     /// <summary>
     /// Number of stop bits used for each byte.
@@ -67,5 +67,5 @@ public sealed class SerialPortSettings
     /// Line ending characters to send when Enter is pressed.
     /// Common values: "\r\n" (Windows), "\n" (Unix), "\r" (Mac classic).
     /// </summary>
-    public string LineEnding { get; set; } = "\r\n";
+    public string LineEnding { get; set; } = Constants.SerialDefaults.DefaultLineEnding;
 }

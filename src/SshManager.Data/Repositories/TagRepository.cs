@@ -102,7 +102,11 @@ public sealed class TagRepository : ITagRepository
         }
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        db.Tags.Update(tag);
+        var existing = await db.Tags.FindAsync([tag.Id], ct);
+        if (existing == null)
+            return;
+
+        db.Entry(existing).CurrentValues.SetValues(tag);
         await db.SaveChangesAsync(ct);
     }
 

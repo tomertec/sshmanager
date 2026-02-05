@@ -13,7 +13,7 @@ namespace SshManager.App.ViewModels;
 public partial class HostProfileDialogViewModel : ObservableObject
 {
     private readonly IProxyJumpProfileRepository _proxyJumpRepository;
-    private readonly ILogger<HostProfileManagerViewModel> _logger;
+    private readonly ILogger<HostProfileDialogViewModel> _logger;
     private readonly HostProfile _originalProfile;
 
     [ObservableProperty]
@@ -56,7 +56,7 @@ public partial class HostProfileDialogViewModel : ObservableObject
 
     public HostProfileDialogViewModel(
         IProxyJumpProfileRepository proxyJumpRepository,
-        ILogger<HostProfileManagerViewModel> logger,
+        ILogger<HostProfileDialogViewModel> logger,
         HostProfile? profile = null)
     {
         _proxyJumpRepository = proxyJumpRepository;

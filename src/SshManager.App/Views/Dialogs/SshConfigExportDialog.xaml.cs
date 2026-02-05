@@ -18,7 +18,7 @@ public partial class SshConfigExportDialog : FluentWindow
         _viewModel.RequestClose += OnRequestClose;
     }
 
-    private void OnRequestClose(object? sender, EventArgs e)
+    private void OnRequestClose()
     {
         DialogResult = _viewModel.DialogResult;
         Close();

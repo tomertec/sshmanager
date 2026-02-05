@@ -1,5 +1,4 @@
 using System.Windows;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,9 +9,7 @@ using SshManager.App.ViewModels;
 using SshManager.App.Views.Dialogs;
 using SshManager.App.Views.Windows;
 using SshManager.Core.Models;
-using SshManager.Data;
 using SshManager.Data.Repositories;
-using SshManager.Security;
 using SshManager.Terminal;
 using SshManager.Terminal.Services;
 using Wpf.Ui.Appearance;
@@ -53,66 +50,43 @@ public partial class App : Application
         var logger = Log.ForContext<App>();
         logger.Information("Application starting up");
 
+        // Clean up stale temp files from previous editor sessions
+        TextEditorViewModel.CleanupStaleEditTempFiles();
+
+        // Show startup splash window immediately to avoid frozen appearance
+        var startupWindow = new StartupWindow();
+        startupWindow.Show();
+        startupWindow.UpdateStatus("Initializing...");
+
         try
         {
+            // Start the host - this will execute all hosted services in order:
+            // 1. DatabaseInitializationHostedService (database creation, migrations, seeding)
+            // 2. ThemeInitializationHostedService (application and terminal themes)
+            // 3. SystemTrayHostedService (system tray icon)
+            // 4. CredentialCacheHostedService (credential cache and session monitoring)
+            // 5. StartupTasksHostedService (connection history cleanup)
+            startupWindow.UpdateStatus("Initializing database...");
             await _host.StartAsync();
-            logger.Debug("Host started successfully");
+            logger.Debug("Host started successfully - all startup services completed");
 
-            // Ensure database is created
-            var dbFactory = _host.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
-            await using var db = await dbFactory.CreateDbContextAsync();
-            await db.Database.EnsureCreatedAsync();
-            logger.Debug("Database initialized at {DbPath}", DbPaths.GetDbPath());
-
-            // Apply schema migrations for new columns
-            await DbMigrator.MigrateAsync(db, logger);
-
-            // Initialize settings (creates defaults if not exist)
+            // Load settings for session recovery check
+            startupWindow.UpdateStatus("Loading settings...");
             var settingsRepo = _host.Services.GetRequiredService<ISettingsRepository>();
             var settings = await settingsRepo.GetAsync();
-            logger.Debug("Application settings loaded");
-
-            // Apply application theme from settings
-            ApplyApplicationTheme(settings.Theme);
-            logger.Debug("Application theme set to {Theme}", settings.Theme);
-
-            // Load custom terminal themes
-            var themeService = _host.Services.GetRequiredService<ITerminalThemeService>();
-            await themeService.LoadCustomThemesAsync();
-            logger.Debug("Custom terminal themes loaded");
-
-            // Seed sample host if database is empty
-            var hostRepo = _host.Services.GetRequiredService<IHostRepository>();
-            var hosts = await hostRepo.GetAllAsync();
-            if (hosts.Count == 0)
-            {
-                await hostRepo.AddAsync(new Core.Models.HostEntry
-                {
-                    DisplayName = "Sample Host",
-                    Hostname = "localhost",
-                    Username = Environment.UserName,
-                    Port = 22,
-                    AuthType = Core.Models.AuthType.SshAgent,
-                    Notes = "This is a sample host. Edit or delete it."
-                });
-                logger.Information("Created sample host entry for first-time user");
-            }
-
-            // Initialize system tray
-            var trayService = _host.Services.GetRequiredService<ISystemTrayService>();
-            trayService.Initialize();
-            logger.Debug("System tray service initialized");
-
-            // Initialize credential cache with settings
-            await InitializeCredentialCacheAsync(logger);
-
-            // Cleanup old connection history entries
-            await CleanupConnectionHistoryAsync(logger);
 
             // Show main window
+            startupWindow.UpdateStatus("Preparing main window...");
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
             mainWindow.Show();
+
+            // Set MainWindow explicitly so dialogs can use Application.Current.MainWindow as their owner.
+            // WPF sets MainWindow to the first window shown (StartupWindow), so we must update it.
+            MainWindow = mainWindow;
             logger.Information("Main window displayed");
+
+            // Close the startup window now that main window is visible
+            startupWindow.Close();
 
 #if DEBUG
             // Start test automation server (DEBUG only)
@@ -120,6 +94,7 @@ public partial class App : Application
 #endif
 
             // Check for crash recovery sessions (after main window is shown)
+            // This stays here because it requires the MainWindow reference
             if (settings.EnableSessionRecovery)
             {
                 await CheckSessionRecoveryAsync(logger, mainWindow);
@@ -128,6 +103,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             logger.Fatal(ex, "Fatal error during application startup");
+            startupWindow.Close();
             MessageBox.Show(
                 $"Failed to start the application:\n\n{ex.Message}\n\nCheck logs at %LocalAppData%\\SshManager\\logs",
                 "Startup Error",
@@ -155,34 +131,20 @@ public partial class App : Application
             // Save active sessions for crash recovery (marked as graceful)
             await SaveSessionsForRecoveryAsync(logger, gracefulShutdown: true);
 
-            // Clear credential cache on exit if configured
-            await ClearCredentialCacheOnExitAsync(logger);
-
             // Clean up remote file editor temp files
             var remoteFileEditor = _host.Services.GetRequiredService<IRemoteFileEditorService>();
             await remoteFileEditor.CleanupAllAsync();
             logger.Debug("Remote file editor cleaned up");
-
-            // Stop session state monitoring
-            var sessionStateService = _host.Services.GetRequiredService<ISessionStateService>();
-            sessionStateService.Dispose();
-            logger.Debug("Session state service disposed");
-
-            // Dispose system tray
-            var trayService = _host.Services.GetRequiredService<ISystemTrayService>();
-            trayService.Dispose();
-            logger.Debug("System tray disposed");
 
             // Close all terminal sessions
             var sessionManager = _host.Services.GetRequiredService<ITerminalSessionManager>();
             await sessionManager.CloseAllSessionsAsync();
             logger.Debug("All terminal sessions closed");
 
-            // Dispose credential cache (securely clears all cached credentials)
-            var credentialCache = _host.Services.GetRequiredService<ICredentialCache>();
-            credentialCache.Dispose();
-            logger.Debug("Credential cache disposed");
-
+            // Stop the host - this will execute StopAsync on all hosted services in reverse order:
+            // - CredentialCacheHostedService (clears cache if configured, disposes session state and cache)
+            // - SystemTrayHostedService (disposes system tray)
+            // - Other services...
             await _host.StopAsync();
             _host.Dispose();
             logger.Information("Host stopped and disposed");
@@ -247,83 +209,6 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Initializes the credential cache with settings and sets up session state monitoring.
-    /// </summary>
-    private async Task InitializeCredentialCacheAsync(Serilog.ILogger logger)
-    {
-        var settingsRepo = _host.Services.GetRequiredService<ISettingsRepository>();
-        var settings = await settingsRepo.GetAsync();
-
-        var credentialCache = _host.Services.GetRequiredService<ICredentialCache>();
-
-        // Set timeout from settings
-        if (settings.CredentialCacheTimeoutMinutes > 0)
-        {
-            credentialCache.SetTimeout(TimeSpan.FromMinutes(settings.CredentialCacheTimeoutMinutes));
-            logger.Debug("Credential cache timeout set to {Timeout} minutes", settings.CredentialCacheTimeoutMinutes);
-        }
-
-        // Set up session state monitoring for clearing cache on lock
-        if (settings.ClearCacheOnLock)
-        {
-            var sessionStateService = _host.Services.GetRequiredService<ISessionStateService>();
-            sessionStateService.SessionLocked += (s, e) =>
-            {
-                logger.Information("Windows session locked - clearing credential cache");
-                credentialCache.ClearAll();
-            };
-            sessionStateService.StartMonitoring();
-            logger.Debug("Session state monitoring started for credential cache clearing");
-        }
-
-        logger.Information("Credential caching initialized (enabled: {Enabled})", settings.EnableCredentialCaching);
-    }
-
-    /// <summary>
-    /// Clears the credential cache on application exit if configured.
-    /// </summary>
-    private async Task ClearCredentialCacheOnExitAsync(Serilog.ILogger logger)
-    {
-        try
-        {
-            var settingsRepo = _host.Services.GetRequiredService<ISettingsRepository>();
-            var settings = await settingsRepo.GetAsync();
-
-            if (settings.ClearCacheOnExit)
-            {
-                var credentialCache = _host.Services.GetRequiredService<ICredentialCache>();
-                credentialCache.ClearAll();
-                logger.Debug("Credential cache cleared on exit");
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.Warning(ex, "Failed to clear credential cache on exit");
-        }
-    }
-
-    /// <summary>
-    /// Cleans up old connection history entries based on the configured retention policy.
-    /// </summary>
-    private async Task CleanupConnectionHistoryAsync(Serilog.ILogger logger)
-    {
-        try
-        {
-            var cleanupService = _host.Services.GetRequiredService<Data.Services.IConnectionHistoryCleanupService>();
-            var deletedCount = await cleanupService.CleanupOldEntriesAsync();
-
-            if (deletedCount > 0)
-            {
-                logger.Information("Cleaned up {Count} old connection history entries", deletedCount);
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.Warning(ex, "Failed to cleanup connection history - continuing with startup");
-        }
-    }
-
-    /// <summary>
     /// Applies the application theme using WPF-UI's ApplicationThemeManager.
     /// </summary>
     /// <param name="theme">Theme name: "Dark", "Light", or "System".</param>
@@ -378,7 +263,7 @@ public partial class App : Application
                         var host = await hostRepo.GetByIdAsync(savedSession.HostEntryId);
                         if (host != null)
                         {
-                            await mainWindowViewModel.ConnectCommand.ExecuteAsync(host);
+                            await mainWindowViewModel.Session.ConnectCommand.ExecuteAsync(host);
                             logger.Debug("Restored session for host {HostName}", host.DisplayName);
                         }
                         else

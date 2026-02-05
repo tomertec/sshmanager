@@ -1,12 +1,9 @@
-using System.Collections.ObjectModel;
-using System.ComponentModel.DataAnnotations;
-using System.IO;
-using System.IO.Ports;
-using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SshManager.App.Services.Validation;
+using SshManager.App.ViewModels.HostEdit;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
@@ -14,946 +11,215 @@ using SshManager.Terminal.Services;
 
 namespace SshManager.App.ViewModels;
 
+/// <summary>
+/// ViewModel for the host edit dialog that orchestrates child ViewModels
+/// for SSH, Serial, Metadata, and Environment Variable settings.
+/// </summary>
 public partial class HostDialogViewModel : ObservableObject
 {
-    private readonly ISecretProtector _secretProtector;
-    private readonly ISerialConnectionService _serialConnectionService;
-    private readonly IAgentDiagnosticsService? _agentDiagnosticsService;
-    private readonly IKerberosAuthService? _kerberosAuthService;
-    private readonly IHostProfileRepository? _hostProfileRepo;
-    private readonly IProxyJumpProfileRepository? _proxyJumpRepo;
-    private readonly IPortForwardingProfileRepository? _portForwardingRepo;
-    private readonly ITagRepository? _tagRepo;
-    private readonly IHostEnvironmentVariableRepository? _envVarRepo;
+    private readonly IHostValidationService _validationService;
     private readonly ILogger<HostDialogViewModel> _logger;
     private readonly HostEntry _originalHost;
 
-    // Validation regex patterns
-    private static readonly Regex HostnameRegex = new(@"^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$", RegexOptions.Compiled);
-    private static readonly Regex IpAddressRegex = new(@"^(\d{1,3}\.){3}\d{1,3}$", RegexOptions.Compiled);
-    private static readonly Regex UsernameRegex = new(@"^[a-zA-Z_][a-zA-Z0-9_\-\.]*$", RegexOptions.Compiled);
-
-    [ObservableProperty]
-    private string _displayName = "";
-
-    [ObservableProperty]
-    private string _hostname = "";
-
-    [ObservableProperty]
-    private int _port = 22;
-
-    [ObservableProperty]
-    private string _username = "";
-
-    [ObservableProperty]
-    private AuthType _authType = AuthType.SshAgent;
-
-    [ObservableProperty]
-    private ShellType _shellType = ShellType.Auto;
-
-    [ObservableProperty]
-    private string _privateKeyPath = "";
-
-    [ObservableProperty]
-    private string _password = "";
-
-    [ObservableProperty]
-    private string? _notes;
-
-    [ObservableProperty]
-    private string _secureNotes = string.Empty;
-
-    [ObservableProperty]
-    private bool _showSecureNotes;
+    #region Child ViewModels
 
     /// <summary>
-    /// Gets or sets the displayed secure notes (masked when hidden, actual content when shown).
+    /// ViewModel for SSH connection settings.
     /// </summary>
-    public string DisplayedSecureNotes
-    {
-        get => ShowSecureNotes ? SecureNotes : (string.IsNullOrEmpty(SecureNotes) ? string.Empty : new string('•', Math.Min(SecureNotes.Length, 20)));
-        set
-        {
-            if (ShowSecureNotes)
-            {
-                SecureNotes = value;
-                OnPropertyChanged();
-            }
-        }
-    }
+    public SshConnectionSettingsViewModel SshSettings { get; }
 
-    partial void OnShowSecureNotesChanged(bool value)
-    {
-        OnPropertyChanged(nameof(DisplayedSecureNotes));
-    }
+    /// <summary>
+    /// ViewModel for serial connection settings.
+    /// </summary>
+    public SerialConnectionSettingsViewModel SerialSettings { get; }
 
-    partial void OnSecureNotesChanged(string value)
-    {
-        OnPropertyChanged(nameof(DisplayedSecureNotes));
-    }
+    /// <summary>
+    /// ViewModel for host metadata (display name, notes, group, tags).
+    /// </summary>
+    public HostMetadataViewModel Metadata { get; }
 
-    // Serial Port Connection Properties
+    /// <summary>
+    /// ViewModel for environment variables.
+    /// </summary>
+    public EnvironmentVariablesViewModel EnvironmentVariables { get; }
+
+    #endregion
+
+    #region Connection Type Properties
+
+    /// <summary>
+    /// Gets or sets whether this is an SSH connection.
+    /// </summary>
     [ObservableProperty]
     private bool _isSshConnection = true;
 
+    /// <summary>
+    /// Gets or sets whether this is a serial connection.
+    /// </summary>
     [ObservableProperty]
     private bool _isSerialConnection = false;
 
-    [ObservableProperty]
-    private string[] _availablePorts = [];
+    #endregion
 
-    [ObservableProperty]
-    private string? _serialPortName;
+    #region Dialog State Properties
 
-    [ObservableProperty]
-    private int _serialBaudRate = 9600;
-
-    [ObservableProperty]
-    private int _serialDataBits = 8;
-
-    [ObservableProperty]
-    private StopBits _serialStopBits = StopBits.One;
-
-    [ObservableProperty]
-    private Parity _serialParity = Parity.None;
-
-    [ObservableProperty]
-    private Handshake _serialHandshake = Handshake.None;
-
-    [ObservableProperty]
-    private bool _serialDtrEnable = true;
-
-    [ObservableProperty]
-    private bool _serialRtsEnable = true;
-
-    [ObservableProperty]
-    private bool _serialLocalEcho = false;
-
-    [ObservableProperty]
-    private string _serialLineEnding = "\r\n";
-
-    // Keep-Alive Properties (SSH only)
-    [ObservableProperty]
-    private bool _useGlobalKeepAliveSetting = true;
-
-    [ObservableProperty]
-    private int _keepAliveIntervalSeconds = 60;
-
-    // X11 Forwarding Properties (SSH only)
-    [ObservableProperty]
-    private bool? _x11ForwardingEnabled;
-
-    [ObservableProperty]
-    private bool _x11TrustedForwarding;
-
-    [ObservableProperty]
-    private int? _x11DisplayNumber;
-
-    // SSH Agent Status Properties
-    [ObservableProperty]
-    private bool _isAgentAvailable;
-
-    [ObservableProperty]
-    private string _agentStatusText = "Checking...";
-
-    [ObservableProperty]
-    private bool _isCheckingAgent;
-
-    // Kerberos/GSSAPI Properties
-    [ObservableProperty]
-    private string? _kerberosServicePrincipal;
-
-    [ObservableProperty]
-    private bool _kerberosDelegateCredentials;
-
-    [ObservableProperty]
-    private bool _isKerberosAvailable;
-
-    [ObservableProperty]
-    private string _kerberosStatusText = "Checking...";
-
-    [ObservableProperty]
-    private bool _isCheckingKerberos;
-
-    // Static arrays for ComboBox options
-    public static int[] BaudRateOptions { get; } = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400];
-    public static int[] DataBitsOptions { get; } = [5, 6, 7, 8];
-    public static StopBits[] StopBitsOptions { get; } = [StopBits.One, StopBits.OnePointFive, StopBits.Two];
-    public static Parity[] ParityOptions { get; } = [Parity.None, Parity.Even, Parity.Odd, Parity.Mark, Parity.Space];
-    public static Handshake[] HandshakeOptions { get; } = [Handshake.None, Handshake.XOnXOff, Handshake.RequestToSend, Handshake.RequestToSendXOnXOff];
-    public static string[] LineEndingOptions { get; } = ["\r\n", "\n", "\r"];
-
-    [ObservableProperty]
-    private HostGroup? _selectedGroup;
-
-    [ObservableProperty]
-    private ObservableCollection<HostGroup> _availableGroups = [];
-
-    [ObservableProperty]
-    private HostProfile? _selectedHostProfile;
-
-    [ObservableProperty]
-    private ObservableCollection<HostProfile> _availableHostProfiles = [];
-
+    /// <summary>
+    /// Gets or sets whether this is a new host being created.
+    /// </summary>
     [ObservableProperty]
     private bool _isNewHost;
 
+    /// <summary>
+    /// Gets or sets the current validation error message.
+    /// </summary>
     [ObservableProperty]
     private string? _validationError;
 
-    // ProxyJump and Port Forwarding
-    [ObservableProperty]
-    private ProxyJumpProfile? _selectedProxyJumpProfile;
+    #endregion
 
-    [ObservableProperty]
-    private ObservableCollection<ProxyJumpProfile> _availableProxyJumpProfiles = [];
-
-    [ObservableProperty]
-    private int _portForwardingProfileCount;
-
-    [ObservableProperty]
-    private ObservableCollection<Tag> _allTags = [];
-
-    [ObservableProperty]
-    private ObservableCollection<Tag> _selectedTags = [];
-
-    [ObservableProperty]
-    private string _newTagName = "";
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasNoEnvironmentVariables))]
-    private ObservableCollection<HostEnvironmentVariableViewModel> _environmentVariables = [];
+    #region Computed Properties
 
     /// <summary>
-    /// Returns true if there are no environment variables configured.
+    /// Gets the dialog title based on whether this is a new or existing host.
     /// </summary>
-    public bool HasNoEnvironmentVariables => EnvironmentVariables.Count == 0;
+    public string Title => IsNewHost ? "Add Host" : "Edit Host";
+
+    #endregion
+
+    #region Dialog Result
+
+    /// <summary>
+    /// Gets the dialog result (true = saved, false = cancelled, null = not closed).
+    /// </summary>
+    public bool? DialogResult { get; private set; }
+
+    /// <summary>
+    /// Event raised when the dialog should be closed.
+    /// </summary>
+    public event Action? RequestClose;
+
+    #endregion
+
+    #region Events for Parent Window
 
     /// <summary>
     /// Event raised when the user wants to manage ProxyJump profiles.
+    /// Forwarded from SshConnectionSettingsViewModel.
     /// </summary>
     public event EventHandler? ManageProxyJumpProfilesRequested;
 
     /// <summary>
     /// Event raised when the user wants to manage port forwarding for this host.
+    /// Forwarded from SshConnectionSettingsViewModel.
     /// </summary>
     public event EventHandler? ManagePortForwardingRequested;
 
-    public string Title => IsNewHost ? "Add Host" : "Edit Host";
+    #endregion
 
-    public IEnumerable<AuthType> AuthTypes => Enum.GetValues<AuthType>();
-
-    public IEnumerable<ShellType> ShellTypes => Enum.GetValues<ShellType>();
-
-    public bool? DialogResult { get; private set; }
-
-    public event Action? RequestClose;
-
+    /// <summary>
+    /// Creates a new instance of the HostDialogViewModel.
+    /// </summary>
+    /// <param name="validationService">Service for validating host settings.</param>
+    /// <param name="secretProtector">Service for password encryption/decryption.</param>
+    /// <param name="serialConnectionService">Service for serial port operations.</param>
+    /// <param name="agentDiagnosticsService">Optional SSH agent diagnostics service.</param>
+    /// <param name="kerberosAuthService">Optional Kerberos authentication service.</param>
+    /// <param name="hostProfileRepo">Optional host profile repository.</param>
+    /// <param name="proxyJumpRepo">Optional proxy jump profile repository.</param>
+    /// <param name="portForwardingRepo">Optional port forwarding profile repository.</param>
+    /// <param name="tagRepo">Optional tag repository.</param>
+    /// <param name="envVarRepo">Optional environment variable repository.</param>
+    /// <param name="host">Optional host entry to edit (null for new host).</param>
+    /// <param name="groups">Optional available groups for selection.</param>
+    /// <param name="logger">Optional logger.</param>
     public HostDialogViewModel(
+        IHostValidationService validationService,
         ISecretProtector secretProtector,
         ISerialConnectionService serialConnectionService,
-        HostEntry? host = null,
-        IEnumerable<HostGroup>? groups = null,
+        IAgentDiagnosticsService? agentDiagnosticsService = null,
+        IKerberosAuthService? kerberosAuthService = null,
         IHostProfileRepository? hostProfileRepo = null,
         IProxyJumpProfileRepository? proxyJumpRepo = null,
         IPortForwardingProfileRepository? portForwardingRepo = null,
         ITagRepository? tagRepo = null,
         IHostEnvironmentVariableRepository? envVarRepo = null,
-        IAgentDiagnosticsService? agentDiagnosticsService = null,
-        IKerberosAuthService? kerberosAuthService = null,
+        HostEntry? host = null,
+        IEnumerable<HostGroup>? groups = null,
         ILogger<HostDialogViewModel>? logger = null)
     {
-        _secretProtector = secretProtector;
-        _serialConnectionService = serialConnectionService;
-        _agentDiagnosticsService = agentDiagnosticsService;
-        _kerberosAuthService = kerberosAuthService;
-        _hostProfileRepo = hostProfileRepo;
-        _proxyJumpRepo = proxyJumpRepo;
-        _portForwardingRepo = portForwardingRepo;
-        _tagRepo = tagRepo;
-        _envVarRepo = envVarRepo;
+        _validationService = validationService;
         _logger = logger ?? NullLogger<HostDialogViewModel>.Instance;
         _originalHost = host ?? new HostEntry();
         IsNewHost = host == null;
 
-        // Set available groups
-        if (groups != null)
-        {
-            AvailableGroups = new ObservableCollection<HostGroup>(groups);
-        }
-
-        // Copy values from host to view model
-        DisplayName = _originalHost.DisplayName;
-        Hostname = _originalHost.Hostname;
-        Port = _originalHost.Port;
-        Username = _originalHost.Username;
-        AuthType = _originalHost.AuthType;
-        ShellType = _originalHost.ShellType;
-        PrivateKeyPath = _originalHost.PrivateKeyPath ?? "";
-        Notes = _originalHost.Notes;
-
-        // Load Kerberos settings
-        KerberosServicePrincipal = _originalHost.KerberosServicePrincipal;
-        KerberosDelegateCredentials = _originalHost.KerberosDelegateCredentials;
-
-        // Find the matching group if exists
-        if (_originalHost.GroupId.HasValue && groups != null)
-        {
-            SelectedGroup = AvailableGroups.FirstOrDefault(g => g.Id == _originalHost.GroupId.Value);
-        }
-
-        // Decrypt password if available
-        if (!string.IsNullOrEmpty(_originalHost.PasswordProtected))
-        {
-            Password = _secretProtector.TryUnprotect(_originalHost.PasswordProtected) ?? "";
-        }
-
-        // Decrypt secure notes if available
-        if (!string.IsNullOrEmpty(_originalHost.SecureNotesProtected))
-        {
-            SecureNotes = _secretProtector.TryUnprotect(_originalHost.SecureNotesProtected) ?? "";
-        }
-
-        // Load port forwarding count if host exists
-        PortForwardingProfileCount = _originalHost.PortForwardingProfiles?.Count ?? 0;
-
-        // Load serial port settings from host
+        // Initialize connection type from host
         IsSshConnection = _originalHost.ConnectionType == ConnectionType.Ssh;
         IsSerialConnection = _originalHost.ConnectionType == ConnectionType.Serial;
-        SerialPortName = _originalHost.SerialPortName;
-        SerialBaudRate = _originalHost.SerialBaudRate;
-        SerialDataBits = _originalHost.SerialDataBits;
-        SerialStopBits = _originalHost.SerialStopBits;
-        SerialParity = _originalHost.SerialParity;
-        SerialHandshake = _originalHost.SerialHandshake;
-        SerialDtrEnable = _originalHost.SerialDtrEnable;
-        SerialRtsEnable = _originalHost.SerialRtsEnable;
-        SerialLocalEcho = _originalHost.SerialLocalEcho;
-        SerialLineEnding = _originalHost.SerialLineEnding;
 
-        // Load keep-alive settings
-        if (_originalHost.KeepAliveIntervalSeconds.HasValue)
-        {
-            UseGlobalKeepAliveSetting = false;
-            KeepAliveIntervalSeconds = _originalHost.KeepAliveIntervalSeconds.Value;
-        }
-        else
-        {
-            UseGlobalKeepAliveSetting = true;
-            KeepAliveIntervalSeconds = 60; // Default value
-        }
+        // Create child ViewModels
+        SshSettings = new SshConnectionSettingsViewModel(
+            secretProtector,
+            agentDiagnosticsService,
+            kerberosAuthService,
+            hostProfileRepo,
+            proxyJumpRepo,
+            portForwardingRepo,
+            host,
+            logger: null);
 
-        // Load X11 forwarding settings
-        X11ForwardingEnabled = _originalHost.X11ForwardingEnabled;
-        X11TrustedForwarding = _originalHost.X11TrustedForwarding;
-        X11DisplayNumber = _originalHost.X11DisplayNumber;
+        SerialSettings = new SerialConnectionSettingsViewModel(
+            serialConnectionService,
+            host);
 
-        // Initialize available ports list
-        RefreshPorts();
+        Metadata = new HostMetadataViewModel(
+            secretProtector,
+            tagRepo,
+            host,
+            groups,
+            logger: null);
+
+        EnvironmentVariables = new EnvironmentVariablesViewModel(
+            envVarRepo,
+            host,
+            logger: null);
+
+        // Wire up events from child VMs
+        SshSettings.ManageProxyJumpProfilesRequested += (s, e) => ManageProxyJumpProfilesRequested?.Invoke(this, e);
+        SshSettings.ManagePortForwardingRequested += (s, e) => ManagePortForwardingRequested?.Invoke(this, e);
 
         _logger.LogDebug("HostDialogViewModel initialized for {Mode} host", IsNewHost ? "new" : "editing");
     }
 
-    /// <summary>
-    /// Loads available host profiles asynchronously.
-    /// Call this after constructing the ViewModel.
-    /// </summary>
-    public async Task LoadHostProfilesAsync(CancellationToken ct = default)
-    {
-        if (_hostProfileRepo == null) return;
-
-        try
-        {
-            var profiles = await _hostProfileRepo.GetAllAsync(ct);
-            AvailableHostProfiles = new ObservableCollection<HostProfile>(profiles);
-
-            // Set selected profile from host
-            if (_originalHost.HostProfileId.HasValue)
-            {
-                SelectedHostProfile = AvailableHostProfiles
-                    .FirstOrDefault(p => p.Id == _originalHost.HostProfileId.Value);
-            }
-
-            _logger.LogDebug("Loaded {ProfileCount} available host profiles", profiles.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load host profiles");
-        }
-    }
+    #region Async Load Methods
 
     /// <summary>
-    /// Loads available ProxyJump profiles asynchronously.
-    /// Call this after constructing the ViewModel.
+    /// Loads all async data for the dialog.
+    /// Call this after constructing the ViewModel and showing the dialog.
     /// </summary>
-    public async Task LoadProxyJumpProfilesAsync(CancellationToken ct = default)
+    /// <param name="ct">Cancellation token.</param>
+    public async Task LoadDataAsync(CancellationToken ct = default)
     {
-        if (_proxyJumpRepo == null) return;
-
-        try
+        // Load all child VM data in parallel
+        var tasks = new List<Task>
         {
-            var profiles = await _proxyJumpRepo.GetAllAsync(ct);
-            AvailableProxyJumpProfiles = new ObservableCollection<ProxyJumpProfile>(
-                profiles.Where(p => p.IsEnabled));
-
-            // Set selected profile from host
-            if (_originalHost.ProxyJumpProfileId.HasValue)
-            {
-                SelectedProxyJumpProfile = AvailableProxyJumpProfiles
-                    .FirstOrDefault(p => p.Id == _originalHost.ProxyJumpProfileId.Value);
-            }
-
-            _logger.LogDebug("Loaded {ProfileCount} available ProxyJump profiles", profiles.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load ProxyJump profiles");
-        }
-    }
-
-    /// <summary>
-    /// Loads the port forwarding profile count for the host.
-    /// </summary>
-    public async Task LoadPortForwardingCountAsync(CancellationToken ct = default)
-    {
-        if (_portForwardingRepo == null || IsNewHost) return;
-
-        try
-        {
-            var profiles = await _portForwardingRepo.GetByHostIdAsync(_originalHost.Id, ct);
-            PortForwardingProfileCount = profiles.Count;
-            _logger.LogDebug("Found {ProfileCount} port forwarding profiles for host", profiles.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load port forwarding profile count");
-        }
-    }
-
-    /// <summary>
-    /// Loads available tags asynchronously.
-    /// Call this after constructing the ViewModel.
-    /// </summary>
-    public async Task LoadTagsAsync(CancellationToken ct = default)
-    {
-        if (_tagRepo == null) return;
-
-        try
-        {
-            var tags = await _tagRepo.GetAllAsync(ct);
-            AllTags = new ObservableCollection<Tag>(tags);
-
-            // Set selected tags from host
-            if (_originalHost.Tags != null && _originalHost.Tags.Any())
-            {
-                SelectedTags = new ObservableCollection<Tag>(_originalHost.Tags);
-            }
-
-            _logger.LogDebug("Loaded {TagCount} available tags, {SelectedCount} selected", tags.Count, SelectedTags.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load tags");
-        }
-    }
-
-    /// <summary>
-    /// Initializes SSH agent status check if AuthType is SshAgent.
-    /// Call this after constructing the ViewModel.
-    /// </summary>
-    public async Task InitializeAgentStatusAsync(CancellationToken ct = default)
-    {
-        if (AuthType == AuthType.SshAgent && IsSshConnection)
-        {
-            await RefreshAgentStatusAsync();
-        }
-    }
-
-    /// <summary>
-    /// Loads environment variables for the host asynchronously.
-    /// Call this after constructing the ViewModel.
-    /// </summary>
-    public async Task LoadEnvironmentVariablesAsync(CancellationToken ct = default)
-    {
-        if (_envVarRepo == null || IsNewHost) return;
-
-        try
-        {
-            var envVars = await _envVarRepo.GetByHostIdAsync(_originalHost.Id, ct);
-            EnvironmentVariables = new ObservableCollection<HostEnvironmentVariableViewModel>(
-                envVars.Select(e => new HostEnvironmentVariableViewModel
-                {
-                    Name = e.Name,
-                    Value = e.Value,
-                    IsEnabled = e.IsEnabled
-                }));
-            OnPropertyChanged(nameof(HasNoEnvironmentVariables));
-
-            _logger.LogDebug("Loaded {EnvVarCount} environment variables for host", envVars.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load environment variables");
-        }
-    }
-
-    [RelayCommand]
-    private void Save()
-    {
-        ValidationError = null;
-
-        // Validate and get any errors
-        var errors = ValidateHost();
-        if (errors.Count > 0)
-        {
-            ValidationError = string.Join("\n", errors);
-            _logger.LogWarning("Host validation failed: {Errors}", string.Join("; ", errors));
-            return;
-        }
-
-        // Use hostname/port name as display name if not provided
-        if (string.IsNullOrWhiteSpace(DisplayName))
-        {
-            DisplayName = IsSerialConnection ? SerialPortName ?? "Serial" : Hostname;
-        }
-
-        if (IsSerialConnection)
-        {
-            _logger.LogInformation("Host validation passed, saving serial connection {DisplayName} ({SerialPortName})", DisplayName, SerialPortName);
-        }
-        else
-        {
-            _logger.LogInformation("Host validation passed, saving {DisplayName} ({Hostname}:{Port})", DisplayName, Hostname, Port);
-        }
-        DialogResult = true;
-        RequestClose?.Invoke();
-    }
-
-    private List<string> ValidateHost()
-    {
-        var errors = new List<string>();
-
-        // Validate based on connection type
-        if (IsSerialConnection)
-        {
-            // Serial port validation
-            if (string.IsNullOrWhiteSpace(SerialPortName))
-            {
-                errors.Add("COM Port is required");
-            }
-
-            // Validate baud rate
-            if (SerialBaudRate <= 0)
-            {
-                errors.Add("Baud rate must be a positive number");
-            }
-
-            // Validate data bits
-            if (SerialDataBits < 5 || SerialDataBits > 8)
-            {
-                errors.Add("Data bits must be between 5 and 8");
-            }
-        }
-        else
-        {
-            // SSH connection validation
-            // Hostname validation
-            var hostname = Hostname?.Trim() ?? "";
-            if (string.IsNullOrWhiteSpace(hostname))
-            {
-                errors.Add("Hostname is required");
-            }
-            else if (!IsValidHostname(hostname) && !IsValidIpAddress(hostname))
-            {
-                errors.Add("Invalid hostname or IP address format");
-            }
-
-            // Port validation
-            if (Port < 1 || Port > 65535)
-            {
-                errors.Add("Port must be between 1 and 65535");
-            }
-
-            // Username validation
-            var username = Username?.Trim() ?? "";
-            if (string.IsNullOrWhiteSpace(username))
-            {
-                errors.Add("Username is required");
-            }
-            else if (username.Length > 32)
-            {
-                errors.Add("Username must be 32 characters or less");
-            }
-            else if (!UsernameRegex.IsMatch(username))
-            {
-                errors.Add("Username contains invalid characters");
-            }
-
-            // Auth-type specific validation
-            switch (AuthType)
-            {
-                case AuthType.Password:
-                    if (string.IsNullOrEmpty(Password))
-                    {
-                        errors.Add("Password is required for password authentication");
-                    }
-                    break;
-
-                case AuthType.PrivateKeyFile:
-                    var keyPath = PrivateKeyPath?.Trim() ?? "";
-                    if (string.IsNullOrWhiteSpace(keyPath))
-                    {
-                        errors.Add("Private key file path is required");
-                    }
-                    else if (!File.Exists(keyPath))
-                    {
-                        errors.Add($"Private key file not found: {keyPath}");
-                    }
-                    break;
-            }
-        }
-
-        return errors;
-    }
-
-    private static bool IsValidHostname(string hostname)
-    {
-        if (hostname.Length > 253) return false;
-        return HostnameRegex.IsMatch(hostname);
-    }
-
-    private static bool IsValidIpAddress(string ip)
-    {
-        if (!IpAddressRegex.IsMatch(ip)) return false;
-
-        var parts = ip.Split('.');
-        return parts.All(p => int.TryParse(p, out var num) && num >= 0 && num <= 255);
-    }
-
-    [RelayCommand]
-    private void Cancel()
-    {
-        DialogResult = false;
-        RequestClose?.Invoke();
-    }
-
-    [RelayCommand]
-    private void BrowsePrivateKey()
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = "Select Private Key File",
-            Filter = "All Files (*.*)|*.*|Private Key Files (*.pem)|*.pem|OpenSSH Keys|id_*",
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\.ssh"
+            SshSettings.LoadAsync(ct),
+            Metadata.LoadAsync(ct)
         };
 
-        if (dialog.ShowDialog() == true)
+        // Only load environment variables for existing hosts
+        if (!IsNewHost)
         {
-            PrivateKeyPath = dialog.FileName;
+            tasks.Add(EnvironmentVariables.LoadAsync(ct));
         }
+
+        await Task.WhenAll(tasks);
+
+        _logger.LogDebug("Loaded all async data for host dialog");
     }
 
-    public HostEntry GetHost()
-    {
-        _originalHost.DisplayName = DisplayName.Trim();
-        _originalHost.Hostname = Hostname.Trim();
-        _originalHost.Port = Port;
-        _originalHost.Username = Username.Trim();
-        _originalHost.AuthType = AuthType;
-        _originalHost.ShellType = ShellType;
-        _originalHost.PrivateKeyPath = string.IsNullOrWhiteSpace(PrivateKeyPath) ? null : PrivateKeyPath.Trim();
-        _originalHost.Notes = string.IsNullOrWhiteSpace(Notes) ? null : Notes.Trim();
-        _originalHost.GroupId = SelectedGroup?.Id;
-        _originalHost.Group = SelectedGroup;
-        _originalHost.HostProfileId = SelectedHostProfile?.Id;
-        _originalHost.HostProfile = SelectedHostProfile;
-        _originalHost.ProxyJumpProfileId = SelectedProxyJumpProfile?.Id;
-        _originalHost.ProxyJumpProfile = SelectedProxyJumpProfile;
-        _originalHost.UpdatedAt = DateTimeOffset.UtcNow;
+    #endregion
 
-        // Update tags
-        _originalHost.Tags = SelectedTags.ToList();
-
-        // Encrypt password if changed and auth type is password
-        if (AuthType == AuthType.Password && !string.IsNullOrEmpty(Password))
-        {
-            _originalHost.PasswordProtected = _secretProtector.Protect(Password);
-        }
-        else if (AuthType != AuthType.Password)
-        {
-            _originalHost.PasswordProtected = null; // Clear password if auth type changed
-        }
-
-        // Save Kerberos settings
-        if (AuthType == AuthType.Kerberos)
-        {
-            _originalHost.KerberosServicePrincipal = string.IsNullOrWhiteSpace(KerberosServicePrincipal)
-                ? null
-                : KerberosServicePrincipal.Trim();
-            _originalHost.KerberosDelegateCredentials = KerberosDelegateCredentials;
-        }
-        else
-        {
-            _originalHost.KerberosServicePrincipal = null;
-            _originalHost.KerberosDelegateCredentials = false;
-        }
-
-        // Encrypt secure notes if provided
-        if (!string.IsNullOrEmpty(SecureNotes))
-        {
-            _originalHost.SecureNotesProtected = _secretProtector.Protect(SecureNotes);
-        }
-        else
-        {
-            _originalHost.SecureNotesProtected = null; // Clear if empty
-        }
-
-        // Save serial port settings
-        _originalHost.ConnectionType = IsSerialConnection ? ConnectionType.Serial : ConnectionType.Ssh;
-        _originalHost.SerialPortName = SerialPortName;
-        _originalHost.SerialBaudRate = SerialBaudRate;
-        _originalHost.SerialDataBits = SerialDataBits;
-        _originalHost.SerialStopBits = SerialStopBits;
-        _originalHost.SerialParity = SerialParity;
-        _originalHost.SerialHandshake = SerialHandshake;
-        _originalHost.SerialDtrEnable = SerialDtrEnable;
-        _originalHost.SerialRtsEnable = SerialRtsEnable;
-        _originalHost.SerialLocalEcho = SerialLocalEcho;
-        _originalHost.SerialLineEnding = SerialLineEnding;
-
-        // Save keep-alive settings
-        if (UseGlobalKeepAliveSetting)
-        {
-            _originalHost.KeepAliveIntervalSeconds = null; // Use global setting
-        }
-        else
-        {
-            _originalHost.KeepAliveIntervalSeconds = KeepAliveIntervalSeconds;
-        }
-
-        // Save X11 forwarding settings
-        _originalHost.X11ForwardingEnabled = X11ForwardingEnabled;
-        _originalHost.X11TrustedForwarding = X11TrustedForwarding;
-        _originalHost.X11DisplayNumber = X11DisplayNumber;
-
-        return _originalHost;
-    }
-
-    /// <summary>
-    /// Gets the environment variables as domain models for saving.
-    /// The caller should use IHostEnvironmentVariableRepository.SetForHostAsync() to save these.
-    /// </summary>
-    public IEnumerable<HostEnvironmentVariable> GetEnvironmentVariables()
-    {
-        int sortOrder = 0;
-        return EnvironmentVariables
-            .Where(e => !string.IsNullOrWhiteSpace(e.Name)) // Skip entries with empty names
-            .Select(e => new HostEnvironmentVariable
-            {
-                Id = Guid.NewGuid(),
-                HostEntryId = _originalHost.Id,
-                Name = e.Name.Trim(),
-                Value = e.Value?.Trim() ?? string.Empty,
-                IsEnabled = e.IsEnabled,
-                SortOrder = sortOrder++
-            });
-    }
-
-    /// <summary>
-    /// Opens the ProxyJump profiles manager dialog.
-    /// </summary>
-    [RelayCommand]
-    private void ManageProxyJumpProfiles()
-    {
-        ManageProxyJumpProfilesRequested?.Invoke(this, EventArgs.Empty);
-    }
-
-    /// <summary>
-    /// Opens the port forwarding manager for this host.
-    /// </summary>
-    [RelayCommand]
-    private void ManagePortForwarding()
-    {
-        ManagePortForwardingRequested?.Invoke(this, EventArgs.Empty);
-    }
-
-    /// <summary>
-    /// Clears the selected host profile.
-    /// </summary>
-    [RelayCommand]
-    private void ClearHostProfile()
-    {
-        SelectedHostProfile = null;
-        _logger.LogDebug("Cleared host profile selection");
-    }
-
-    /// <summary>
-    /// Clears the selected ProxyJump profile.
-    /// </summary>
-    [RelayCommand]
-    private void ClearProxyJumpProfile()
-    {
-        SelectedProxyJumpProfile = null;
-        _logger.LogDebug("Cleared ProxyJump profile selection");
-    }
-
-    /// <summary>
-    /// Toggles the visibility of secure notes (show/hide sensitive content).
-    /// </summary>
-    [RelayCommand]
-    private void ToggleSecureNotesVisibility()
-    {
-        ShowSecureNotes = !ShowSecureNotes;
-    }
-
-    /// <summary>
-    /// Creates a new tag using the NewTagName property.
-    /// </summary>
-    [RelayCommand]
-    private async Task CreateTagAsync()
-    {
-        if (_tagRepo == null || string.IsNullOrWhiteSpace(NewTagName)) return;
-
-        try
-        {
-            var tag = await _tagRepo.GetOrCreateAsync(NewTagName.Trim());
-
-            // Add to all tags if not already present
-            if (!AllTags.Any(t => t.Id == tag.Id))
-            {
-                AllTags.Add(tag);
-            }
-
-            // Add to selected tags if not already selected
-            if (!SelectedTags.Any(t => t.Id == tag.Id))
-            {
-                SelectedTags.Add(tag);
-            }
-
-            _logger.LogInformation("Created/added tag: {TagName}", tag.Name);
-            NewTagName = ""; // Clear the input field
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to create tag: {TagName}", NewTagName);
-        }
-    }
-
-    /// <summary>
-    /// Toggles a tag's selection state for this host.
-    /// </summary>
-    [RelayCommand]
-    private void ToggleTag(Tag tag)
-    {
-        var existingTag = SelectedTags.FirstOrDefault(t => t.Id == tag.Id);
-        if (existingTag != null)
-        {
-            SelectedTags.Remove(existingTag);
-            _logger.LogDebug("Removed tag: {TagName}", tag.Name);
-        }
-        else
-        {
-            SelectedTags.Add(tag);
-            _logger.LogDebug("Added tag: {TagName}", tag.Name);
-        }
-    }
-
-    /// <summary>
-    /// Adds a new empty environment variable to the collection.
-    /// </summary>
-    [RelayCommand]
-    private void AddEnvironmentVariable()
-    {
-        var envVar = new HostEnvironmentVariableViewModel
-        {
-            Name = string.Empty,
-            Value = string.Empty,
-            IsEnabled = true
-        };
-        EnvironmentVariables.Add(envVar);
-        OnPropertyChanged(nameof(HasNoEnvironmentVariables));
-        _logger.LogDebug("Added new environment variable");
-    }
-
-    /// <summary>
-    /// Removes an environment variable from the collection.
-    /// </summary>
-    [RelayCommand]
-    private void RemoveEnvironmentVariable(HostEnvironmentVariableViewModel envVar)
-    {
-        if (envVar == null) return;
-
-        EnvironmentVariables.Remove(envVar);
-        OnPropertyChanged(nameof(HasNoEnvironmentVariables));
-        _logger.LogDebug("Removed environment variable: {EnvVarName}", envVar.Name);
-    }
-
-    /// <summary>
-    /// Adds a preset environment variable from a "NAME=value" format string.
-    /// </summary>
-    [RelayCommand]
-    private void AddPresetEnvironmentVariable(string preset)
-    {
-        if (string.IsNullOrEmpty(preset)) return;
-
-        var parts = preset.Split('=', 2);
-        if (parts.Length != 2) return;
-
-        var name = parts[0].Trim();
-        var value = parts[1].Trim();
-
-        // Check if this variable already exists
-        if (EnvironmentVariables.Any(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
-        {
-            _logger.LogDebug("Environment variable {EnvVarName} already exists, skipping", name);
-            return;
-        }
-
-        var envVar = new HostEnvironmentVariableViewModel
-        {
-            Name = name,
-            Value = value,
-            IsEnabled = true
-        };
-        EnvironmentVariables.Add(envVar);
-        OnPropertyChanged(nameof(HasNoEnvironmentVariables));
-        _logger.LogDebug("Added preset environment variable: {EnvVarName}={EnvVarValue}", name, value);
-    }
-
-    /// <summary>
-    /// Gets the display text for port forwarding status.
-    /// </summary>
-    public string PortForwardingStatusText => PortForwardingProfileCount switch
-    {
-        0 => "No port forwards configured",
-        1 => "1 port forward configured",
-        _ => $"{PortForwardingProfileCount} port forwards configured"
-    };
-
-    partial void OnAuthTypeChanged(AuthType value)
-    {
-        OnPropertyChanged(nameof(ShowPrivateKeyPath));
-        OnPropertyChanged(nameof(ShowPassword));
-        OnPropertyChanged(nameof(ShowAgentStatus));
-        OnPropertyChanged(nameof(ShowKerberosSettings));
-
-        // Refresh agent status when switching to SSH Agent auth
-        if (value == AuthType.SshAgent && IsSshConnection)
-        {
-            _ = RefreshAgentStatusAsync();
-        }
-
-        // Refresh Kerberos status when switching to Kerberos auth
-        if (value == AuthType.Kerberos && IsSshConnection)
-        {
-            _ = RefreshKerberosStatusAsync();
-        }
-    }
-
-    partial void OnPortForwardingProfileCountChanged(int value)
-    {
-        OnPropertyChanged(nameof(PortForwardingStatusText));
-    }
+    #region Connection Type Toggle
 
     /// <summary>
     /// When IsSshConnection changes, toggle IsSerialConnection to act like radio buttons.
@@ -985,124 +251,170 @@ public partial class HostDialogViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Refreshes the list of available serial ports.
-    /// </summary>
-    [RelayCommand]
-    private void RefreshPorts()
-    {
-        AvailablePorts = _serialConnectionService.GetAvailablePorts();
-        if (AvailablePorts.Length > 0 && string.IsNullOrEmpty(SerialPortName))
-        {
-            SerialPortName = AvailablePorts[0];
-        }
-    }
+    #endregion
+
+    #region Commands
 
     /// <summary>
-    /// Refreshes SSH agent status information.
+    /// Validates and saves the host configuration.
     /// </summary>
     [RelayCommand]
-    private async Task RefreshAgentStatusAsync()
+    private void Save()
     {
-        if (_agentDiagnosticsService == null)
+        ValidationError = null;
+
+        // Validate based on connection type using the validation service
+        List<string> errors;
+        if (IsSerialConnection)
         {
-            AgentStatusText = "Agent diagnostics not available";
-            IsAgentAvailable = false;
+            errors = _validationService.ValidateSerialConnection(
+                SerialSettings.SerialPortName,
+                SerialSettings.SerialBaudRate,
+                SerialSettings.SerialDataBits);
+        }
+        else
+        {
+            errors = _validationService.ValidateSshConnection(
+                SshSettings.Hostname,
+                SshSettings.Port,
+                SshSettings.Username,
+                SshSettings.AuthType,
+                SshSettings.PrivateKeyPath,
+                SshSettings.Password);
+        }
+
+        if (errors.Count > 0)
+        {
+            ValidationError = string.Join("\n", errors);
+            _logger.LogWarning("Host validation failed: {Errors}", string.Join("; ", errors));
             return;
         }
 
-        IsCheckingAgent = true;
-
-        try
+        // Auto-set display name if not provided
+        if (string.IsNullOrWhiteSpace(Metadata.DisplayName))
         {
-            await _agentDiagnosticsService.RefreshAsync();
-            var result = await _agentDiagnosticsService.GetDiagnosticsAsync();
-
-            IsAgentAvailable = result.PageantAvailable || result.OpenSshAgentAvailable;
-
-            if (result.ActiveAgentType != null && result.Keys.Count > 0)
-            {
-                var keyText = result.Keys.Count == 1 ? "1 key" : $"{result.Keys.Count} keys";
-                AgentStatusText = $"{result.ActiveAgentType}: {keyText} loaded";
-            }
-            else if (result.PageantAvailable || result.OpenSshAgentAvailable)
-            {
-                var agentName = result.ActiveAgentType ?? "SSH agent";
-                AgentStatusText = $"{agentName}: No keys loaded";
-            }
-            else
-            {
-                AgentStatusText = "No SSH agent detected";
-            }
-
-            _logger.LogDebug("Agent status refreshed: {StatusText}", AgentStatusText);
+            Metadata.DisplayName = IsSerialConnection
+                ? SerialSettings.SerialPortName ?? "Serial"
+                : SshSettings.Hostname;
         }
-        catch (Exception ex)
+
+        if (IsSerialConnection)
         {
-            AgentStatusText = "Error checking agent status";
-            IsAgentAvailable = false;
-            _logger.LogWarning(ex, "Failed to refresh SSH agent status");
+            _logger.LogInformation("Host validation passed, saving serial connection {DisplayName} ({SerialPortName})",
+                Metadata.DisplayName, SerialSettings.SerialPortName);
         }
-        finally
+        else
         {
-            IsCheckingAgent = false;
+            _logger.LogInformation("Host validation passed, saving {DisplayName} ({Hostname}:{Port})",
+                Metadata.DisplayName, SshSettings.Hostname, SshSettings.Port);
         }
+
+        DialogResult = true;
+        RequestClose?.Invoke();
     }
-
-    public bool ShowPrivateKeyPath => AuthType == AuthType.PrivateKeyFile;
-    public bool ShowPassword => AuthType == AuthType.Password;
-    public bool ShowAgentStatus => AuthType == AuthType.SshAgent && IsSshConnection;
-    public bool ShowKerberosSettings => AuthType == AuthType.Kerberos && IsSshConnection;
 
     /// <summary>
-    /// Refreshes Kerberos authentication status information.
+    /// Cancels the dialog and discards changes.
     /// </summary>
     [RelayCommand]
-    private async Task RefreshKerberosStatusAsync()
+    private void Cancel()
     {
-        if (_kerberosAuthService == null)
-        {
-            KerberosStatusText = "Kerberos diagnostics not available";
-            IsKerberosAvailable = false;
-            return;
-        }
-
-        IsCheckingKerberos = true;
-
-        try
-        {
-            await _kerberosAuthService.RefreshAsync();
-            var status = await _kerberosAuthService.GetStatusAsync();
-
-            IsKerberosAvailable = status.IsAvailable && status.HasValidTgt;
-
-            if (status.HasValidTgt)
-            {
-                var expirationText = status.TgtExpiration.HasValue
-                    ? $" (expires {status.TgtExpiration.Value:g})"
-                    : "";
-                KerberosStatusText = $"{status.Principal}{expirationText}";
-            }
-            else if (status.IsAvailable)
-            {
-                KerberosStatusText = status.StatusMessage;
-            }
-            else
-            {
-                KerberosStatusText = status.Error ?? "Kerberos not available";
-            }
-
-            _logger.LogDebug("Kerberos status refreshed: {StatusText}", KerberosStatusText);
-        }
-        catch (Exception ex)
-        {
-            KerberosStatusText = "Error checking Kerberos status";
-            IsKerberosAvailable = false;
-            _logger.LogWarning(ex, "Failed to refresh Kerberos status");
-        }
-        finally
-        {
-            IsCheckingKerberos = false;
-        }
+        DialogResult = false;
+        RequestClose?.Invoke();
     }
+
+    #endregion
+
+    #region Host Assembly Methods
+
+    /// <summary>
+    /// Assembles and returns the HostEntry with all settings from child ViewModels.
+    /// </summary>
+    /// <returns>The updated HostEntry.</returns>
+    public HostEntry GetHost()
+    {
+        // Set connection type
+        _originalHost.ConnectionType = IsSerialConnection ? ConnectionType.Serial : ConnectionType.Ssh;
+        _originalHost.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Populate from appropriate connection settings based on type
+        if (IsSerialConnection)
+        {
+            SerialSettings.PopulateHost(_originalHost);
+            // For serial connections, set minimal SSH fields
+            _originalHost.Hostname = SerialSettings.SerialPortName ?? "";
+            _originalHost.Port = 0;
+            _originalHost.Username = "";
+        }
+        else
+        {
+            SshSettings.PopulateHost(_originalHost);
+            // Also populate serial settings to preserve them if switching types later
+            SerialSettings.PopulateHost(_originalHost);
+        }
+
+        // Always populate metadata
+        Metadata.PopulateHost(_originalHost);
+
+        return _originalHost;
+    }
+
+    /// <summary>
+    /// Gets the environment variables for saving.
+    /// The caller should use IHostEnvironmentVariableRepository.SetForHostAsync() to save these.
+    /// </summary>
+    /// <returns>Collection of environment variables for the host.</returns>
+    public IEnumerable<HostEnvironmentVariable> GetEnvironmentVariables()
+    {
+        return EnvironmentVariables.GetEnvironmentVariables(_originalHost.Id);
+    }
+
+    #endregion
+
+    #region Legacy Properties for Backward Compatibility
+
+    // These properties delegate to child ViewModels for backward compatibility
+    // with existing XAML bindings that haven't been updated yet.
+
+    /// <summary>
+    /// Gets the available authentication types from SSH settings.
+    /// </summary>
+    public IEnumerable<AuthType> AuthTypes => SshConnectionSettingsViewModel.AuthTypes;
+
+    /// <summary>
+    /// Gets the available shell types from SSH settings.
+    /// </summary>
+    public IEnumerable<ShellType> ShellTypes => SshConnectionSettingsViewModel.ShellTypes;
+
+    /// <summary>
+    /// Gets the baud rate options from serial settings.
+    /// </summary>
+    public static int[] BaudRateOptions => SerialConnectionSettingsViewModel.BaudRateOptions;
+
+    /// <summary>
+    /// Gets the data bits options from serial settings.
+    /// </summary>
+    public static int[] DataBitsOptions => SerialConnectionSettingsViewModel.DataBitsOptions;
+
+    /// <summary>
+    /// Gets the stop bits options from serial settings.
+    /// </summary>
+    public static System.IO.Ports.StopBits[] StopBitsOptions => SerialConnectionSettingsViewModel.StopBitsOptions;
+
+    /// <summary>
+    /// Gets the parity options from serial settings.
+    /// </summary>
+    public static System.IO.Ports.Parity[] ParityOptions => SerialConnectionSettingsViewModel.ParityOptions;
+
+    /// <summary>
+    /// Gets the handshake options from serial settings.
+    /// </summary>
+    public static System.IO.Ports.Handshake[] HandshakeOptions => SerialConnectionSettingsViewModel.HandshakeOptions;
+
+    /// <summary>
+    /// Gets the line ending options from serial settings.
+    /// </summary>
+    public static string[] LineEndingOptions => SerialConnectionSettingsViewModel.LineEndingOptions;
+
+    #endregion
 }

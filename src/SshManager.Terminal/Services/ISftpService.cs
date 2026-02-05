@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SshManager.Core.Formatting;
 using SshManager.Core.Models;
 using SshManager.Terminal.Models;
 
@@ -84,16 +85,7 @@ public sealed record TransferProgress
         };
     }
 
-    private static string FormatSpeed(double bytesPerSecond)
-    {
-        return bytesPerSecond switch
-        {
-            >= 1_000_000_000 => $"{bytesPerSecond / 1_000_000_000:F1} GB/s",
-            >= 1_000_000 => $"{bytesPerSecond / 1_000_000:F1} MB/s",
-            >= 1_000 => $"{bytesPerSecond / 1_000:F1} KB/s",
-            _ => $"{bytesPerSecond:F0} B/s"
-        };
-    }
+    private static string FormatSpeed(double bytesPerSecond) => FileSizeFormatter.FormatSpeed(bytesPerSecond);
 
     private static string FormatTimeRemaining(TimeSpan remaining)
     {

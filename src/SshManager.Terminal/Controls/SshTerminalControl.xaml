@@ -6,7 +6,7 @@
              xmlns:local="clr-namespace:SshManager.Terminal.Controls"
              mc:Ignorable="d"
              d:DesignHeight="450" d:DesignWidth="800"
-             Background="#0C0C0C"
+             Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
              PreviewKeyDown="UserControl_PreviewKeyDown">
     <Grid>
         <Grid.RowDefinitions>
@@ -25,14 +25,14 @@
         <!-- Serial Controls Panel (shown only for serial connections) -->
         <Border x:Name="SerialControlsPanel"
                 Grid.Row="1"
-                Background="#1E1E1E"
+                Background="{DynamicResource ControlFillColorDefaultBrush}"
                 Padding="8,4"
                 Visibility="Collapsed">
             <StackPanel Orientation="Horizontal">
                 <!-- Local Echo Toggle -->
                 <CheckBox x:Name="LocalEchoCheckBox"
                           Content="Local Echo"
-                          Foreground="White"
+                          Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                           VerticalAlignment="Center"
                           Margin="0,0,16,0"
                           ToolTip="Echo typed characters locally (for devices that don't echo input)"
@@ -82,7 +82,7 @@
         <!-- Status Overlay (Connecting/Disconnected messages) -->
         <Border x:Name="StatusOverlay"
                 Grid.Row="0"
-                Background="#CC000000"
+                Background="{DynamicResource SmokeFillColorDefaultBrush}"
                 Visibility="Collapsed"
                 Panel.ZIndex="50">
             <StackPanel HorizontalAlignment="Center"
@@ -94,7 +94,7 @@
                              Margin="0,0,0,12"
                              Visibility="Collapsed"/>
                 <TextBlock x:Name="StatusText"
-                           Foreground="White"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                            FontSize="14"
                            HorizontalAlignment="Center"/>
             </StackPanel>

@@ -54,8 +54,7 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
     private TerminalTextSearchService? _searchService;
 
     // UTF-8 stateful decoding for multi-byte sequences split across packets
-    private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
-    private readonly object _decoderLock = new();
+    private readonly Utf8DecoderHelper _decoderHelper = new();
 
     // Resize tracking to avoid spamming server
     private int _lastColumns = 80;
@@ -75,9 +74,6 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
     public event EventHandler? Disconnected;
     public event EventHandler? FocusReceived;
     public event EventHandler? ReconnectSucceeded;
-#pragma warning disable CS0067
-    public event EventHandler<string>? TitleChanged;
-#pragma warning restore CS0067
 
     public SshTerminalControl() : this(null, null, null, null, null, null, null, null) { }
 
@@ -116,7 +112,12 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
             if (loggerFactory != null)
                 _logger = loggerFactory.CreateLogger<SshTerminalControl>();
         }
-        catch { }
+        catch
+        {
+            // Intentionally swallowing: Application resources may not be available
+            // during designer-time or if resources fail to load
+            // This is safe because the logger is optional and the control works without it
+        }
     }
 
     private void WireEvents()
@@ -154,6 +155,9 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         _statsCoordinator.Pause();
+        // Do NOT dispose _outputBuffer here. WPF fires Unloaded when switching tabs,
+        // which would destroy the buffer and cause ObjectDisposedException on tab switch back.
+        // Buffer is disposed via DisposeTerminal() when the session is permanently closed.
         _logger.LogDebug("SshTerminalControl unloaded");
     }
 
@@ -217,26 +221,36 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
 
     private void OnConnectorDisconnected(object? sender, EventArgs e)
     {
-        Dispatcher.Invoke(async () =>
+        // Use InvokeAsync instead of Invoke to avoid blocking the background thread
+        // and to properly handle the async lambda (Invoke with async lambda returns
+        // at the first await, which is misleading).
+        Dispatcher.InvokeAsync(async () =>
         {
-            _statsCoordinator.Stop();
-            HideSerialControls();
-            ShowStatus("Disconnected");
-            _logger.LogInformation("Connection disconnected for session: {Title}", _sessionLifecycle.CurrentSession?.Title);
-
-            if (_autoReconnectEnabled && !_isReconnecting && _reconnectAttemptCount < _maxReconnectAttempts &&
-                _sessionLifecycle.CurrentSession?.Host?.ConnectionType == ConnectionType.Serial)
+            try
             {
-                _reconnectAttemptCount++;
-                await Task.Delay(_reconnectDelay);
-                await TryAutoReconnectSerialAsync();
-                return;
+                _statsCoordinator.Stop();
+                HideSerialControls();
+                ShowStatus("Disconnected");
+                _logger.LogInformation("Connection disconnected for session: {Title}", _sessionLifecycle.CurrentSession?.Title);
+
+                if (_autoReconnectEnabled && !_isReconnecting && _reconnectAttemptCount < _maxReconnectAttempts &&
+                    _sessionLifecycle.CurrentSession?.Host?.ConnectionType == ConnectionType.Serial)
+                {
+                    _reconnectAttemptCount++;
+                    await Task.Delay(_reconnectDelay);
+                    await TryAutoReconnectSerialAsync();
+                    return;
+                }
+
+                if (!_disconnectedRaised)
+                {
+                    _disconnectedRaised = true;
+                    Disconnected?.Invoke(this, EventArgs.Empty);
+                }
             }
-
-            if (!_disconnectedRaised)
+            catch (Exception ex)
             {
-                _disconnectedRaised = true;
-                Disconnected?.Invoke(this, EventArgs.Empty);
+                System.Diagnostics.Debug.WriteLine($"Error in OnConnectorDisconnected: {ex}");
             }
         });
     }
@@ -252,20 +266,12 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
     {
         if (data.Length == 0) return;
         _sessionLifecycle.CurrentSession?.SessionRecorder?.RecordOutput(data);
-        lock (_decoderLock)
+
+        var text = _decoderHelper.Decode(data, 0, data.Length);
+        if (!string.IsNullOrEmpty(text))
         {
-            var charBuffer = ArrayPool<char>.Shared.Rent(data.Length + 4);
-            try
-            {
-                var charCount = _decoder.GetChars(data, 0, data.Length, charBuffer, 0, flush: false);
-                if (charCount > 0)
-                {
-                    var text = new string(charBuffer, 0, charCount);
-                    _outputBuffer.AppendOutput(text);
-                    TerminalHost.WriteData(text);
-                }
-            }
-            finally { ArrayPool<char>.Shared.Return(charBuffer); }
+            _outputBuffer.AppendOutput(text);
+            TerminalHost.WriteData(text);
         }
     }
 
@@ -325,7 +331,10 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
             }
 
             HideStatus();
-            _statsCoordinator.StartForSshSession(session!, result.Bridge, StatusBar);
+            if (session != null)
+                _statsCoordinator.StartForSshSession(session, result.Bridge, StatusBar);
+            else
+                _logger.LogWarning("DataContext is not a TerminalSession; skipping stats coordinator");
             _logger.LogInformation("Connected to {Host}", connectionInfo.Hostname);
         }
         catch (Exception ex)
@@ -370,7 +379,10 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
             result.Bridge.StartReading();
 
             HideStatus();
-            _statsCoordinator.StartForSshSession(session!, result.Bridge, StatusBar);
+            if (session != null)
+                _statsCoordinator.StartForSshSession(session, result.Bridge, StatusBar);
+            else
+                _logger.LogWarning("DataContext is not a TerminalSession; skipping stats coordinator");
             _logger.LogInformation("Connected through proxy chain: {Chain}",
                 string.Join(" -> ", connectionChain.Select(c => c.Hostname)));
         }
@@ -453,10 +465,16 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
             _serialConnector.Disconnect(_sessionLifecycle.SerialBridge, _sessionLifecycle.OwnsBridge,
                 _sessionLifecycle.CurrentSession?.SerialConnection);
 
-        // Cleanup SSH connection
+        // Cleanup session resources asynchronously to avoid deadlock.
+        // CloseAsync uses Dispatcher.Invoke internally (via SessionClosed event),
+        // so calling .GetAwaiter().GetResult() from the UI thread would deadlock.
         var session = _sessionLifecycle.CurrentSession;
-        if (session?.Connection != null)
-            session.Connection.Dispose();
+        if (session != null)
+            _ = Task.Run(async () =>
+            {
+                try { await session.CloseAsync(); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Error closing session during disconnect"); }
+            });
 
         _sessionLifecycle.Disconnect();
         _outputBuffer.Clear();
@@ -756,7 +774,13 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
     public TerminalOutputBuffer OutputBuffer => _outputBuffer;
 
     public void SetBroadcastService(IBroadcastInputService? service) => _broadcastService = service;
-    public void SetServerStatsService(IServerStatsService? service) { }
+    public void SetServerStatsService(IServerStatsService? service)
+    {
+        if (_statsCoordinator is TerminalStatsCoordinator coordinator)
+        {
+            coordinator.SetServerStatsService(service);
+        }
+    }
     public void SetFocusTracker(ITerminalFocusTracker? tracker) => _focusTracker = tracker;
 
     public void ApplyTheme(TerminalTheme theme)
@@ -778,6 +802,18 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
     public string GetOutputText() => _outputBuffer.GetAllText();
     public void RefreshTerminal() => TerminalHost.RefreshVisual();
     public void ClearOutputBuffer() => _outputBuffer.Clear();
+
+    /// <summary>
+    /// Disposes the underlying WebView2 terminal control and output buffer.
+    /// Call this when the session is permanently closed (not on tab switch).
+    /// </summary>
+    public void DisposeTerminal()
+    {
+        _statsCoordinator.Stop();
+        _outputBuffer.Dispose();
+        _decoderHelper.Dispose();
+        ((WebTerminalControl)TerminalHost).Dispose();
+    }
 
     #endregion
 

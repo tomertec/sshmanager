@@ -15,7 +15,7 @@ public sealed class DpapiSecretProtector : ISecretProtector
     private readonly ILogger<DpapiSecretProtector> _logger;
 
     // Entropy adds an extra layer of protection - keeps it app-specific
-    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("SshManager::v1::2024");
+    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes(SecurityConstants.Dpapi.EntropyString);
 
     public DpapiSecretProtector(ILogger<DpapiSecretProtector>? logger = null)
     {

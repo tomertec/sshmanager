@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using SshManager.Core.Formatting;
 
 namespace SshManager.App.ViewModels;
 
@@ -155,25 +156,17 @@ public partial class TransferItemViewModel : ObservableObject
             if (elapsed.TotalSeconds < 0.5)
                 return "";
 
-            var bytesPerSecond = TransferredBytes / elapsed.TotalSeconds;
+            // Subtract resume offset so resumed transfers show accurate speed
+            var effectiveBytes = TransferredBytes - ResumeOffset;
+            if (effectiveBytes <= 0)
+                return "";
+
+            var bytesPerSecond = effectiveBytes / elapsed.TotalSeconds;
             return FormatSpeed(bytesPerSecond);
         }
     }
 
-    private static string FormatSpeed(double bytesPerSecond)
-    {
-        string[] suffixes = ["B/s", "KB/s", "MB/s", "GB/s"];
-        int suffixIndex = 0;
-        double size = bytesPerSecond;
-
-        while (size >= 1024 && suffixIndex < suffixes.Length - 1)
-        {
-            size /= 1024;
-            suffixIndex++;
-        }
-
-        return $"{size:N1} {suffixes[suffixIndex]}";
-    }
+    private static string FormatSpeed(double bytesPerSecond) => FileSizeFormatter.FormatSpeed(bytesPerSecond);
 
     public bool ShowCancelButton => Status == TransferStatus.InProgress;
 

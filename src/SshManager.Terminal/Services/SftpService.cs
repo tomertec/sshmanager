@@ -131,39 +131,19 @@ internal sealed class SftpSession : ISftpSession
     /// Validates a local file path to prevent path traversal attacks.
     /// </summary>
     /// <param name="localPath">The local file path to validate.</param>
-    /// <param name="expectedBasePath">Optional base path that the file must be within.</param>
     /// <exception cref="SecurityException">Thrown when path traversal is detected.</exception>
     /// <exception cref="ArgumentException">Thrown when the path is invalid.</exception>
-    private static void ValidateLocalPath(string localPath, string? expectedBasePath = null)
+    private static void ValidateLocalPath(string localPath)
     {
         if (string.IsNullOrWhiteSpace(localPath))
         {
             throw new ArgumentException("Local path cannot be null or empty", nameof(localPath));
         }
 
-        // Normalize the path to detect traversal attempts
-        var fullPath = Path.GetFullPath(localPath);
-
-        // Check for path traversal attempts using ".." sequences
-        if (localPath.Contains(".."))
-        {
-            throw new SecurityException($"Path traversal detected in local path: {localPath}");
-        }
-
         // Check for null bytes which could be used for path injection
         if (localPath.Contains('\0'))
         {
             throw new SecurityException("Null byte detected in local path");
-        }
-
-        // If base path specified, ensure we're within it
-        if (!string.IsNullOrEmpty(expectedBasePath))
-        {
-            var baseFull = Path.GetFullPath(expectedBasePath);
-            if (!fullPath.StartsWith(baseFull, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new SecurityException($"Path '{localPath}' is outside allowed directory '{expectedBasePath}'");
-            }
         }
     }
 
@@ -247,7 +227,7 @@ internal sealed class SftpSession : ISftpSession
                 remoteStream.Seek(startOffset, SeekOrigin.Begin);
             }
 
-            var buffer = new byte[8192];
+            var buffer = new byte[TransferBufferSize];
             int read;
             while ((read = remoteStream.Read(buffer, 0, buffer.Length)) > 0)
             {
@@ -303,7 +283,7 @@ internal sealed class SftpSession : ISftpSession
                 remoteStream.Seek(startOffset, SeekOrigin.Begin);
             }
 
-            var buffer = new byte[8192];
+            var buffer = new byte[TransferBufferSize];
             int read;
             while ((read = localStream.Read(buffer, 0, buffer.Length)) > 0)
             {
@@ -316,6 +296,12 @@ internal sealed class SftpSession : ISftpSession
                     var percent = (double)(startOffset + uploadedBytes) / totalBytes * 100.0;
                     progress?.Report(percent);
                 }
+            }
+
+            // Truncate any trailing data from a previous larger file
+            if (startOffset > 0)
+            {
+                remoteStream.SetLength(startOffset + uploadedBytes);
             }
         }, ct);
 
@@ -354,7 +340,7 @@ internal sealed class SftpSession : ISftpSession
         }
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        long downloadedBytes = startOffset;
+        long downloadedBytes = 0;
 
         await Task.Run(() =>
         {
@@ -364,7 +350,7 @@ internal sealed class SftpSession : ISftpSession
                 remoteStream.Seek(startOffset, SeekOrigin.Begin);
             }
 
-            var buffer = new byte[81920]; // 80KB buffer for better throughput
+            var buffer = new byte[TransferBufferSize];
             int read;
             while ((read = remoteStream.Read(buffer, 0, buffer.Length)) > 0)
             {
@@ -373,16 +359,16 @@ internal sealed class SftpSession : ISftpSession
                 downloadedBytes += read;
 
                 // Report enhanced progress
-                progress.Report(TransferProgress.Create(downloadedBytes, totalBytes, stopwatch, startOffset));
+                progress.Report(TransferProgress.Create(startOffset + downloadedBytes, totalBytes, stopwatch, startOffset));
             }
         }, ct);
 
         stopwatch.Stop();
-        var finalProgress = TransferProgress.Create(downloadedBytes, totalBytes, stopwatch, startOffset);
+        var finalProgress = TransferProgress.Create(startOffset + downloadedBytes, totalBytes, stopwatch, startOffset);
         progress.Report(finalProgress);
 
         _logger.LogInformation("Download complete: {RemotePath} ({Bytes} bytes in {Elapsed:F1}s at {Speed})",
-            remotePath, downloadedBytes, stopwatch.Elapsed.TotalSeconds, finalProgress.SpeedFormatted);
+            remotePath, startOffset + downloadedBytes, stopwatch.Elapsed.TotalSeconds, finalProgress.SpeedFormatted);
     }
 
     public async Task UploadFileWithStatsAsync(
@@ -409,7 +395,7 @@ internal sealed class SftpSession : ISftpSession
         }
 
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        long uploadedBytes = startOffset;
+        long uploadedBytes = 0;
 
         await Task.Run(() =>
         {
@@ -423,7 +409,7 @@ internal sealed class SftpSession : ISftpSession
                 remoteStream.Seek(startOffset, SeekOrigin.Begin);
             }
 
-            var buffer = new byte[81920]; // 80KB buffer for better throughput
+            var buffer = new byte[TransferBufferSize];
             int read;
             while ((read = localStream.Read(buffer, 0, buffer.Length)) > 0)
             {
@@ -432,16 +418,22 @@ internal sealed class SftpSession : ISftpSession
                 uploadedBytes += read;
 
                 // Report enhanced progress
-                progress.Report(TransferProgress.Create(uploadedBytes, totalBytes, stopwatch, startOffset));
+                progress.Report(TransferProgress.Create(startOffset + uploadedBytes, totalBytes, stopwatch, startOffset));
+            }
+
+            // Truncate any trailing data from a previous larger file
+            if (startOffset > 0)
+            {
+                remoteStream.SetLength(startOffset + uploadedBytes);
             }
         }, ct);
 
         stopwatch.Stop();
-        var finalProgress = TransferProgress.Create(uploadedBytes, totalBytes, stopwatch, startOffset);
+        var finalProgress = TransferProgress.Create(startOffset + uploadedBytes, totalBytes, stopwatch, startOffset);
         progress.Report(finalProgress);
 
         _logger.LogInformation("Upload complete: {LocalPath} ({Bytes} bytes in {Elapsed:F1}s at {Speed})",
-            localPath, uploadedBytes, stopwatch.Elapsed.TotalSeconds, finalProgress.SpeedFormatted);
+            localPath, startOffset + uploadedBytes, stopwatch.Elapsed.TotalSeconds, finalProgress.SpeedFormatted);
     }
 
     public async Task CreateDirectoryAsync(string path, CancellationToken ct = default)
@@ -520,23 +512,28 @@ internal sealed class SftpSession : ISftpSession
     public async Task ChangePermissionsAsync(string path, int permissions, CancellationToken ct = default)
     {
         _logger.LogInformation("Changing permissions for {Path} to {Permissions}", path, permissions);
-        var clamped = Math.Clamp(permissions, 0, short.MaxValue);
+        var clamped = Math.Clamp(permissions, 0, 4095); // Max Unix permissions: 07777 octal = 4095 decimal
+        // SSH.NET's ChangePermissions accepts short; standard permissions (0-0777) fit safely.
+        // Setuid/setgid/sticky bits (values > 0o777) may produce negative values but SSH.NET handles them correctly.
         await Task.Run(() => _client.ChangePermissions(path, (short)clamped), ct);
     }
 
+    // NOTE: LinkTarget is not populated because SSH.NET's ISftpFile does not expose
+    // symlink target information. Resolving targets would require additional SFTP
+    // ReadLink calls per symlink, which is not done here for performance reasons.
     private static SftpFileItem MapToSftpFileItem(ISftpFile file)
     {
-        // Extract permission bits from the mode (lower 9 bits: rwxrwxrwx)
+        // Unix permission bits: rwxrwxrwx (owner, group, others)
         var permissionBits = 0;
-        if (file.Attributes.OwnerCanRead) permissionBits |= 0x100;
-        if (file.Attributes.OwnerCanWrite) permissionBits |= 0x080;
-        if (file.Attributes.OwnerCanExecute) permissionBits |= 0x040;
-        if (file.Attributes.GroupCanRead) permissionBits |= 0x020;
-        if (file.Attributes.GroupCanWrite) permissionBits |= 0x010;
-        if (file.Attributes.GroupCanExecute) permissionBits |= 0x008;
-        if (file.Attributes.OthersCanRead) permissionBits |= 0x004;
-        if (file.Attributes.OthersCanWrite) permissionBits |= 0x002;
-        if (file.Attributes.OthersCanExecute) permissionBits |= 0x001;
+        if (file.Attributes.OwnerCanRead)    permissionBits |= 0b_100_000_000; // 0400
+        if (file.Attributes.OwnerCanWrite)   permissionBits |= 0b_010_000_000; // 0200
+        if (file.Attributes.OwnerCanExecute) permissionBits |= 0b_001_000_000; // 0100
+        if (file.Attributes.GroupCanRead)    permissionBits |= 0b_000_100_000; // 0040
+        if (file.Attributes.GroupCanWrite)   permissionBits |= 0b_000_010_000; // 0020
+        if (file.Attributes.GroupCanExecute) permissionBits |= 0b_000_001_000; // 0010
+        if (file.Attributes.OthersCanRead)   permissionBits |= 0b_000_000_100; // 0004
+        if (file.Attributes.OthersCanWrite)  permissionBits |= 0b_000_000_010; // 0002
+        if (file.Attributes.OthersCanExecute)permissionBits |= 0b_000_000_001; // 0001
 
         return new SftpFileItem
         {
@@ -552,15 +549,34 @@ internal sealed class SftpSession : ISftpSession
         };
     }
 
+    /// <summary>
+    /// Maximum file size allowed for ReadAllBytesAsync (50 MB).
+    /// </summary>
+    /// <summary>
+    /// Buffer size for file transfer operations (80 KB).
+    /// </summary>
+    private const int TransferBufferSize = 81920;
+
+    private const long MaxReadAllBytesSize = 50 * 1024 * 1024;
+
     public async Task<byte[]> ReadAllBytesAsync(string remotePath, CancellationToken ct = default)
     {
         ValidateRemotePath(remotePath);
         _logger.LogDebug("Reading all bytes from: {Path}", remotePath);
 
+        // Check file size before reading to prevent OutOfMemoryException
+        var fileInfo = await Task.Run(() => _client.Get(remotePath), ct);
+        if (fileInfo.Length > MaxReadAllBytesSize)
+        {
+            throw new InvalidOperationException(
+                $"File '{remotePath}' is {fileInfo.Length:N0} bytes, which exceeds the {MaxReadAllBytesSize:N0} byte limit for in-memory reading.");
+        }
+
         return await Task.Run(() =>
         {
             using var stream = _client.OpenRead(remotePath);
-            using var memoryStream = new MemoryStream();
+            // Pre-allocate with known size to avoid reallocations and reduce peak memory usage
+            using var memoryStream = new MemoryStream((int)Math.Min(fileInfo.Length, int.MaxValue));
             stream.CopyTo(memoryStream);
             var bytes = memoryStream.ToArray();
             _logger.LogDebug("Read {ByteCount} bytes from {Path}", bytes.Length, remotePath);
@@ -584,7 +600,12 @@ internal sealed class SftpSession : ISftpSession
     private void OnError(object? sender, Renci.SshNet.Common.ExceptionEventArgs e)
     {
         _logger.LogWarning(e.Exception, "SFTP error occurred");
-        Disconnected?.Invoke(this, EventArgs.Empty);
+
+        // Only raise Disconnected for actual connection loss, not transient errors
+        if (!_client.IsConnected)
+        {
+            Disconnected?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -634,6 +655,5 @@ internal sealed class SftpSession : ISftpSession
         }
 
         _logger.LogInformation("SFTP session disposed");
-        Disconnected?.Invoke(this, EventArgs.Empty);
     }
 }

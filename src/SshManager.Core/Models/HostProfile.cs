@@ -7,9 +7,9 @@ namespace SshManager.Core.Models;
 /// </summary>
 public sealed class HostProfile
 {
-    private const int MaxDisplayNameLength = 200;
-    private const int MaxDescriptionLength = 1000;
-    private const int MaxPathLength = 1000;
+    private const int MaxDisplayNameLength = Constants.StringLimits.MaxDisplayNameLength;
+    private const int MaxDescriptionLength = Constants.StringLimits.MaxPathLength;
+    private const int MaxPathLength = Constants.StringLimits.MaxPathLength;
 
     public Guid Id { get; set; } = Guid.NewGuid();
 
@@ -29,13 +29,13 @@ public sealed class HostProfile
     /// <summary>
     /// Default SSH port number (default: 22).
     /// </summary>
-    [Range(1, 65535, ErrorMessage = "Port must be between 1 and 65535")]
-    public int DefaultPort { get; set; } = 22;
+    [Range(Constants.Network.MinPort, Constants.Network.MaxPort, ErrorMessage = "Port must be between 1 and 65535")]
+    public int DefaultPort { get; set; } = Constants.Network.DefaultSshPort;
 
     /// <summary>
     /// Default username to use for connections.
     /// </summary>
-    [StringLength(100, ErrorMessage = "Username cannot exceed 100 characters")]
+    [StringLength(Constants.StringLimits.MaxUsernameLength, ErrorMessage = "Username cannot exceed 100 characters")]
     public string? DefaultUsername { get; set; }
 
     /// <summary>

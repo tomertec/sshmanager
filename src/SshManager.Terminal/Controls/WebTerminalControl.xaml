@@ -6,7 +6,7 @@
              xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
              mc:Ignorable="d"
              d:DesignHeight="450" d:DesignWidth="800"
-             Background="#1E1E1E"
+             Background="{DynamicResource ControlFillColorDefaultBrush}"
              Loaded="UserControl_Loaded"
              Unloaded="UserControl_Unloaded"
              SizeChanged="UserControl_SizeChanged"

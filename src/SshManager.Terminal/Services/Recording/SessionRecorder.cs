@@ -1,6 +1,4 @@
-using System.Buffers;
 using System.IO;
-using System.Text;
 
 namespace SshManager.Terminal.Services.Recording;
 
@@ -11,8 +9,7 @@ namespace SshManager.Terminal.Services.Recording;
 public sealed class SessionRecorder : IAsyncDisposable
 {
     private readonly AsciinemaWriter _writer;
-    private readonly Decoder _decoder;
-    private readonly object _decoderLock = new();
+    private readonly Utf8DecoderHelper _decoderHelper;
     private bool _disposed;
 
     /// <summary>
@@ -73,7 +70,7 @@ public sealed class SessionRecorder : IAsyncDisposable
         FilePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
         StartTime = startTime;
         _writer = writer;
-        _decoder = Encoding.UTF8.GetDecoder();
+        _decoderHelper = new Utf8DecoderHelper();
     }
 
     /// <summary>
@@ -113,24 +110,7 @@ public sealed class SessionRecorder : IAsyncDisposable
             return;
         }
 
-        // Convert bytes to UTF-8 string using stateful decoder
-        string text;
-        lock (_decoderLock)
-        {
-            // Rent buffer for decoded characters
-            int maxCharCount = _decoder.GetCharCount(data, 0, data.Length, flush: false);
-            char[] charBuffer = ArrayPool<char>.Shared.Rent(maxCharCount);
-            try
-            {
-                int charCount = _decoder.GetChars(data, 0, data.Length, charBuffer, 0, flush: false);
-                text = new string(charBuffer, 0, charCount);
-            }
-            finally
-            {
-                ArrayPool<char>.Shared.Return(charBuffer);
-            }
-        }
-
+        var text = _decoderHelper.Decode(data, 0, data.Length);
         if (!string.IsNullOrEmpty(text))
         {
             _writer.RecordOutput(text);
@@ -150,24 +130,7 @@ public sealed class SessionRecorder : IAsyncDisposable
             return;
         }
 
-        // Convert bytes to UTF-8 string using stateful decoder
-        string text;
-        lock (_decoderLock)
-        {
-            // Rent buffer for decoded characters
-            int maxCharCount = _decoder.GetCharCount(data, offset, count, flush: false);
-            char[] charBuffer = ArrayPool<char>.Shared.Rent(maxCharCount);
-            try
-            {
-                int charCount = _decoder.GetChars(data, offset, count, charBuffer, 0, flush: false);
-                text = new string(charBuffer, 0, charCount);
-            }
-            finally
-            {
-                ArrayPool<char>.Shared.Return(charBuffer);
-            }
-        }
-
+        var text = _decoderHelper.Decode(data, offset, count);
         if (!string.IsNullOrEmpty(text))
         {
             _writer.RecordOutput(text);
@@ -218,25 +181,6 @@ public sealed class SessionRecorder : IAsyncDisposable
             return;
         }
 
-        // Flush decoder state
-        lock (_decoderLock)
-        {
-            char[] finalChars = ArrayPool<char>.Shared.Rent(16);
-            try
-            {
-                int charCount = _decoder.GetChars(Array.Empty<byte>(), 0, 0, finalChars, 0, flush: true);
-                if (charCount > 0)
-                {
-                    string text = new string(finalChars, 0, charCount);
-                    _writer.RecordOutput(text);
-                }
-            }
-            finally
-            {
-                ArrayPool<char>.Shared.Return(finalChars);
-            }
-        }
-
         // Flush writer
         await _writer.FlushAsync().ConfigureAwait(false);
     }
@@ -251,10 +195,11 @@ public sealed class SessionRecorder : IAsyncDisposable
             return;
         }
 
-        _disposed = true;
-
-        // Finalize and dispose writer
+        // Finalize and dispose writer BEFORE setting _disposed to allow FinalizeAsync to run
         await FinalizeAsync().ConfigureAwait(false);
         await _writer.DisposeAsync().ConfigureAwait(false);
+
+        _decoderHelper.Dispose();
+        _disposed = true;
     }
 }

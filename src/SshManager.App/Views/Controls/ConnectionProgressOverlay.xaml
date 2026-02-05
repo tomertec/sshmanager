@@ -8,7 +8,7 @@
              d:DesignHeight="200" d:DesignWidth="400">
 
     <Border Background="#80000000"
-            Visibility="{Binding IsConnecting, Converter={StaticResource BoolToVisibilityConverter}}">
+            Visibility="{Binding Session.IsConnecting, Converter={StaticResource BoolToVisibilityConverter}}">
         <Border Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
                 CornerRadius="12"
                 Padding="32,24"
@@ -36,7 +36,7 @@
                            Margin="0,0,0,8" />
 
                 <!-- Host name -->
-                <TextBlock Text="{Binding ConnectingHostName}"
+                <TextBlock Text="{Binding Session.ConnectingHostName}"
                            FontSize="13"
                            Opacity="0.7"
                            HorizontalAlignment="Center"

@@ -16,7 +16,7 @@ namespace SshManager.App.ViewModels;
 /// ViewModel for the PPK Import Wizard dialog.
 /// Guides users through a multi-step process for importing PPK files.
 /// </summary>
-public partial class PpkImportWizardViewModel : ObservableObject
+public partial class PpkImportWizardViewModel : ObservableObject, IDisposable
 {
     private readonly IPpkConverter _ppkConverter;
     private readonly ISshKeyManager _keyManager;
@@ -107,7 +107,7 @@ public partial class PpkImportWizardViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void BrowseFiles()
+    private async Task BrowseFilesAsync()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
@@ -122,10 +122,10 @@ public partial class PpkImportWizardViewModel : ObservableObject
             return;
         }
 
-        AddFiles(dialog.FileNames);
+        await AddFiles(dialog.FileNames);
     }
 
-    public async void AddFiles(string[] filePaths)
+    public async Task AddFiles(string[] filePaths)
     {
         try
         {
@@ -490,19 +490,24 @@ public partial class PpkImportWizardViewModel : ObservableObject
 
     partial void OnItemsChanged(ObservableCollection<PpkImportItem> value)
     {
-        // Subscribe to item property changes
-        foreach (var item in value)
+        // Subscribe to new item property changes
+        if (value != null)
         {
-            item.PropertyChanged += (s, e) =>
+            foreach (var item in value)
             {
-                if (e.PropertyName == nameof(PpkImportItem.IsSelected))
-                {
-                    OnPropertyChanged(nameof(SelectedFileCount));
-                    OnPropertyChanged(nameof(EncryptedFileCount));
-                    OnPropertyChanged(nameof(CanGoNext));
-                    OnPropertyChanged(nameof(HasEncryptedFiles));
-                }
-            };
+                item.PropertyChanged += OnItemPropertyChanged;
+            }
+        }
+    }
+
+    private void OnItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PpkImportItem.IsSelected))
+        {
+            OnPropertyChanged(nameof(SelectedFileCount));
+            OnPropertyChanged(nameof(EncryptedFileCount));
+            OnPropertyChanged(nameof(CanGoNext));
+            OnPropertyChanged(nameof(HasEncryptedFiles));
         }
     }
 
@@ -530,6 +535,18 @@ public partial class PpkImportWizardViewModel : ObservableObject
             "ecdsa-sha2-nistp521" => 521,
             _ => 0
         };
+    }
+
+    public void Dispose()
+    {
+        // Unsubscribe from all item property changed events
+        if (Items != null)
+        {
+            foreach (var item in Items)
+            {
+                item.PropertyChanged -= OnItemPropertyChanged;
+            }
+        }
     }
 }
 

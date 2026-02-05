@@ -15,8 +15,8 @@
 
     <!-- Session Tabs -->
     <ListBox x:Name="SessionTabs"
-             ItemsSource="{Binding Sessions}"
-             SelectedItem="{Binding CurrentSession, Mode=TwoWay}"
+             ItemsSource="{Binding Session.Sessions}"
+             SelectedItem="{Binding Session.CurrentSession, Mode=TwoWay}"
              SelectionChanged="SessionTabs_SelectionChanged"
              Background="Transparent"
              BorderThickness="0"
@@ -113,7 +113,7 @@
                         </Border>
                         <!-- Broadcast selection checkbox (visible when broadcast mode is on) -->
                         <CheckBox IsChecked="{Binding IsSelectedForBroadcast, Mode=TwoWay}"
-                                 Visibility="{Binding DataContext.IsBroadcastMode, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibilityConverter}}"
+                                 Visibility="{Binding DataContext.BroadcastInput.IsBroadcastMode, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibilityConverter}}"
                                  VerticalAlignment="Center"
                                  Margin="0,0,6,0"
                                  ToolTip="Include in broadcast" />
@@ -121,7 +121,7 @@
                         <ui:Button Icon="{ui:SymbolIcon Dismiss12}"
                                   Padding="2"
                                   Background="Transparent"
-                                  Command="{Binding DataContext.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                  Command="{Binding DataContext.Session.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                   CommandParameter="{Binding}" />
                     </StackPanel>
                 </Border>

@@ -61,7 +61,9 @@ public partial class SshConfigImportViewModel : ObservableObject
         if (dialog.ShowDialog() == true)
         {
             ConfigFilePath = dialog.FileName;
-            _ = ParseConfigAsync();
+            _ = ParseConfigAsync().ContinueWith(t =>
+                System.Diagnostics.Debug.WriteLine($"Config parse error: {t.Exception}"),
+                TaskContinuationOptions.OnlyOnFaulted);
         }
     }
 

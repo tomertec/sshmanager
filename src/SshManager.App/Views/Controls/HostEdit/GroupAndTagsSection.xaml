@@ -21,8 +21,8 @@
         <!-- Group -->
         <TextBlock Text="Group"
                    Style="{StaticResource SectionLabelStyle}" />
-        <ComboBox ItemsSource="{Binding AvailableGroups}"
-                  SelectedItem="{Binding SelectedGroup}"
+        <ComboBox ItemsSource="{Binding Metadata.AvailableGroups}"
+                  SelectedItem="{Binding Metadata.SelectedGroup}"
                   DisplayMemberPath="Name"
                   Margin="0,0,0,16" />
 
@@ -31,9 +31,9 @@
                    Style="{StaticResource SectionLabelStyle}" />
 
         <!-- Selected Tags -->
-        <ItemsControl ItemsSource="{Binding SelectedTags}"
+        <ItemsControl ItemsSource="{Binding Metadata.SelectedTags}"
                       Margin="0,0,0,4"
-                      Visibility="{Binding SelectedTags.Count, Converter={StaticResource BoolToVisibilityConverter}}">
+                      Visibility="{Binding Metadata.SelectedTags.Count, Converter={StaticResource BoolToVisibilityConverter}}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <WrapPanel />
@@ -41,7 +41,7 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <ui:Button Command="{Binding DataContext.ToggleTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                    <ui:Button Command="{Binding DataContext.Metadata.ToggleTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                CommandParameter="{Binding}"
                                Appearance="Primary"
                                Margin="0,0,4,4"
@@ -65,7 +65,7 @@
         </ItemsControl>
 
         <!-- Available Tags -->
-        <ItemsControl ItemsSource="{Binding AllTags}"
+        <ItemsControl ItemsSource="{Binding Metadata.AllTags}"
                       Margin="0,0,0,8">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -74,7 +74,7 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <ui:Button Command="{Binding DataContext.ToggleTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                    <ui:Button Command="{Binding DataContext.Metadata.ToggleTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                CommandParameter="{Binding}"
                                Appearance="Secondary"
                                Margin="0,0,4,4"
@@ -101,13 +101,13 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <ui:TextBox Grid.Column="0"
-                        Text="{Binding NewTagName, UpdateSourceTrigger=PropertyChanged}"
+                        Text="{Binding Metadata.NewTagName, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="Add new tag..."
                         Margin="0,0,8,0" />
             <ui:Button Grid.Column="1"
                        Icon="{ui:SymbolIcon Add16}"
                        ToolTip="Create new tag"
-                       Command="{Binding CreateTagAsyncCommand}"
+                       Command="{Binding Metadata.CreateTagAsyncCommand}"
                        Width="32" Height="32"
                        Padding="0" />
         </Grid>

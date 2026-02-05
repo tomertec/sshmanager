@@ -1,6 +1,4 @@
-using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.Core.Models;
@@ -9,146 +7,49 @@ using SshManager.Security;
 using SshManager.Terminal;
 using SshManager.Terminal.Models;
 using SshManager.Terminal.Services;
-using IBroadcastInputService = SshManager.Terminal.Services.IBroadcastInputService;
 using SshManager.App.Services;
 
 namespace SshManager.App.ViewModels;
 
+/// <summary>
+/// Main window view model that coordinates sub-ViewModels for different functional areas.
+/// Sub-VMs are exposed directly for XAML binding (e.g., {Binding HostManagement.Hosts}).
+/// </summary>
 public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
-    private readonly HostManagementViewModel _hostManagement;
-    private readonly SessionViewModel _session;
-    private readonly SessionLoggingViewModel _sessionLogging;
-    private readonly BroadcastInputViewModel _broadcastInput;
-    private readonly SftpLauncherViewModel _sftpLauncher;
-    private readonly ImportExportViewModel _importExport;
-    private readonly ISettingsRepository _settingsRepo;
-    private readonly ISecretProtector _secretProtector;
-    private readonly ITerminalSessionManager _sessionManager;
     private readonly IHostStatusService _hostStatusService;
     private readonly ITerminalResizeService _terminalResizeService;
     private readonly ILogger<MainWindowViewModel> _logger;
 
-    // Facade properties delegating to HostManagementViewModel
-    public ObservableCollection<HostEntry> Hosts => _hostManagement.Hosts;
-    public ObservableCollection<HostGroup> Groups => _hostManagement.Groups;
-
-    public HostEntry? SelectedHost
-    {
-        get => _hostManagement.SelectedHost;
-        set => _hostManagement.SelectedHost = value;
-    }
-
-    public string SearchText
-    {
-        get => _hostManagement.SearchText;
-        set => _hostManagement.SearchText = value;
-    }
-
-    public bool IsLoading => _hostManagement.IsLoading;
-    public bool HasHosts => _hostManagement.HasHosts;
-
-    [ObservableProperty]
-    private bool _isLoadingHosts = true;
-
-    public bool HasNoHosts => !IsLoadingHosts && !HasHosts;
-
-    public HostGroup? SelectedGroupFilter
-    {
-        get => _hostManagement.SelectedGroupFilter;
-        set => _hostManagement.SelectedGroupFilter = value;
-    }
-
-    // Facade commands delegating to HostManagementViewModel
-    public IAsyncRelayCommand AddHostCommand => _hostManagement.AddHostCommand;
-    public IAsyncRelayCommand<HostEntry?> EditHostCommand => _hostManagement.EditHostCommand;
-    public IAsyncRelayCommand<HostEntry?> DeleteHostCommand => _hostManagement.DeleteHostCommand;
-    public IAsyncRelayCommand<HostEntry?> SaveHostCommand => _hostManagement.SaveHostCommand;
-    public IRelayCommand<HostEntry?> CopyHostnameCommand => _hostManagement.CopyHostnameCommand;
-    public IAsyncRelayCommand<HostEntry?> CopyIpAddressCommand => _hostManagement.CopyIpAddressCommand;
-    public IAsyncRelayCommand<HostEntry?> DuplicateHostCommand => _hostManagement.DuplicateHostCommand;
-    public IAsyncRelayCommand AddGroupCommand => _hostManagement.AddGroupCommand;
-    public IAsyncRelayCommand<HostGroup?> EditGroupCommand => _hostManagement.EditGroupCommand;
-    public IAsyncRelayCommand<HostGroup?> DeleteGroupCommand => _hostManagement.DeleteGroupCommand;
-    public IAsyncRelayCommand SearchCommand => _hostManagement.SearchCommand;
-    public IAsyncRelayCommand<HostGroup?> FilterByGroupCommand => _hostManagement.FilterByGroupCommand;
-    public IAsyncRelayCommand<Behaviors.DragDropReorderEventArgs> ReorderHostsCommand => _hostManagement.ReorderHostsCommand;
-    public IAsyncRelayCommand<HostEntry?> ToggleFavoriteCommand => _hostManagement.ToggleFavoriteCommand;
-
-    // Facade properties for Tag management
-    public ObservableCollection<Tag> AllTags => _hostManagement.AllTags;
-    public ObservableCollection<Tag> SelectedFilterTags => _hostManagement.SelectedFilterTags;
-    public IAsyncRelayCommand<Tag> ToggleTagFilterCommand => _hostManagement.ToggleTagFilterCommand;
-
-    // Facade properties delegating to SessionViewModel
-    public ObservableCollection<TerminalSession> Sessions => _session.Sessions;
-
-    public TerminalSession? CurrentSession
-    {
-        get => _session.CurrentSession;
-        set => _session.CurrentSession = value;
-    }
-
-    // Facade commands delegating to SessionViewModel
-    public IAsyncRelayCommand<HostEntry?> ConnectCommand => _session.ConnectCommand;
-    public IRelayCommand<TerminalSession?> CloseSessionCommand => _session.CloseSessionCommand;
-
-    public bool HasActiveSessions => _session.HasActiveSessions;
-    public bool IsConnecting => _session.IsConnecting;
-    public string? ConnectingHostName => _session.ConnectingHostName;
+    /// <summary>
+    /// Host and group management (CRUD, search, filtering).
+    /// </summary>
+    public HostManagementViewModel HostManagement { get; }
 
     /// <summary>
-    /// Gets host statuses for UI binding.
+    /// Terminal session lifecycle and SSH connections.
     /// </summary>
-    public IReadOnlyDictionary<Guid, HostStatus> HostStatuses => _hostStatusService.GetAllStatuses();
-
-    // Facade properties delegating to SessionLoggingViewModel
-    public bool IsCurrentSessionLogging => _sessionLogging.IsCurrentSessionLogging;
-    public string? CurrentSessionLogPath => _sessionLogging.CurrentSessionLogPath;
-    public IReadOnlyList<SessionLogLevel> AvailableSessionLogLevels => _sessionLogging.AvailableSessionLogLevels;
-
-    public SessionLogLevel CurrentSessionLogLevel
-    {
-        get => _sessionLogging.CurrentSessionLogLevel;
-        set => _sessionLogging.CurrentSessionLogLevel = value;
-    }
-
-    public bool CurrentSessionRedactTypedSecrets
-    {
-        get => _sessionLogging.CurrentSessionRedactTypedSecrets;
-        set => _sessionLogging.CurrentSessionRedactTypedSecrets = value;
-    }
-
-    // Facade commands delegating to SessionLoggingViewModel
-    public IRelayCommand<SessionLogLevel> SetCurrentSessionLogLevelCommand => _sessionLogging.SetCurrentSessionLogLevelCommand;
-    public IAsyncRelayCommand ToggleSessionLoggingCommand => _sessionLogging.ToggleSessionLoggingCommand;
-    public IRelayCommand OpenCurrentSessionLogFileCommand => _sessionLogging.OpenCurrentSessionLogFileCommand;
-    public IRelayCommand OpenLogDirectoryCommand => _sessionLogging.OpenLogDirectoryCommand;
-
-    // Facade properties delegating to BroadcastInputViewModel
-    /// <summary>
-    /// Whether broadcast input mode is enabled.
-    /// </summary>
-    public bool IsBroadcastMode
-    {
-        get => _broadcastInput.IsBroadcastMode;
-        set => _broadcastInput.IsBroadcastMode = value;
-    }
+    public SessionViewModel Session { get; }
 
     /// <summary>
-    /// Number of sessions selected for broadcast.
+    /// Session logging controls.
     /// </summary>
-    public int BroadcastSelectedCount => _broadcastInput.BroadcastSelectedCount;
+    public SessionLoggingViewModel SessionLogging { get; }
 
-    // Facade commands delegating to BroadcastInputViewModel
-    public IRelayCommand ToggleBroadcastModeCommand => _broadcastInput.ToggleBroadcastModeCommand;
-    public IRelayCommand SelectAllForBroadcastCommand => _broadcastInput.SelectAllForBroadcastCommand;
-    public IRelayCommand DeselectAllForBroadcastCommand => _broadcastInput.DeselectAllForBroadcastCommand;
-    public IRelayCommand<TerminalSession?> ToggleBroadcastSelectionCommand => _broadcastInput.ToggleBroadcastSelectionCommand;
+    /// <summary>
+    /// Multi-session broadcast input functionality.
+    /// </summary>
+    public BroadcastInputViewModel BroadcastInput { get; }
 
-    // Facade commands delegating to SftpLauncherViewModel
-    public IAsyncRelayCommand OpenSftpBrowserCommand => _sftpLauncher.OpenSftpBrowserCommand;
-    public IAsyncRelayCommand<HostEntry?> OpenSftpBrowserForHostCommand => _sftpLauncher.OpenSftpBrowserForHostCommand;
+    /// <summary>
+    /// SFTP browser launching.
+    /// </summary>
+    public SftpLauncherViewModel SftpLauncher { get; }
+
+    /// <summary>
+    /// Import/export functionality.
+    /// </summary>
+    public ImportExportViewModel ImportExport { get; }
 
     /// <summary>
     /// Port forwarding manager for managing active port forwards.
@@ -160,14 +61,22 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     public QuickConnectOverlayViewModel QuickConnectOverlay { get; }
 
+    [ObservableProperty]
+    private bool _isLoadingHosts = true;
+
+    /// <summary>
+    /// Gets host statuses for UI binding.
+    /// </summary>
+    public IReadOnlyDictionary<Guid, HostStatus> HostStatuses => _hostStatusService.GetAllStatuses();
+
     /// <summary>
     /// Event raised when a new session is created (for pane management).
     /// Delegates to SessionViewModel.
     /// </summary>
     public event EventHandler<TerminalSession>? SessionCreated
     {
-        add => _session.SessionCreated += value;
-        remove => _session.SessionCreated -= value;
+        add => Session.SessionCreated += value;
+        remove => Session.SessionCreated -= value;
     }
 
     public MainWindowViewModel(
@@ -177,24 +86,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         BroadcastInputViewModel broadcastInput,
         SftpLauncherViewModel sftpLauncher,
         ImportExportViewModel importExport,
-        ISettingsRepository settingsRepo,
-        ISecretProtector secretProtector,
-        ITerminalSessionManager sessionManager,
         IHostStatusService hostStatusService,
         ITerminalResizeService terminalResizeService,
         PortForwardingManagerViewModel portForwardingManager,
         IConnectionHistoryRepository connectionHistoryRepository,
         ILogger<MainWindowViewModel>? logger = null)
     {
-        _hostManagement = hostManagement;
-        _session = session;
-        _sessionLogging = sessionLogging;
-        _broadcastInput = broadcastInput;
-        _sftpLauncher = sftpLauncher;
-        _importExport = importExport;
-        _settingsRepo = settingsRepo;
-        _secretProtector = secretProtector;
-        _sessionManager = sessionManager;
+        HostManagement = hostManagement;
+        Session = session;
+        SessionLogging = sessionLogging;
+        BroadcastInput = broadcastInput;
+        SftpLauncher = sftpLauncher;
+        ImportExport = importExport;
         _hostStatusService = hostStatusService;
         _terminalResizeService = terminalResizeService;
         PortForwardingManager = portForwardingManager;
@@ -204,18 +107,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         QuickConnectOverlay = new QuickConnectOverlayViewModel(connectionHistoryRepository);
 
         _logger.LogDebug("MainWindowViewModel initializing");
-
-        // Forward property changes from HostManagementViewModel
-        _hostManagement.PropertyChanged += OnHostManagementPropertyChanged;
-
-        // Forward property changes from SessionViewModel
-        _session.PropertyChanged += OnSessionPropertyChanged;
-
-        // Forward property changes from SessionLoggingViewModel
-        _sessionLogging.PropertyChanged += OnSessionLoggingPropertyChanged;
-
-        // Forward property changes from BroadcastInputViewModel
-        _broadcastInput.PropertyChanged += OnBroadcastInputPropertyChanged;
 
         // Startup validation: warn if terminal resize is not available
         if (!_terminalResizeService.IsResizeSupported)
@@ -240,7 +131,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public void OpenQuickConnect()
     {
         // Update hosts and statuses in the overlay before opening
-        QuickConnectOverlay.SetHosts(Hosts);
+        QuickConnectOverlay.SetHosts(HostManagement.Hosts);
         QuickConnectOverlay.HostStatuses = HostStatuses;
         QuickConnectOverlay.Open();
     }
@@ -249,7 +140,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// Saves a transient host entry (one that was created without going through the Add Host dialog).
     /// Used for Serial Quick Connect when the user wants to save the connection.
     /// </summary>
-    public Task SaveTransientHostAsync(HostEntry host) => _hostManagement.SaveTransientHostAsync(host);
+    public Task SaveTransientHostAsync(HostEntry host) => HostManagement.SaveTransientHostAsync(host);
 
     private async void OnQuickConnectHostSelected(object? sender, HostEntry host)
     {
@@ -257,101 +148,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // Wrap in try-catch since async void event handlers can swallow exceptions
         try
         {
-            await ConnectCommand.ExecuteAsync(host);
+            await Session.ConnectCommand.ExecuteAsync(host);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to connect to host {HostId} ({DisplayName}) from quick connect",
                 host.Id, host.DisplayName);
-        }
-    }
-
-    partial void OnIsLoadingHostsChanged(bool value)
-    {
-        OnPropertyChanged(nameof(HasNoHosts));
-    }
-
-    private void OnHostManagementPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        // Forward property change notifications for facade properties
-        switch (e.PropertyName)
-        {
-            case nameof(HostManagementViewModel.Hosts):
-                OnPropertyChanged(nameof(Hosts));
-                break;
-            case nameof(HostManagementViewModel.Groups):
-                OnPropertyChanged(nameof(Groups));
-                break;
-            case nameof(HostManagementViewModel.SelectedHost):
-                OnPropertyChanged(nameof(SelectedHost));
-                break;
-            case nameof(HostManagementViewModel.SearchText):
-                OnPropertyChanged(nameof(SearchText));
-                break;
-            case nameof(HostManagementViewModel.IsLoading):
-                OnPropertyChanged(nameof(IsLoading));
-                break;
-            case nameof(HostManagementViewModel.SelectedGroupFilter):
-                OnPropertyChanged(nameof(SelectedGroupFilter));
-                break;
-            case nameof(HostManagementViewModel.HasHosts):
-                OnPropertyChanged(nameof(HasHosts));
-                OnPropertyChanged(nameof(HasNoHosts));
-                break;
-        }
-    }
-
-    private void OnSessionPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(SessionViewModel.Sessions):
-                OnPropertyChanged(nameof(Sessions));
-                break;
-            case nameof(SessionViewModel.CurrentSession):
-                OnPropertyChanged(nameof(CurrentSession));
-                break;
-            case nameof(SessionViewModel.HasActiveSessions):
-                OnPropertyChanged(nameof(HasActiveSessions));
-                break;
-            case nameof(SessionViewModel.IsConnecting):
-                OnPropertyChanged(nameof(IsConnecting));
-                break;
-            case nameof(SessionViewModel.ConnectingHostName):
-                OnPropertyChanged(nameof(ConnectingHostName));
-                break;
-        }
-    }
-
-    private void OnSessionLoggingPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(SessionLoggingViewModel.IsCurrentSessionLogging):
-                OnPropertyChanged(nameof(IsCurrentSessionLogging));
-                break;
-            case nameof(SessionLoggingViewModel.CurrentSessionLogPath):
-                OnPropertyChanged(nameof(CurrentSessionLogPath));
-                break;
-            case nameof(SessionLoggingViewModel.CurrentSessionLogLevel):
-                OnPropertyChanged(nameof(CurrentSessionLogLevel));
-                break;
-            case nameof(SessionLoggingViewModel.CurrentSessionRedactTypedSecrets):
-                OnPropertyChanged(nameof(CurrentSessionRedactTypedSecrets));
-                break;
-        }
-    }
-
-    private void OnBroadcastInputPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        switch (e.PropertyName)
-        {
-            case nameof(BroadcastInputViewModel.IsBroadcastMode):
-                OnPropertyChanged(nameof(IsBroadcastMode));
-                break;
-            case nameof(BroadcastInputViewModel.BroadcastSelectedCount):
-                OnPropertyChanged(nameof(BroadcastSelectedCount));
-                break;
         }
     }
 
@@ -373,20 +175,20 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     /// <param name="cancellationToken">Optional cancellation token.</param>
     public Task LoadDataAsync(CancellationToken cancellationToken = default) => 
-        _hostManagement.LoadDataAsync(cancellationToken);
+        HostManagement.LoadDataAsync(cancellationToken);
 
     /// <summary>
     /// Refreshes the hosts list based on current search text and group filter.
     /// Delegates to HostManagementViewModel.
     /// </summary>
-    public Task RefreshHostsAsync() => _hostManagement.RefreshHostsAsync();
+    public Task RefreshHostsAsync() => HostManagement.RefreshHostsAsync();
 
     /// <summary>
     /// Gets the total host count for each group from the database (unfiltered).
     /// Delegates to HostManagementViewModel.
     /// </summary>
     public Task<(int totalCount, Dictionary<Guid, int> countsByGroup)> GetTotalHostCountsAsync() =>
-        _hostManagement.GetTotalHostCountsAsync();
+        HostManagement.GetTotalHostCountsAsync();
 
     /// <summary>
     /// Creates a session for a host without raising the SessionCreated event.
@@ -394,50 +196,50 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// Delegates to SessionViewModel.
     /// </summary>
     public Task<TerminalSession?> CreateSessionForHostAsync(HostEntry host) =>
-        _session.CreateSessionForHostAsync(host);
+        Session.CreateSessionForHostAsync(host);
 
     /// <summary>
     /// Gets the broadcast input service for the terminal control.
     /// Delegates to BroadcastInputViewModel.
     /// </summary>
-    public IBroadcastInputService BroadcastService => _broadcastInput.BroadcastService;
+    public IBroadcastInputService BroadcastService => BroadcastInput.BroadcastService;
 
     /// <summary>
     /// Exports all hosts and groups to a JSON file.
     /// Delegates to ImportExportViewModel.
     /// </summary>
-    public Task ExportHostsAsync() => _importExport.ExportHostsAsync();
+    public Task ExportHostsAsync() => ImportExport.ExportHostsAsync();
 
     /// <summary>
     /// Imports hosts and groups from a JSON file.
     /// Delegates to ImportExportViewModel.
     /// </summary>
-    public Task ImportHostsAsync() => _importExport.ImportHostsAsync();
+    public Task ImportHostsAsync() => ImportExport.ImportHostsAsync();
 
     /// <summary>
     /// Gets the SSH connection service for external access.
     /// Delegates to SessionViewModel.
     /// </summary>
-    public ISshConnectionService SshService => _session.SshService;
+    public ISshConnectionService SshService => Session.SshService;
 
     /// <summary>
     /// Gets the serial connection service for external access.
     /// Delegates to SessionViewModel.
     /// </summary>
-    public ISerialConnectionService SerialConnectionService => _session.SerialConnectionService;
+    public ISerialConnectionService SerialConnectionService => Session.SerialConnectionService;
 
     /// <summary>
     /// Gets the host fingerprint repository for external access.
     /// Delegates to SessionViewModel.
     /// </summary>
-    public IHostFingerprintRepository FingerprintRepository => _session.FingerprintRepository;
+    public IHostFingerprintRepository FingerprintRepository => Session.FingerprintRepository;
 
     /// <summary>
     /// Creates connection info from a host entry and optional password.
     /// Delegates to SessionViewModel.
     /// </summary>
     public Task<TerminalConnectionInfo> CreateConnectionInfoAsync(HostEntry host, string? password) =>
-        _session.CreateConnectionInfoAsync(host, password);
+        Session.CreateConnectionInfoAsync(host, password);
 
     /// <summary>
     /// Creates serial connection info from a host entry.
@@ -456,39 +258,39 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         bool wasSuccessful,
         string? errorMessage,
         DateTimeOffset? connectedAt = null) =>
-        _session.RecordConnectionResultAsync(host, wasSuccessful, errorMessage, connectedAt);
+        Session.RecordConnectionResultAsync(host, wasSuccessful, errorMessage, connectedAt);
 
     /// <summary>
     /// Creates a keyboard-interactive authentication callback that shows a dialog for 2FA/TOTP prompts.
     /// Delegates to SessionViewModel.
     /// </summary>
     public KeyboardInteractiveCallback CreateKeyboardInteractiveCallback() =>
-        _session.CreateKeyboardInteractiveCallback();
+        Session.CreateKeyboardInteractiveCallback();
 
     /// <summary>
     /// Creates a host key verification callback for the specified host.
     /// Delegates to SessionViewModel.
     /// </summary>
     public HostKeyVerificationCallback CreateHostKeyVerificationCallback(Guid hostId) =>
-        _session.CreateHostKeyVerificationCallback(hostId);
+        Session.CreateHostKeyVerificationCallback(hostId);
 
     /// <summary>
     /// Imports hosts from an SSH config file (~/.ssh/config).
     /// Delegates to ImportExportViewModel.
     /// </summary>
-    public Task ImportFromSshConfigAsync() => _importExport.ImportFromSshConfigAsync();
+    public Task ImportFromSshConfigAsync() => ImportExport.ImportFromSshConfigAsync();
 
     /// <summary>
     /// Exports hosts to an SSH config file format.
     /// Delegates to ImportExportViewModel.
     /// </summary>
-    public Task ExportToSshConfigAsync() => _importExport.ExportToSshConfigAsync();
+    public Task ExportToSshConfigAsync() => ImportExport.ExportToSshConfigAsync();
 
     /// <summary>
     /// Imports hosts from PuTTY sessions stored in the Windows registry.
     /// Delegates to ImportExportViewModel.
     /// </summary>
-    public Task ImportFromPuttyAsync() => _importExport.ImportFromPuttyAsync();
+    public Task ImportFromPuttyAsync() => ImportExport.ImportFromPuttyAsync();
 
     /// <summary>
     /// Event raised when hosts have been imported.
@@ -496,37 +298,33 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     public event EventHandler? HostsImported
     {
-        add => _importExport.HostsImported += value;
-        remove => _importExport.HostsImported -= value;
+        add => ImportExport.HostsImported += value;
+        remove => ImportExport.HostsImported -= value;
     }
 
     /// <summary>
     /// Gets the credential cache for external access (e.g., from terminal controls).
     /// Delegates to SessionViewModel.
     /// </summary>
-    public ICredentialCache CredentialCache => _session.CredentialCache;
+    public ICredentialCache CredentialCache => Session.CredentialCache;
 
     /// <summary>
     /// Gets the ProxyJump profile repository for external access.
     /// </summary>
-    public IProxyJumpProfileRepository ProxyJumpProfileRepository => _hostManagement.ProxyJumpProfileRepository;
+    public IProxyJumpProfileRepository ProxyJumpProfileRepository => HostManagement.ProxyJumpProfileRepository;
 
     /// <summary>
     /// Gets the port forwarding profile repository for external access.
     /// </summary>
-    public IPortForwardingProfileRepository PortForwardingProfileRepository => _hostManagement.PortForwardingProfileRepository;
+    public IPortForwardingProfileRepository PortForwardingProfileRepository => HostManagement.PortForwardingProfileRepository;
 
     /// <summary>
     /// Gets the host repository for external access.
     /// </summary>
-    public IHostRepository HostRepository => _hostManagement.HostRepository;
+    public IHostRepository HostRepository => HostManagement.HostRepository;
 
     public void Dispose()
     {
-        _hostManagement.PropertyChanged -= OnHostManagementPropertyChanged;
-        _session.PropertyChanged -= OnSessionPropertyChanged;
-        _sessionLogging.PropertyChanged -= OnSessionLoggingPropertyChanged;
-        _broadcastInput.PropertyChanged -= OnBroadcastInputPropertyChanged;
         _hostStatusService.StatusChanged -= OnHostStatusChanged;
         QuickConnectOverlay.HostSelected -= OnQuickConnectHostSelected;
     }

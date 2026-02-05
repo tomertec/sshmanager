@@ -171,29 +171,59 @@ public partial class SerialQuickConnectViewModel : ObservableObject
     /// <summary>
     /// Creates a transient HostEntry from the current settings.
     /// </summary>
-    public HostEntry CreateHostEntry()
+    public static HostEntry CreateSerialHostEntry(
+        string? displayName,
+        string? serialPortName,
+        int serialBaudRate,
+        int serialDataBits,
+        StopBits serialStopBits,
+        Parity serialParity,
+        Handshake serialHandshake,
+        bool serialDtrEnable,
+        bool serialRtsEnable,
+        bool serialLocalEcho,
+        string serialLineEnding)
     {
-        var displayName = string.IsNullOrWhiteSpace(DisplayName)
-            ? SerialPortName ?? "Serial"
-            : DisplayName;
+        var effectiveDisplayName = string.IsNullOrWhiteSpace(displayName)
+            ? serialPortName ?? "Serial"
+            : displayName;
 
         return new HostEntry
         {
             Id = Guid.NewGuid(),
-            DisplayName = displayName,
+            DisplayName = effectiveDisplayName,
             ConnectionType = ConnectionType.Serial,
-            SerialPortName = SerialPortName,
-            SerialBaudRate = SerialBaudRate,
-            SerialDataBits = SerialDataBits,
-            SerialStopBits = SerialStopBits,
-            SerialParity = SerialParity,
-            SerialHandshake = SerialHandshake,
-            SerialDtrEnable = SerialDtrEnable,
-            SerialRtsEnable = SerialRtsEnable,
-            SerialLocalEcho = SerialLocalEcho,
-            SerialLineEnding = SerialLineEnding,
+            SerialPortName = serialPortName,
+            SerialBaudRate = serialBaudRate,
+            SerialDataBits = serialDataBits,
+            SerialStopBits = serialStopBits,
+            SerialParity = serialParity,
+            SerialHandshake = serialHandshake,
+            SerialDtrEnable = serialDtrEnable,
+            SerialRtsEnable = serialRtsEnable,
+            SerialLocalEcho = serialLocalEcho,
+            SerialLineEnding = serialLineEnding,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow
         };
+    }
+
+    /// <summary>
+    /// Creates a transient HostEntry from the current settings.
+    /// </summary>
+    public HostEntry CreateHostEntry()
+    {
+        return CreateSerialHostEntry(
+            DisplayName,
+            SerialPortName,
+            SerialBaudRate,
+            SerialDataBits,
+            SerialStopBits,
+            SerialParity,
+            SerialHandshake,
+            SerialDtrEnable,
+            SerialRtsEnable,
+            SerialLocalEcho,
+            SerialLineEnding);
     }
 }

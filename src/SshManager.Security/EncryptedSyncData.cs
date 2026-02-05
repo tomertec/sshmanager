@@ -4,7 +4,7 @@ namespace SshManager.Security;
 /// Represents encrypted data for cloud synchronization.
 /// Contains all metadata needed to decrypt the data on another device.
 /// </summary>
-public class EncryptedSyncData
+public sealed class EncryptedSyncData
 {
     /// <summary>
     /// Schema version for future compatibility.
@@ -55,7 +55,7 @@ public class EncryptedSyncData
 /// <summary>
 /// Argon2id parameters for reproducible key derivation.
 /// </summary>
-public class Argon2Parameters
+public sealed class Argon2Parameters
 {
     /// <summary>
     /// Memory size in KB (default: 65536 = 64 MB as per OWASP recommendation).

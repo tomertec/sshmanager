@@ -1,5 +1,5 @@
 using System.Text;
-using System.Text.RegularExpressions;
+using System.Threading.Channels;
 
 namespace SshManager.Terminal;
 
@@ -19,18 +19,25 @@ public sealed class TerminalOutputBuffer : IDisposable
     private int _maxLinesInMemory;
     private bool _disposed;
 
+    // Bounded channel for archive operations to prevent unbounded task growth
+    private readonly Channel<ArchiveRequest> _archiveChannel;
+    private readonly Task _archiveWorker;
+
     // Constants
     private const int SegmentSize = 1000;
+    private const int MaxPendingArchives = 10; // Bounded queue capacity
 
-    // Regex to strip ANSI escape sequences
-    // Matches: ESC followed by various control sequences:
-    //   - C1 controls: ESC followed by single char in @-Z, \, _, or -
-    //   - CSI sequences: ESC [ params command
-    //   - OSC sequences: ESC ] ... BEL
-    //   - DCS/PM sequences: ESC P ... ESC \
-    private static readonly Regex AnsiEscapeRegex = new(
-        @"\x1B(?:[-@-Z\\_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07|P[^\x1B]*\x1B\\)",
-        RegexOptions.Compiled);
+    // Escape character constant for ANSI sequence detection
+    private const char Escape = '\x1B';
+
+    /// <summary>
+    /// Request to archive a memory segment to disk.
+    /// </summary>
+    private sealed record ArchiveRequest(
+        IReadOnlyList<string> Lines,
+        int StartIndex,
+        MemoryTerminalOutputSegment OriginalSegment,
+        int SegmentIndex);
 
     /// <summary>
     /// Creates a new terminal output buffer with the specified maximum line count.
@@ -45,6 +52,17 @@ public sealed class TerminalOutputBuffer : IDisposable
         // Create initial segment
         _currentSegment = new MemoryTerminalOutputSegment(0);
         _segments.Add(_currentSegment);
+
+        // Create bounded channel for archive operations
+        _archiveChannel = Channel.CreateBounded<ArchiveRequest>(new BoundedChannelOptions(MaxPendingArchives)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest, // Drop oldest archives if queue is full
+            SingleReader = true,
+            SingleWriter = false
+        });
+
+        // Start the archive worker task
+        _archiveWorker = Task.Run(ProcessArchiveRequestsAsync);
     }
 
     /// <summary>
@@ -101,41 +119,168 @@ public sealed class TerminalOutputBuffer : IDisposable
         lock (_lock)
         {
             ThrowIfDisposed();
-
-            // Strip ANSI escape sequences
-            var cleanText = StripAnsiEscapes(text);
-
-            foreach (var ch in cleanText)
-            {
-                if (ch == '\n')
-                {
-                    // End of line - store it in current segment
-                    var line = _currentLine.ToString();
-                    _currentSegment?.AppendLine(line);
-                    _currentLine.Clear();
-
-                    // Check if we need to rotate the current segment
-                    if (_currentSegment?.LineCount >= SegmentSize)
-                    {
-                        RotateSegment();
-                    }
-
-                    // Trim excess lines across all segments
-                    TrimExcess();
-                }
-                else if (ch == '\r')
-                {
-                    // Carriage return - move to start of line (common in terminal output)
-                    // We handle this by clearing the current line if followed by non-newline
-                    // For simplicity, we'll just ignore CR for now
-                }
-                else if (ch >= ' ' || ch == '\t')
-                {
-                    // Printable character or tab
-                    _currentLine.Append(ch);
-                }
-            }
+            AppendOutputCore(text.AsSpan());
         }
+    }
+
+    /// <summary>
+    /// Core implementation that processes a span of text, stripping ANSI sequences inline
+    /// and batching line commits for efficiency.
+    /// </summary>
+    private void AppendOutputCore(ReadOnlySpan<char> text)
+    {
+        var linesAdded = 0;
+        var i = 0;
+
+        while (i < text.Length)
+        {
+            var ch = text[i];
+
+            // Fast path: check for escape sequence start
+            if (ch == Escape)
+            {
+                i = SkipAnsiSequence(text, i);
+                continue;
+            }
+
+            if (ch == '\n')
+            {
+                // End of line - store it in current segment
+                _currentSegment?.AppendLine(_currentLine.ToString());
+                _currentLine.Clear();
+                linesAdded++;
+                i++;
+                continue;
+            }
+
+            if (ch == '\r')
+            {
+                // Carriage return - ignore for now
+                i++;
+                continue;
+            }
+
+            if (ch >= ' ' || ch == '\t')
+            {
+                // Batch printable characters: find the end of the printable run
+                var start = i;
+                i++;
+                while (i < text.Length)
+                {
+                    var next = text[i];
+                    if (next == Escape || next == '\n' || next == '\r' || (next < ' ' && next != '\t'))
+                        break;
+                    i++;
+                }
+                // Append the entire run at once
+#if NET6_0_OR_GREATER
+                _currentLine.Append(text.Slice(start, i - start));
+#else
+                _currentLine.Append(text.Slice(start, i - start).ToString());
+#endif
+                continue;
+            }
+
+            // Skip other control characters
+            i++;
+        }
+
+        // Batch segment rotation and trimming after processing
+        if (linesAdded > 0)
+        {
+            // Check if we need to rotate the current segment
+            if (_currentSegment?.LineCount >= SegmentSize)
+            {
+                RotateSegment();
+            }
+
+            // Trim excess lines across all segments
+            TrimExcess();
+        }
+    }
+
+    /// <summary>
+    /// Skips an ANSI escape sequence starting at the given index.
+    /// Returns the index of the first character after the sequence.
+    /// </summary>
+    private static int SkipAnsiSequence(ReadOnlySpan<char> text, int i)
+    {
+        // Must start with ESC
+        if (i >= text.Length || text[i] != Escape)
+            return i;
+
+        i++; // Skip ESC
+        if (i >= text.Length)
+            return i;
+
+        var next = text[i];
+
+        // CSI sequence: ESC [ ... final byte (@-~)
+        if (next == '[')
+        {
+            i++;
+            // Skip parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
+            while (i < text.Length)
+            {
+                var c = text[i];
+                if (c >= 0x40 && c <= 0x7E) // Final byte
+                {
+                    i++;
+                    break;
+                }
+                if (c < 0x20 || c > 0x3F) // Invalid/unknown, stop
+                    break;
+                i++;
+            }
+            return i;
+        }
+
+        // OSC sequence: ESC ] ... BEL or ESC ] ... ESC \
+        if (next == ']')
+        {
+            i++;
+            while (i < text.Length)
+            {
+                var c = text[i];
+                if (c == '\x07') // BEL terminates
+                {
+                    i++;
+                    break;
+                }
+                if (c == Escape && i + 1 < text.Length && text[i + 1] == '\\') // ESC \ terminates
+                {
+                    i += 2;
+                    break;
+                }
+                i++;
+            }
+            return i;
+        }
+
+        // DCS/PM sequence: ESC P ... ESC \
+        if (next == 'P')
+        {
+            i++;
+            while (i < text.Length)
+            {
+                if (text[i] == Escape && i + 1 < text.Length && text[i + 1] == '\\')
+                {
+                    i += 2;
+                    break;
+                }
+                i++;
+            }
+            return i;
+        }
+
+        // C1 controls: ESC followed by single char in @-Z, \, _, or -
+        if ((next >= '@' && next <= 'Z') || next == '\\' || next == '_' || next == '-')
+        {
+            return i + 1;
+        }
+
+        // Unknown sequence, just skip ESC
+        return i;
     }
 
     /// <summary>
@@ -231,11 +376,15 @@ public sealed class TerminalOutputBuffer : IDisposable
             ThrowIfDisposed();
 
             var sb = new StringBuilder();
-            var totalLines = TotalLineCount;
 
-            for (int i = 0; i < totalLines; i++)
+            // Iterate directly through segments to avoid repeated lookups
+            foreach (var segment in _segments)
             {
-                sb.AppendLine(GetLine(i));
+                var lines = segment.GetLines(0, segment.LineCount);
+                foreach (var line in lines)
+                {
+                    sb.AppendLine(line);
+                }
             }
 
             if (_currentLine.Length > 0)
@@ -268,14 +417,6 @@ public sealed class TerminalOutputBuffer : IDisposable
             _currentSegment = new MemoryTerminalOutputSegment(0);
             _segments.Add(_currentSegment);
         }
-    }
-
-    /// <summary>
-    /// Strips ANSI escape sequences from text.
-    /// </summary>
-    private static string StripAnsiEscapes(string text)
-    {
-        return AnsiEscapeRegex.Replace(text, string.Empty);
     }
 
     /// <summary>
@@ -333,25 +474,44 @@ public sealed class TerminalOutputBuffer : IDisposable
 
             if (oldestMemorySegment == null || oldestIndex < 0) break;
 
-            // Archive this segment to disk asynchronously
+            // Archive this segment to disk asynchronously via bounded channel
             var lines = oldestMemorySegment.GetAllLines();
             var startIndex = oldestMemorySegment.StartLineIndex;
 
-            // Create file segment asynchronously in the background
-            _ = Task.Run(async () =>
+            // Enqueue archive request (non-blocking, drops oldest if full)
+            var request = new ArchiveRequest(lines, startIndex, oldestMemorySegment, oldestIndex);
+            _archiveChannel.Writer.TryWrite(request);
+
+            // Update counts
+            linesInMemory -= oldestMemorySegment.LineCount;
+            memorySegmentCount--;
+        }
+    }
+
+    /// <summary>
+    /// Background worker that processes archive requests from the bounded channel.
+    /// </summary>
+    private async Task ProcessArchiveRequestsAsync()
+    {
+        try
+        {
+            await foreach (var request in _archiveChannel.Reader.ReadAllAsync())
             {
+                if (_disposed) break;
+
                 FileTerminalOutputSegment? fileSegment = null;
                 try
                 {
-                    fileSegment = await FileTerminalOutputSegment.CreateAsync(lines, startIndex);
+                    fileSegment = await FileTerminalOutputSegment.CreateAsync(request.Lines, request.StartIndex);
 
                     // Replace the memory segment with the file segment
                     lock (_lock)
                     {
-                        if (!_disposed && oldestIndex < _segments.Count && _segments[oldestIndex] == oldestMemorySegment)
+                        if (!_disposed && request.SegmentIndex < _segments.Count && 
+                            _segments[request.SegmentIndex] == request.OriginalSegment)
                         {
-                            _segments[oldestIndex].Dispose();
-                            _segments[oldestIndex] = fileSegment;
+                            _segments[request.SegmentIndex].Dispose();
+                            _segments[request.SegmentIndex] = fileSegment;
                             fileSegment = null; // Transferred ownership
                         }
                     }
@@ -365,11 +525,15 @@ public sealed class TerminalOutputBuffer : IDisposable
                     // If we created a file segment but couldn't store it, dispose it
                     fileSegment?.Dispose();
                 }
-            });
-
-            // Update counts
-            linesInMemory -= oldestMemorySegment.LineCount;
-            memorySegmentCount--;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when channel is completed during disposal
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Archive worker error: {ex.Message}");
         }
     }
 
@@ -452,6 +616,22 @@ public sealed class TerminalOutputBuffer : IDisposable
 
             _disposed = true;
 
+            // Complete the channel to signal the worker to stop
+            _archiveChannel.Writer.TryComplete();
+        }
+
+        // Wait for the archive worker to finish (outside lock to avoid deadlock)
+        try
+        {
+            _archiveWorker.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (AggregateException)
+        {
+            // Ignore exceptions during shutdown
+        }
+
+        lock (_lock)
+        {
             // Dispose all segments (including file cleanup)
             foreach (var segment in _segments)
             {

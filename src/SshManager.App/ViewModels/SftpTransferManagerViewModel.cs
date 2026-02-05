@@ -22,11 +22,12 @@ public enum ConflictResolution
 /// <summary>
 /// Manages file transfer operations, queueing, and progress tracking.
 /// </summary>
-public partial class SftpTransferManagerViewModel : ObservableObject
+public partial class SftpTransferManagerViewModel : ObservableObject, IDisposable
 {
     private readonly ILogger<SftpTransferManagerViewModel> _logger;
     private readonly ISftpSession _session;
-    private bool _isProcessingQueue;
+    private readonly SemaphoreSlim _queueSemaphore = new(1, 1);
+    private readonly object _transfersLock = new();
     private ConflictResolution? _applyConflictResolution;
 
     /// <summary>
@@ -78,6 +79,7 @@ public partial class SftpTransferManagerViewModel : ObservableObject
     {
         _session = session;
         _logger = logger ?? NullLogger<SftpTransferManagerViewModel>.Instance;
+        System.Windows.Data.BindingOperations.EnableCollectionSynchronization(_transfers, _transfersLock);
     }
 
     /// <summary>
@@ -118,7 +120,7 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         // Build list of transfers with local paths
         foreach (var remotePath in remotePaths)
         {
-            var fileName = Path.GetFileName(remotePath);
+            var fileName = GetRemoteFileName(remotePath);
             var localPath = Path.Combine(localBasePath, fileName);
 
             transfers.Add((localPath, remotePath));
@@ -144,7 +146,15 @@ public partial class SftpTransferManagerViewModel : ObservableObject
 
             if (isUpload)
             {
-                totalBytes = new FileInfo(localPath).Length;
+                try
+                {
+                    totalBytes = new FileInfo(localPath).Length;
+                }
+                catch (Exception ex) when (ex is FileNotFoundException or IOException)
+                {
+                    _logger.LogWarning(ex, "Source file not accessible: {Path}", localPath);
+                    continue;
+                }
                 try
                 {
                     var existingInfo = await _session.GetFileInfoAsync(remotePath);
@@ -316,7 +326,7 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         long resumeOffset = 0,
         long? totalBytesOverride = null)
     {
-        var fileName = Path.GetFileName(remotePath);
+        var fileName = GetRemoteFileName(remotePath);
 
         var totalBytes = totalBytesOverride.HasValue && totalBytesOverride.Value > 0
             ? totalBytesOverride.Value
@@ -346,22 +356,45 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Executes an action on the UI thread if needed.
+    /// </summary>
+    private static void RunOnUiThread(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(action);
+        }
+        else
+        {
+            action();
+        }
+    }
+
     private void EnqueueTransfer(TransferItemViewModel transfer)
     {
-        Transfers.Add(transfer);
-        OnPropertyChanged(nameof(HasActiveTransfer));
-        OnPropertyChanged(nameof(ActiveTransferCount));
-        _ = ProcessTransferQueueAsync();
+        RunOnUiThread(() =>
+        {
+            Transfers.Add(transfer);
+            OnPropertyChanged(nameof(HasActiveTransfer));
+            OnPropertyChanged(nameof(ActiveTransferCount));
+        });
+        _ = ProcessTransferQueueAsync()
+            .ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                    _logger.LogError(t.Exception, "Transfer queue processing failed unexpectedly");
+            }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     private async Task ProcessTransferQueueAsync()
     {
-        if (_isProcessingQueue)
+        if (!await _queueSemaphore.WaitAsync(0))
         {
             return;
         }
 
-        _isProcessingQueue = true;
         try
         {
             while (true)
@@ -377,7 +410,7 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         }
         finally
         {
-            _isProcessingQueue = false;
+            _queueSemaphore.Release();
         }
     }
 
@@ -396,17 +429,19 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         OnPropertyChanged(nameof(HasActiveTransfer));
         OnPropertyChanged(nameof(ActiveTransferCount));
 
-        var progress = new Progress<double>(p =>
+        // IMPORTANT: Progress<T> must be created on the UI thread so that its
+        // SynchronizationContext captures the dispatcher for callback marshaling.
+        var progress = new Progress<TransferProgress>(p =>
         {
-            transfer.Progress = p;
-            transfer.TransferredBytes = (long)(transfer.TotalBytes * p / 100.0);
+            transfer.Progress = p.PercentComplete;
+            transfer.TransferredBytes = p.BytesTransferred;
         });
 
         try
         {
             if (transfer.Direction == TransferDirection.Upload)
             {
-                await _session.UploadFileAsync(
+                await _session.UploadFileWithStatsAsync(
                     transfer.LocalPath,
                     transfer.RemotePath,
                     progress,
@@ -421,7 +456,7 @@ public partial class SftpTransferManagerViewModel : ObservableObject
             }
             else
             {
-                await _session.DownloadFileAsync(
+                await _session.DownloadFileWithStatsAsync(
                     transfer.RemotePath,
                     transfer.LocalPath,
                     progress,
@@ -442,22 +477,33 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            transfer.Status = TransferStatus.Cancelled;
+            if (transfer.Status != TransferStatus.Cancelled)
+                transfer.Status = TransferStatus.Cancelled;
             _logger.LogInformation("Transfer cancelled: {FileName}", transfer.FileName);
             await UpdateResumeStateAsync(transfer);
         }
         catch (Exception ex)
         {
-            transfer.Status = TransferStatus.Failed;
-            transfer.ErrorMessage = ex.Message;
+            if (transfer.Status != TransferStatus.Cancelled)
+            {
+                transfer.Status = TransferStatus.Failed;
+                transfer.ErrorMessage = ex.Message;
+            }
             _logger.LogError(ex, "Transfer failed: {FileName}", transfer.FileName);
             await UpdateResumeStateAsync(transfer);
         }
         finally
         {
             transfer.CompletedAt = DateTimeOffset.Now;
+
+            // Dispose the CancellationTokenSource and null it out to prevent
+            // ObjectDisposedException if CancelTransfer/CancelAllTransfers is called later
+            var cts = transfer.CancellationTokenSource;
+            transfer.CancellationTokenSource = null;
+            cts?.Dispose();
+
             OnPropertyChanged(nameof(HasActiveTransfer));
-        OnPropertyChanged(nameof(ActiveTransferCount));
+            OnPropertyChanged(nameof(ActiveTransferCount));
 
             // Schedule auto-removal for completed transfers
             if (transfer.Status == TransferStatus.Completed)
@@ -516,13 +562,17 @@ public partial class SftpTransferManagerViewModel : ObservableObject
     [RelayCommand]
     public void CancelAllTransfers()
     {
-        foreach (var transfer in Transfers.Where(t => t.Status == TransferStatus.InProgress))
+        foreach (var transfer in Transfers.Where(t => t.Status == TransferStatus.InProgress).ToList())
         {
-            transfer.CancellationTokenSource?.Cancel();
+            try { transfer.CancellationTokenSource?.Cancel(); } catch (ObjectDisposedException)
+            {
+                // Expected: CancellationTokenSource may already be disposed
+                // when transfers complete or are cancelled concurrently
+            }
             transfer.Status = TransferStatus.Cancelled;
         }
 
-        foreach (var transfer in Transfers.Where(t => t.Status == TransferStatus.Pending))
+        foreach (var transfer in Transfers.Where(t => t.Status == TransferStatus.Pending).ToList())
         {
             transfer.Status = TransferStatus.Cancelled;
         }
@@ -539,7 +589,11 @@ public partial class SftpTransferManagerViewModel : ObservableObject
     {
         if (transfer == null) return;
 
-        transfer.CancellationTokenSource?.Cancel();
+        try { transfer.CancellationTokenSource?.Cancel(); } catch (ObjectDisposedException)
+        {
+            // Expected: CancellationTokenSource may already be disposed
+            // when transfers complete or are cancelled concurrently
+        }
         transfer.Status = TransferStatus.Cancelled;
         OnPropertyChanged(nameof(HasActiveTransfer));
         OnPropertyChanged(nameof(ActiveTransferCount));
@@ -566,7 +620,12 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         transfer.CompletedAt = null;
         OnPropertyChanged(nameof(HasActiveTransfer));
         OnPropertyChanged(nameof(ActiveTransferCount));
-        _ = ProcessTransferQueueAsync();
+        _ = ProcessTransferQueueAsync()
+            .ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                    _logger.LogError(t.Exception, "Transfer queue processing failed unexpectedly");
+            }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     /// <summary>
@@ -593,7 +652,12 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         InitializeTransferProgress(transfer);
         OnPropertyChanged(nameof(HasActiveTransfer));
         OnPropertyChanged(nameof(ActiveTransferCount));
-        _ = ProcessTransferQueueAsync();
+        _ = ProcessTransferQueueAsync()
+            .ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                    _logger.LogError(t.Exception, "Transfer queue processing failed unexpectedly");
+            }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     /// <summary>
@@ -602,17 +666,20 @@ public partial class SftpTransferManagerViewModel : ObservableObject
     [RelayCommand]
     public void ClearCompletedTransfers()
     {
-        var completedTransfers = Transfers
-            .Where(t => t.Status is TransferStatus.Completed or TransferStatus.Failed or TransferStatus.Cancelled)
-            .ToList();
-
-        foreach (var transfer in completedTransfers)
+        RunOnUiThread(() =>
         {
-            Transfers.Remove(transfer);
-        }
+            var completedTransfers = Transfers
+                .Where(t => t.Status is TransferStatus.Completed or TransferStatus.Failed or TransferStatus.Cancelled)
+                .ToList();
 
-        OnPropertyChanged(nameof(HasActiveTransfer));
-        OnPropertyChanged(nameof(ActiveTransferCount));
+            foreach (var transfer in completedTransfers)
+            {
+                Transfers.Remove(transfer);
+            }
+
+            OnPropertyChanged(nameof(HasActiveTransfer));
+            OnPropertyChanged(nameof(ActiveTransferCount));
+        });
     }
 
     /// <summary>
@@ -627,12 +694,11 @@ public partial class SftpTransferManagerViewModel : ObservableObject
             // Only remove if still completed (not cancelled by user in the meantime)
             if (transfer.Status == TransferStatus.Completed && Transfers.Contains(transfer))
             {
-                // Use dispatcher to ensure we're on the UI thread
-                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                RunOnUiThread(() =>
                 {
                     Transfers.Remove(transfer);
                     OnPropertyChanged(nameof(HasActiveTransfer));
-        OnPropertyChanged(nameof(ActiveTransferCount));
+                    OnPropertyChanged(nameof(ActiveTransferCount));
                 });
             }
         }
@@ -640,6 +706,11 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         {
             _logger.LogDebug(ex, "Failed to auto-remove completed transfer");
         }
+    }
+
+    public void Dispose()
+    {
+        _queueSemaphore.Dispose();
     }
 
     private static string GetUniqueLocalPath(string localPath)
@@ -658,5 +729,16 @@ public partial class SftpTransferManagerViewModel : ObservableObject
         }
 
         return Path.Combine(directory, $"{name} ({Guid.NewGuid():N}){extension}");
+    }
+
+    /// <summary>
+    /// Gets the file name from a remote Unix path (last segment after '/').
+    /// Unlike Path.GetFileName, this correctly handles Unix paths on Windows.
+    /// </summary>
+    private static string GetRemoteFileName(string remotePath)
+    {
+        if (string.IsNullOrEmpty(remotePath)) return "";
+        var lastSlash = remotePath.LastIndexOf('/');
+        return lastSlash >= 0 ? remotePath[(lastSlash + 1)..] : remotePath;
     }
 }

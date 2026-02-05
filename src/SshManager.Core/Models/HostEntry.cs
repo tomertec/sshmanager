@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.IO.Ports;
-using System.Text.RegularExpressions;
+using SshManager.Core.Validation;
 
 namespace SshManager.Core.Models;
 
@@ -9,12 +9,12 @@ namespace SshManager.Core.Models;
 /// </summary>
 public sealed partial class HostEntry : IValidatableObject
 {
-    // Maximum lengths for string fields
-    private const int MaxHostnameLength = 400;
-    private const int MaxUsernameLength = 100;
-    private const int MaxDisplayNameLength = 200;
-    private const int MaxNotesLength = 5000;
-    private const int MaxPathLength = 1000;
+    // Maximum lengths for string fields - using shared constants
+    private const int MaxHostnameLength = Constants.StringLimits.MaxHostnameLength;
+    private const int MaxUsernameLength = Constants.StringLimits.MaxUsernameLength;
+    private const int MaxDisplayNameLength = Constants.StringLimits.MaxDisplayNameLength;
+    private const int MaxNotesLength = Constants.StringLimits.MaxNotesLength;
+    private const int MaxPathLength = Constants.StringLimits.MaxPathLength;
 
     public Guid Id { get; set; } = Guid.NewGuid();
 
@@ -34,8 +34,8 @@ public sealed partial class HostEntry : IValidatableObject
     /// <summary>
     /// SSH port number (default: 22).
     /// </summary>
-    [Range(1, 65535, ErrorMessage = "Port must be between 1 and 65535")]
-    public int Port { get; set; } = 22;
+    [Range(Constants.Network.MinPort, Constants.Network.MaxPort, ErrorMessage = "Port must be between 1 and 65535")]
+    public int Port { get; set; } = Constants.Network.DefaultSshPort;
 
     /// <summary>
     /// SSH username.
@@ -81,7 +81,7 @@ public sealed partial class HostEntry : IValidatableObject
     /// <summary>
     /// DPAPI-encrypted secure notes (base64 encoded). Use for sensitive information like API keys.
     /// </summary>
-    [MaxLength(10000)]
+    [MaxLength(Constants.StringLimits.MaxSecureNotesLength)]
     public string? SecureNotesProtected { get; set; }
 
     /// <summary>
@@ -112,12 +112,12 @@ public sealed partial class HostEntry : IValidatableObject
     /// <summary>
     /// Serial port baud rate (default: 9600).
     /// </summary>
-    public int SerialBaudRate { get; set; } = 9600;
+    public int SerialBaudRate { get; set; } = Constants.SerialDefaults.DefaultBaudRate;
 
     /// <summary>
     /// Serial port data bits (default: 8).
     /// </summary>
-    public int SerialDataBits { get; set; } = 8;
+    public int SerialDataBits { get; set; } = Constants.SerialDefaults.DefaultDataBits;
 
     /// <summary>
     /// Serial port stop bits (default: One).
@@ -152,7 +152,7 @@ public sealed partial class HostEntry : IValidatableObject
     /// <summary>
     /// Line ending to use when sending data over serial (default: "\r\n").
     /// </summary>
-    public string SerialLineEnding { get; set; } = "\r\n";
+    public string SerialLineEnding { get; set; } = Constants.SerialDefaults.DefaultLineEnding;
 
     /// <summary>
     /// Per-host keep-alive interval in seconds.
@@ -262,7 +262,7 @@ public sealed partial class HostEntry : IValidatableObject
         else
         {
             // Validate hostname format (basic validation for hostname/IP)
-            if (!IsValidHostname(Hostname) && !IsValidIpAddress(Hostname))
+            if (!ValidationPatterns.IsValidHostOrIpAddress(Hostname))
             {
                 yield return new ValidationResult(
                     "Hostname must be a valid hostname or IP address",
@@ -287,7 +287,7 @@ public sealed partial class HostEntry : IValidatableObject
                     "Private key path is required when using PrivateKeyFile authentication",
                     [nameof(PrivateKeyPath)]);
             }
-            else if (PrivateKeyPath.Contains(".."))
+            else if (!ValidationPatterns.IsPathTraversalSafe(PrivateKeyPath))
             {
                 yield return new ValidationResult(
                     "Private key path cannot contain path traversal sequences",
@@ -304,29 +304,4 @@ public sealed partial class HostEntry : IValidatableObject
         }
     }
 
-    /// <summary>
-    /// Validates a hostname format (RFC 1123 compliant).
-    /// </summary>
-    private static bool IsValidHostname(string hostname)
-    {
-        if (string.IsNullOrWhiteSpace(hostname) || hostname.Length > 253)
-            return false;
-
-        // Hostname regex: labels separated by dots, each label 1-63 chars, alphanumeric or hyphen
-        return HostnameRegex().IsMatch(hostname);
-    }
-
-    /// <summary>
-    /// Validates an IP address format (IPv4 or IPv6).
-    /// </summary>
-    private static bool IsValidIpAddress(string address)
-    {
-        return System.Net.IPAddress.TryParse(address, out _);
-    }
-
-    /// <summary>
-    /// Regex for validating hostnames per RFC 1123.
-    /// </summary>
-    [GeneratedRegex(@"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*$", RegexOptions.Compiled)]
-    private static partial Regex HostnameRegex();
 }

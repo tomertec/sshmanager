@@ -28,6 +28,7 @@ public abstract partial class FileBrowserViewModelBase<TQuickAccess> : Observabl
 {
     protected readonly ILogger _logger;
     protected readonly Stack<string> _navigationHistory = new();
+    private bool _suppressHistoryPush;
 
     /// <summary>
     /// Current directory path.
@@ -194,7 +195,7 @@ public abstract partial class FileBrowserViewModelBase<TQuickAccess> : Observabl
             }
 
             // Save current path to history if navigating to a new location
-            if (!string.IsNullOrEmpty(CurrentPath) && CurrentPath != path)
+            if (!_suppressHistoryPush && !string.IsNullOrEmpty(CurrentPath) && CurrentPath != path)
             {
                 _navigationHistory.Push(CurrentPath);
             }
@@ -249,9 +250,15 @@ public abstract partial class FileBrowserViewModelBase<TQuickAccess> : Observabl
         if (_navigationHistory.Count == 0) return;
 
         var previousPath = _navigationHistory.Pop();
-        CurrentPath = ""; // Clear to avoid re-pushing to history
-        await NavigateToAsync(previousPath);
-        _navigationHistory.Pop(); // Remove the path that was just added
+        _suppressHistoryPush = true;
+        try
+        {
+            await NavigateToAsync(previousPath);
+        }
+        finally
+        {
+            _suppressHistoryPush = false;
+        }
     }
 
     /// <summary>
@@ -275,9 +282,15 @@ public abstract partial class FileBrowserViewModelBase<TQuickAccess> : Observabl
         if (!string.IsNullOrEmpty(CurrentPath))
         {
             _logger.LogDebug("Refreshing {BrowserType} directory: {Path}", BrowserTypeName, CurrentPath);
-            var path = CurrentPath;
-            CurrentPath = ""; // Clear to avoid history push
-            await NavigateToAsync(path);
+            _suppressHistoryPush = true;
+            try
+            {
+                await NavigateToAsync(CurrentPath);
+            }
+            finally
+            {
+                _suppressHistoryPush = false;
+            }
         }
     }
 

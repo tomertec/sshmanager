@@ -17,16 +17,22 @@
     </UserControl.Resources>
 
     <Border x:Name="PaneBorder"
-            Background="#0C0C0C"
-            CornerRadius="4"
+            Background="{DynamicResource TerminalBackgroundDarkBrush}"
+            CornerRadius="6"
             Margin="2"
             ClipToBounds="True">
         <Border.Style>
             <Style TargetType="Border">
-                <Setter Property="BorderBrush" Value="#2A2A2A" />
-                <Setter Property="BorderThickness" Value="2" />
+                <!-- Use a local SolidColorBrush instead of DynamicResource to prevent WPF from
+                     replacing the brush instance when visibility changes, which breaks animations -->
+                <Setter Property="BorderBrush">
+                    <Setter.Value>
+                        <SolidColorBrush Color="#2A2A2A" />
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="BorderThickness" Value="1" />
                 <Style.Triggers>
-                    <!-- SSH connection focus: Blue border -->
+                    <!-- SSH connection focus: Blue border with animation -->
                     <MultiDataTrigger>
                         <MultiDataTrigger.Conditions>
                             <Condition Binding="{Binding IsFocused}" Value="True"/>
@@ -57,7 +63,7 @@
                             </BeginStoryboard>
                         </MultiDataTrigger.ExitActions>
                     </MultiDataTrigger>
-                    <!-- Serial connection focus: Yellow border -->
+                    <!-- Serial connection focus: Yellow border with animation -->
                     <MultiDataTrigger>
                         <MultiDataTrigger.Conditions>
                             <Condition Binding="{Binding IsFocused}" Value="True"/>
@@ -100,7 +106,7 @@
 
             <!-- Pane Header with enhanced visual hierarchy -->
             <Border Grid.Row="0"
-                    Background="#15FFFFFF"
+                    Background="{DynamicResource TerminalHeaderBackgroundBrush}"
                     Padding="12,8"
                     CornerRadius="4,4,0,0">
                 <Grid Background="Transparent">
@@ -118,10 +124,10 @@
                             <Ellipse Width="8" Height="8" Margin="0,0,8,0">
                                 <Ellipse.Style>
                                     <Style TargetType="Ellipse">
-                                        <Setter Property="Fill" Value="#4CAF50" />
+                                        <Setter Property="Fill" Value="{DynamicResource TerminalConnectedStatusBrush}" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding Session.IsConnected}" Value="False">
-                                                <Setter Property="Fill" Value="#999999" />
+                                                <Setter Property="Fill" Value="{DynamicResource TerminalDisconnectedStatusBrush}" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -130,7 +136,7 @@
 
                             <!-- Session title -->
                             <TextBlock Text="{Binding DisplayTitle}"
-                                       Foreground="#FFFFFF"
+                                       Foreground="{DynamicResource TerminalForegroundBrush}"
                                        FontSize="13"
                                        FontWeight="SemiBold"
                                        VerticalAlignment="Center"
@@ -138,8 +144,7 @@
 
                             <!-- Hostname -->
                             <TextBlock Text="{Binding Session.Host.Hostname}"
-                                       Foreground="#FFFFFF"
-                                       Opacity="0.5"
+                                       Foreground="{DynamicResource TerminalForegroundSecondaryBrush}"
                                        FontSize="11"
                                        Margin="8,0,0,0"
                                        VerticalAlignment="Center"
@@ -147,15 +152,15 @@
                                        Visibility="{Binding Session, Converter={StaticResource NullToVisibilityConverter}, ConverterParameter=Invert}" />
 
                             <!-- Primary indicator badge -->
-                            <Border Background="#204CAF50"
-                                    BorderBrush="#404CAF50"
+                            <Border Background="{DynamicResource TerminalPrimaryBadgeBackgroundBrush}"
+                                    BorderBrush="{DynamicResource TerminalPrimaryBadgeBorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="3"
                                     Padding="6,2"
                                     Margin="8,0,0,0"
                                     Visibility="{Binding IsPrimaryForSession, Converter={StaticResource BoolToVisibilityConverter}}">
                                 <TextBlock Text="PRIMARY"
-                                           Foreground="#4CAF50"
+                                           Foreground="{DynamicResource TerminalPrimaryBadgeForegroundBrush}"
                                            FontSize="9"
                                            FontWeight="SemiBold"
                                            VerticalAlignment="Center" />
@@ -167,8 +172,8 @@
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
                         <!-- Enhanced Recording Indicator with animation -->
                         <Border x:Name="RecordingIndicator"
-                                Background="#20E81123"
-                                BorderBrush="#40E81123"
+                                Background="{DynamicResource TerminalRecordingBadgeBackgroundBrush}"
+                                BorderBrush="{DynamicResource TerminalRecordingBadgeBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 Padding="8,4"
@@ -176,7 +181,7 @@
                                 Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal">
                                 <!-- Animated recording dot -->
-                                <Ellipse x:Name="RecordingDot" Width="8" Height="8" Fill="#E81123">
+                                <Ellipse x:Name="RecordingDot" Width="8" Height="8" Fill="{DynamicResource TerminalRecordingBrush}">
                                     <Ellipse.Style>
                                         <Style TargetType="Ellipse">
                                             <Style.Triggers>
@@ -200,7 +205,7 @@
                                     </Ellipse.Style>
                                 </Ellipse>
                                 <TextBlock Text="REC"
-                                           Foreground="#E81123"
+                                           Foreground="{DynamicResource TerminalRecordingBrush}"
                                            FontSize="11"
                                            FontWeight="SemiBold"
                                            Margin="6,0,0,0"
@@ -219,7 +224,7 @@
                                 <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                                     <Style.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Foreground" Value="#E81123" />
+                                            <Setter Property="Foreground" Value="{DynamicResource TerminalRecordButtonHoverBrush}" />
                                         </Trigger>
                                     </Style.Triggers>
                                 </Style>
@@ -234,7 +239,7 @@
                                 <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                                     <Style.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Foreground" Value="#0078D4" />
+                                            <Setter Property="Foreground" Value="{DynamicResource TerminalSplitButtonHoverBrush}" />
                                         </Trigger>
                                     </Style.Triggers>
                                 </Style>
@@ -249,7 +254,7 @@
                                 <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                                     <Style.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Foreground" Value="#0078D4" />
+                                            <Setter Property="Foreground" Value="{DynamicResource TerminalSplitButtonHoverBrush}" />
                                         </Trigger>
                                     </Style.Triggers>
                                 </Style>
@@ -263,7 +268,7 @@
                                 <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                                     <Style.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Foreground" Value="#E81123" />
+                                            <Setter Property="Foreground" Value="{DynamicResource TerminalCloseButtonHoverBrush}" />
                                         </Trigger>
                                     </Style.Triggers>
                                 </Style>
@@ -281,17 +286,17 @@
 
             <!-- Empty pane overlay -->
             <Border Grid.Row="1"
-                    Background="#0C0C0C"
+                    Background="{DynamicResource TerminalBackgroundDarkBrush}"
                     Visibility="{Binding Session, Converter={StaticResource NullToVisibilityConverter}}">
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                     <ui:SymbolIcon Symbol="DesktopSignal24" FontSize="48" Opacity="0.3" />
                     <TextBlock Text="No session"
-                               Foreground="#666666"
+                               Foreground="{DynamicResource TerminalForegroundTertiaryBrush}"
                                FontSize="14"
                                Margin="0,12,0,0"
                                HorizontalAlignment="Center" />
                     <TextBlock Text="Connect to a host from the list"
-                               Foreground="#444444"
+                               Foreground="{DynamicResource TerminalForegroundDisabledBrush}"
                                FontSize="12"
                                Margin="0,4,0,0"
                                HorizontalAlignment="Center" />

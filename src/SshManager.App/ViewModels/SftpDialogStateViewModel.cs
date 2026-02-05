@@ -1,5 +1,6 @@
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
+using SshManager.Core.Formatting;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -148,11 +149,6 @@ public partial class SftpDialogStateViewModel : ObservableObject
         : $"Existing: {FormatFileSize(OverwriteExistingSize)}";
 
     /// <summary>
-    /// Callback to create a local directory.
-    /// </summary>
-    public Func<string, Task>? CreateLocalDirectoryCallback { get; set; }
-
-    /// <summary>
     /// Callback to refresh the local browser.
     /// </summary>
     public Func<Task>? RefreshLocalBrowserCallback { get; set; }
@@ -223,6 +219,18 @@ public partial class SftpDialogStateViewModel : ObservableObject
             return;
         }
 
+        // Sanitize folder name - reject path separators and dangerous characters
+        var folderName = NewFolderName.Trim();
+        if (folderName.Contains('/')
+            || folderName.Contains('\\')
+            || folderName.Contains('\0')
+            || folderName.Contains("..")
+            || folderName.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+        {
+            SetErrorMessageAction?.Invoke("Folder name contains invalid characters.");
+            return;
+        }
+
         SetErrorMessageAction?.Invoke(null);
 
         try
@@ -231,7 +239,7 @@ public partial class SftpDialogStateViewModel : ObservableObject
             {
                 if (CreateRemoteDirectoryCallback != null)
                 {
-                    var success = await CreateRemoteDirectoryCallback(NewFolderName);
+                    var success = await CreateRemoteDirectoryCallback(folderName);
                     if (!success && GetRemoteErrorMessageCallback != null)
                     {
                         SetErrorMessageAction?.Invoke(GetRemoteErrorMessageCallback());
@@ -241,10 +249,10 @@ public partial class SftpDialogStateViewModel : ObservableObject
             else
             {
                 // Create local directory
-                if (GetCurrentLocalPathCallback != null && CreateLocalDirectoryCallback != null)
+                if (GetCurrentLocalPathCallback != null)
                 {
                     var currentPath = GetCurrentLocalPathCallback();
-                    var newPath = Path.Combine(currentPath, NewFolderName);
+                    var newPath = Path.Combine(currentPath, folderName);
                     Directory.CreateDirectory(newPath);
                     _logger.LogInformation("Created local directory: {Path}", newPath);
 
@@ -257,7 +265,7 @@ public partial class SftpDialogStateViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to create folder: {Name}", NewFolderName);
+            _logger.LogError(ex, "Failed to create folder: {Name}", folderName);
             SetErrorMessageAction?.Invoke($"Failed to create folder: {ex.Message}");
         }
         finally
@@ -484,20 +492,5 @@ public partial class SftpDialogStateViewModel : ObservableObject
         return true;
     }
 
-    private static string FormatFileSize(long bytes)
-    {
-        string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
-        int suffixIndex = 0;
-        double size = bytes;
-
-        while (size >= 1024 && suffixIndex < suffixes.Length - 1)
-        {
-            size /= 1024;
-            suffixIndex++;
-        }
-
-        return suffixIndex == 0
-            ? $"{size:N0} {suffixes[suffixIndex]}"
-            : $"{size:N1} {suffixes[suffixIndex]}";
-    }
+    private static string FormatFileSize(long bytes) => FileSizeFormatter.FormatSize(bytes);
 }

@@ -127,6 +127,11 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
     /// <summary>
     /// Saves favorites to storage.
     /// </summary>
+    /// <remarks>
+    /// TODO: The pipe-delimited format (hostname:path|hostname:path) is fragile.
+    /// Hostnames or paths containing '|' or ':' will break parsing.
+    /// Consider migrating to JSON serialization for robustness.
+    /// </remarks>
     private void SaveFavorites()
     {
         if (_saveFavoritesCallback == null || string.IsNullOrEmpty(_hostname))
@@ -326,7 +331,6 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
 
         // Filter out . and .. entries, sort directories first then by name
         var sortedItems = remoteItems
-            .Where(i => i.Name != "." && i.Name != "..")
             .OrderByDescending(i => i.IsDirectory)
             .ThenBy(i => i.Name)
             .Select(FileItemViewModel.FromSftpFileItem);

@@ -102,88 +102,90 @@ public static class DbMigrator
         var migrations = new Dictionary<string, (string Type, string Default)>
         {
             // Terminal settings
-            ["ScrollbackBufferSize"] = ("INTEGER", "10000"),
+            ["ScrollbackBufferSize"] = ("INTEGER", AppConstants.MigrationDefaults.ScrollbackBufferSize.ToString()),
             // Session logging settings
-            ["EnableSessionLogging"] = ("INTEGER", "0"),
+            ["EnableSessionLogging"] = ("INTEGER", AppConstants.MigrationDefaults.EnableSessionLogging.ToString()),
             ["SessionLogDirectory"] = ("TEXT", "''"),
-            ["SessionLogTimestampLines"] = ("INTEGER", "1"),
-            ["MaxLogFileSizeMB"] = ("INTEGER", "50"),
-            ["MaxLogFilesToKeep"] = ("INTEGER", "5"),
+            ["SessionLogTimestampLines"] = ("INTEGER", AppConstants.MigrationDefaults.SessionLogTimestampLines.ToString()),
+            ["MaxLogFileSizeMB"] = ("INTEGER", AppConstants.MigrationDefaults.MaxLogFileSizeMB.ToString()),
+            ["MaxLogFilesToKeep"] = ("INTEGER", AppConstants.MigrationDefaults.MaxLogFilesToKeep.ToString()),
             ["SessionLogLevel"] = ("TEXT", "'OutputAndEvents'"),
             ["RedactTypedSecrets"] = ("INTEGER", "0"),
-            ["MaxHistoryEntries"] = ("INTEGER", "100"),
-            ["HistoryRetentionDays"] = ("INTEGER", "0"),
-            ["ConnectionHistoryRetentionDays"] = ("INTEGER", "90"),
+            ["MaxHistoryEntries"] = ("INTEGER", AppConstants.MigrationDefaults.MaxHistoryEntries.ToString()),
+            ["HistoryRetentionDays"] = ("INTEGER", AppConstants.MigrationDefaults.HistoryRetentionDays.ToString()),
+            ["ConnectionHistoryRetentionDays"] = ("INTEGER", AppConstants.MigrationDefaults.ConnectionHistoryRetentionDays.ToString()),
             ["WindowX"] = ("INTEGER", "NULL"),
             ["WindowY"] = ("INTEGER", "NULL"),
             ["WindowWidth"] = ("INTEGER", "NULL"),
             ["WindowHeight"] = ("INTEGER", "NULL"),
             // Credential caching settings
-            ["EnableCredentialCaching"] = ("INTEGER", "0"),
-            ["CredentialCacheTimeoutMinutes"] = ("INTEGER", "15"),
-            ["ClearCacheOnLock"] = ("INTEGER", "1"),
-            ["ClearCacheOnExit"] = ("INTEGER", "1"),
+            ["EnableCredentialCaching"] = ("INTEGER", AppConstants.MigrationDefaults.EnableCredentialCaching.ToString()),
+            ["CredentialCacheTimeoutMinutes"] = ("INTEGER", AppConstants.MigrationDefaults.CredentialCacheTimeoutMinutes.ToString()),
+            ["ClearCacheOnLock"] = ("INTEGER", AppConstants.MigrationDefaults.ClearCacheOnLock.ToString()),
+            ["ClearCacheOnExit"] = ("INTEGER", AppConstants.MigrationDefaults.ClearCacheOnExit.ToString()),
             // Backup settings
-            ["EnableAutoBackup"] = ("INTEGER", "0"),
-            ["BackupIntervalMinutes"] = ("INTEGER", "60"),
-            ["MaxBackupCount"] = ("INTEGER", "10"),
+            ["EnableAutoBackup"] = ("INTEGER", AppConstants.MigrationDefaults.EnableAutoBackup.ToString()),
+            ["BackupIntervalMinutes"] = ("INTEGER", AppConstants.MigrationDefaults.BackupIntervalMinutes.ToString()),
+            ["MaxBackupCount"] = ("INTEGER", AppConstants.MigrationDefaults.MaxBackupCount.ToString()),
             ["BackupDirectory"] = ("TEXT", "NULL"),
             ["LastAutoBackupTime"] = ("TEXT", "NULL"),
             // Cloud sync settings
-            ["EnableCloudSync"] = ("INTEGER", "0"),
+            ["EnableCloudSync"] = ("INTEGER", AppConstants.MigrationDefaults.EnableCloudSync.ToString()),
             ["SyncFolderPath"] = ("TEXT", "NULL"),
             ["SyncDeviceId"] = ("TEXT", "NULL"),
             ["SyncDeviceName"] = ("TEXT", "NULL"),
             ["LastSyncTime"] = ("TEXT", "NULL"),
-            ["SyncIntervalMinutes"] = ("INTEGER", "5"),
+            ["SyncIntervalMinutes"] = ("INTEGER", AppConstants.MigrationDefaults.SyncIntervalMinutes.ToString()),
             // Find in Terminal settings
-            ["EnableFindInTerminal"] = ("INTEGER", "1"),
-            ["FindCaseSensitiveDefault"] = ("INTEGER", "0"),
+            ["EnableFindInTerminal"] = ("INTEGER", AppConstants.MigrationDefaults.EnableFindInTerminal.ToString()),
+            ["FindCaseSensitiveDefault"] = ("INTEGER", AppConstants.MigrationDefaults.FindCaseSensitiveDefault.ToString()),
             // Split pane settings
-            ["EnableSplitPanes"] = ("INTEGER", "1"),
-            ["ShowPaneHeaders"] = ("INTEGER", "1"),
+            ["EnableSplitPanes"] = ("INTEGER", AppConstants.MigrationDefaults.EnableSplitPanes.ToString()),
+            ["ShowPaneHeaders"] = ("INTEGER", AppConstants.MigrationDefaults.ShowPaneHeaders.ToString()),
             ["DefaultSplitOrientation"] = ("TEXT", "'Vertical'"),
-            ["MinimumPaneSize"] = ("INTEGER", "100"),
+            ["MinimumPaneSize"] = ("INTEGER", AppConstants.MigrationDefaults.MinimumPaneSize.ToString()),
             // Terminal theme settings
             ["TerminalThemeId"] = ("TEXT", "'default'"),
             // Performance settings
-            ["EnableHostListAnimations"] = ("INTEGER", "1"),
-            ["TerminalBufferInMemoryLines"] = ("INTEGER", "5000"),
+            ["EnableHostListAnimations"] = ("INTEGER", AppConstants.MigrationDefaults.EnableHostListAnimations.ToString()),
+            ["TerminalBufferInMemoryLines"] = ("INTEGER", AppConstants.MigrationDefaults.TerminalBufferInMemoryLines.ToString()),
             // SFTP browser settings
             ["SftpFavorites"] = ("TEXT", "''"),
-            ["SftpMirrorNavigation"] = ("INTEGER", "0"),
+            ["SftpMirrorNavigation"] = ("INTEGER", AppConstants.MigrationDefaults.SftpMirrorNavigation.ToString()),
             // Snippet Manager settings
-            ["SnippetManagerOpacity"] = ("REAL", "1"),
+            ["SnippetManagerOpacity"] = ("REAL", AppConstants.MigrationDefaults.SnippetManagerOpacity.ToString()),
             // Session recovery settings
-            ["EnableSessionRecovery"] = ("INTEGER", "1"),
+            ["EnableSessionRecovery"] = ("INTEGER", AppConstants.MigrationDefaults.EnableSessionRecovery.ToString()),
             // Kerberos/GSSAPI settings
-            ["EnableKerberosAuth"] = ("INTEGER", "0"),
-            ["DefaultKerberosDelegation"] = ("INTEGER", "0"),
+            ["EnableKerberosAuth"] = ("INTEGER", AppConstants.MigrationDefaults.EnableKerberosAuth.ToString()),
+            ["DefaultKerberosDelegation"] = ("INTEGER", AppConstants.MigrationDefaults.DefaultKerberosDelegation.ToString()),
             // Connection pooling settings
-            ["EnableConnectionPooling"] = ("INTEGER", "0"),
-            ["ConnectionPoolMaxPerHost"] = ("INTEGER", "3"),
-            ["ConnectionPoolIdleTimeoutSeconds"] = ("INTEGER", "300"),
+            ["EnableConnectionPooling"] = ("INTEGER", AppConstants.MigrationDefaults.EnableConnectionPooling.ToString()),
+            ["ConnectionPoolMaxPerHost"] = ("INTEGER", AppConstants.MigrationDefaults.ConnectionPoolMaxPerHost.ToString()),
+            ["ConnectionPoolIdleTimeoutSeconds"] = ("INTEGER", AppConstants.MigrationDefaults.ConnectionPoolIdleTimeoutSeconds.ToString()),
             // X11 forwarding settings
-            ["DefaultX11ForwardingEnabled"] = ("INTEGER", "0"),
+            ["DefaultX11ForwardingEnabled"] = ("INTEGER", AppConstants.MigrationDefaults.DefaultX11ForwardingEnabled.ToString()),
             ["X11ServerPath"] = ("TEXT", "NULL"),
-            ["AutoLaunchXServer"] = ("INTEGER", "0"),
+            ["AutoLaunchXServer"] = ("INTEGER", AppConstants.MigrationDefaults.AutoLaunchXServer.ToString()),
             // Autocompletion settings
-            ["EnableAutocompletion"] = ("INTEGER", "0"),
-            ["AutocompletionMode"] = ("INTEGER", "0"),
-            ["AutocompletionDebounceMs"] = ("INTEGER", "150"),
-            ["MaxCompletionSuggestions"] = ("INTEGER", "10"),
+            ["EnableAutocompletion"] = ("INTEGER", AppConstants.MigrationDefaults.EnableAutocompletion.ToString()),
+            ["AutocompletionMode"] = ("INTEGER", AppConstants.MigrationDefaults.AutocompletionMode.ToString()),
+            ["AutocompletionDebounceMs"] = ("INTEGER", AppConstants.MigrationDefaults.AutocompletionDebounceMs.ToString()),
+            ["MaxCompletionSuggestions"] = ("INTEGER", AppConstants.MigrationDefaults.MaxCompletionSuggestions.ToString()),
             // Host list settings
-            ["HostListViewMode"] = ("INTEGER", "1"),  // Normal = 1
-            ["ShowHostConnectionStats"] = ("INTEGER", "1"),
-            ["PinFavoritesToTop"] = ("INTEGER", "1"),
+            ["HostListViewMode"] = ("INTEGER", AppConstants.MigrationDefaults.HostListViewMode.ToString()),  // Normal = 1
+            ["ShowHostConnectionStats"] = ("INTEGER", AppConstants.MigrationDefaults.ShowHostConnectionStats.ToString()),
+            ["PinFavoritesToTop"] = ("INTEGER", AppConstants.MigrationDefaults.PinFavoritesToTop.ToString()),
             // Performance settings (Phase 1)
-            ["TerminalOutputFlushIntervalMs"] = ("INTEGER", "16"),
-            ["TerminalOutputMaxBatchSize"] = ("INTEGER", "8192"),
-            ["EnableTerminalOutputBatching"] = ("INTEGER", "1"),
+            ["TerminalOutputFlushIntervalMs"] = ("INTEGER", AppConstants.MigrationDefaults.TerminalOutputFlushIntervalMs.ToString()),
+            ["TerminalOutputMaxBatchSize"] = ("INTEGER", AppConstants.MigrationDefaults.TerminalOutputMaxBatchSize.ToString()),
+            ["EnableTerminalOutputBatching"] = ("INTEGER", AppConstants.MigrationDefaults.EnableTerminalOutputBatching.ToString()),
             // Connection settings (Phase 1)
-            ["ReconnectBaseDelayMs"] = ("INTEGER", "1000"),
-            ["ReconnectMaxDelayMs"] = ("INTEGER", "30000"),
-            ["EnableNetworkMonitoring"] = ("INTEGER", "1"),
+            ["ReconnectBaseDelayMs"] = ("INTEGER", AppConstants.MigrationDefaults.ReconnectBaseDelayMs.ToString()),
+            ["ReconnectMaxDelayMs"] = ("INTEGER", AppConstants.MigrationDefaults.ReconnectMaxDelayMs.ToString()),
+            ["EnableNetworkMonitoring"] = ("INTEGER", AppConstants.MigrationDefaults.EnableNetworkMonitoring.ToString()),
+            // Window layout settings
+            ["LeftPanelWidth"] = ("REAL", "NULL"),
         };
 
         // Add missing settings columns using validated compile-time constants
@@ -204,7 +206,7 @@ public static class DbMigrator
         if (!groupColumns.Contains("StatusCheckIntervalSeconds"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Groups ADD COLUMN StatusCheckIntervalSeconds INTEGER NOT NULL DEFAULT 30");
+                $"ALTER TABLE Groups ADD COLUMN StatusCheckIntervalSeconds INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.StatusCheckIntervalSeconds}");
             logger.Information("Added missing column StatusCheckIntervalSeconds to Groups table");
         }
 
@@ -542,7 +544,7 @@ public static class DbMigrator
         if (!hostsColumns.Contains("ConnectionType"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN ConnectionType INTEGER NOT NULL DEFAULT 0");
+                $"ALTER TABLE Hosts ADD COLUMN ConnectionType INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.ConnectionTypeSsh}");
             logger.Information("Added missing column ConnectionType to Hosts table");
         }
 
@@ -550,7 +552,7 @@ public static class DbMigrator
         {
             // ShellType.Auto = 0 (default) - assumes POSIX-compliant shell for SSH connections
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN ShellType INTEGER NOT NULL DEFAULT 0");
+                $"ALTER TABLE Hosts ADD COLUMN ShellType INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.ShellTypeAuto}");
             logger.Information("Added missing column ShellType to Hosts table");
         }
 
@@ -565,63 +567,63 @@ public static class DbMigrator
         if (!hostsColumns.Contains("SerialBaudRate"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN SerialBaudRate INTEGER NOT NULL DEFAULT 9600");
+                $"ALTER TABLE Hosts ADD COLUMN SerialBaudRate INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.SerialBaudRate}");
             logger.Information("Added missing column SerialBaudRate to Hosts table");
         }
 
         if (!hostsColumns.Contains("SerialDataBits"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN SerialDataBits INTEGER NOT NULL DEFAULT 8");
+                $"ALTER TABLE Hosts ADD COLUMN SerialDataBits INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.SerialDataBits}");
             logger.Information("Added missing column SerialDataBits to Hosts table");
         }
 
         if (!hostsColumns.Contains("SerialStopBits"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN SerialStopBits INTEGER NOT NULL DEFAULT 0");
+                $"ALTER TABLE Hosts ADD COLUMN SerialStopBits INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.SerialStopBits}");
             logger.Information("Added missing column SerialStopBits to Hosts table");
         }
 
         if (!hostsColumns.Contains("SerialParity"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN SerialParity INTEGER NOT NULL DEFAULT 0");
+                $"ALTER TABLE Hosts ADD COLUMN SerialParity INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.SerialParity}");
             logger.Information("Added missing column SerialParity to Hosts table");
         }
 
         if (!hostsColumns.Contains("SerialHandshake"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN SerialHandshake INTEGER NOT NULL DEFAULT 0");
+                $"ALTER TABLE Hosts ADD COLUMN SerialHandshake INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.SerialHandshake}");
             logger.Information("Added missing column SerialHandshake to Hosts table");
         }
 
         if (!hostsColumns.Contains("SerialDtrEnable"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN SerialDtrEnable INTEGER NOT NULL DEFAULT 1");
+                $"ALTER TABLE Hosts ADD COLUMN SerialDtrEnable INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.SerialDtrEnable}");
             logger.Information("Added missing column SerialDtrEnable to Hosts table");
         }
 
         if (!hostsColumns.Contains("SerialRtsEnable"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN SerialRtsEnable INTEGER NOT NULL DEFAULT 1");
+                $"ALTER TABLE Hosts ADD COLUMN SerialRtsEnable INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.SerialRtsEnable}");
             logger.Information("Added missing column SerialRtsEnable to Hosts table");
         }
 
         if (!hostsColumns.Contains("SerialLocalEcho"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN SerialLocalEcho INTEGER NOT NULL DEFAULT 0");
+                $"ALTER TABLE Hosts ADD COLUMN SerialLocalEcho INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.SerialLocalEcho}");
             logger.Information("Added missing column SerialLocalEcho to Hosts table");
         }
 
         if (!hostsColumns.Contains("SerialLineEnding"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN SerialLineEnding TEXT NOT NULL DEFAULT '\r\n'");
+                $"ALTER TABLE Hosts ADD COLUMN SerialLineEnding TEXT NOT NULL DEFAULT '\r\n'");
             logger.Information("Added missing column SerialLineEnding to Hosts table");
         }
 
@@ -659,7 +661,7 @@ public static class DbMigrator
         if (!hostsColumns.Contains("X11TrustedForwarding"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN X11TrustedForwarding INTEGER NOT NULL DEFAULT 0");
+                $"ALTER TABLE Hosts ADD COLUMN X11TrustedForwarding INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.X11TrustedForwarding}");
             logger.Information("Added missing column X11TrustedForwarding to Hosts table");
         }
 
@@ -674,7 +676,7 @@ public static class DbMigrator
         if (!hostsColumns.Contains("IsFavorite"))
         {
             await db.Database.ExecuteSqlRawAsync(
-                "ALTER TABLE Hosts ADD COLUMN IsFavorite INTEGER NOT NULL DEFAULT 0");
+                $"ALTER TABLE Hosts ADD COLUMN IsFavorite INTEGER NOT NULL DEFAULT {AppConstants.MigrationDefaults.IsFavorite}");
             logger.Information("Added missing column IsFavorite to Hosts table");
         }
 

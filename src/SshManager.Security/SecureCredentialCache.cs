@@ -17,8 +17,16 @@ public sealed class SecureCredentialCache : ICredentialCache
     private Timer? _cleanupTimer;
     private TimeSpan _timeout = TimeSpan.FromMinutes(15);
     private bool _disposed;
+    private bool _cachingEnabled;
 
-    private const int CleanupIntervalSeconds = 60; // Check for expired credentials every minute
+    /// <summary>
+    /// Interval in seconds for the cleanup timer to check for expired credentials.
+    /// 60 seconds provides a good balance between:
+    /// - Timely cleanup of expired credentials (security)
+    /// - Minimal overhead from frequent timer callbacks (performance)
+    /// This is an internal implementation detail - users configure the actual timeout via SetTimeout().
+    /// </summary>
+    private const int CleanupIntervalSeconds = 60;
 
     public event EventHandler? CacheCleared;
 
@@ -30,8 +38,8 @@ public sealed class SecureCredentialCache : ICredentialCache
     public SecureCredentialCache(ILogger<SecureCredentialCache>? logger = null)
     {
         _logger = logger ?? NullLogger<SecureCredentialCache>.Instance;
-        StartCleanupTimer();
-        _logger.LogDebug("SecureCredentialCache initialized with {Timeout} minute timeout", _timeout.TotalMinutes);
+        // Timer is not started here - it will be started when caching is enabled via EnableCaching()
+        _logger.LogDebug("SecureCredentialCache initialized with {Timeout} minute timeout (caching disabled by default)", _timeout.TotalMinutes);
     }
 
     /// <inheritdoc />
@@ -124,6 +132,50 @@ public sealed class SecureCredentialCache : ICredentialCache
         _logger.LogInformation("Credential cache timeout set to {Timeout} minutes", timeout.TotalMinutes);
     }
 
+    /// <summary>
+    /// Enables or disables credential caching. When enabled, starts the cleanup timer.
+    /// When disabled, stops the cleanup timer and clears any cached credentials.
+    /// </summary>
+    /// <param name="enabled">True to enable caching, false to disable.</param>
+    public void EnableCaching(bool enabled)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        lock (_timerLock)
+        {
+            if (_cachingEnabled == enabled)
+                return;
+
+            _cachingEnabled = enabled;
+
+            if (enabled)
+            {
+                StartCleanupTimer();
+                _logger.LogInformation("Credential caching enabled");
+            }
+            else
+            {
+                StopCleanupTimer();
+                ClearAll();
+                _logger.LogInformation("Credential caching disabled and cache cleared");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets whether credential caching is currently enabled.
+    /// </summary>
+    public bool IsCachingEnabled
+    {
+        get
+        {
+            lock (_timerLock)
+            {
+                return _cachingEnabled;
+            }
+        }
+    }
+
     /// <inheritdoc />
     public bool IsCredentialCached(Guid hostId)
     {
@@ -163,11 +215,24 @@ public sealed class SecureCredentialCache : ICredentialCache
     {
         lock (_timerLock)
         {
+            // Don't start if already running
+            if (_cleanupTimer != null)
+                return;
+
             _cleanupTimer = new Timer(
                 CleanupExpiredCredentials,
                 null,
                 TimeSpan.FromSeconds(CleanupIntervalSeconds),
                 TimeSpan.FromSeconds(CleanupIntervalSeconds));
+        }
+    }
+
+    private void StopCleanupTimer()
+    {
+        lock (_timerLock)
+        {
+            _cleanupTimer?.Dispose();
+            _cleanupTimer = null;
         }
     }
 

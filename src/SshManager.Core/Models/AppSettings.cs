@@ -30,14 +30,14 @@ public sealed class AppSettings
     /// <summary>
     /// Maximum number of lines to retain in terminal scrollback history.
     /// </summary>
-    [Range(100, 1000000)]
-    public int ScrollbackBufferSize { get; set; } = 10000;
+    [Range(Constants.TerminalDefaults.MinScrollbackLines, 1000000)]
+    public int ScrollbackBufferSize { get; set; } = Constants.TerminalDefaults.DefaultScrollbackBufferSize;
 
     /// <summary>
     /// Maximum number of lines to keep in memory for terminal output buffer.
     /// Older lines are compressed and archived to disk. Default: 5000 lines.
     /// </summary>
-    public int TerminalBufferInMemoryLines { get; set; } = 5000;
+    public int TerminalBufferInMemoryLines { get; set; } = Constants.TerminalDefaults.DefaultTerminalBufferInMemoryLines;
 
     /// <summary>
     /// Enable the Find in Terminal feature (Ctrl+Shift+F).
@@ -59,19 +59,19 @@ public sealed class AppSettings
     /// <summary>
     /// Default SSH port for new connections.
     /// </summary>
-    public int DefaultPort { get; set; } = 22;
+    public int DefaultPort { get; set; } = Constants.Network.DefaultSshPort;
 
     /// <summary>
     /// Connection timeout in seconds.
     /// </summary>
     [Range(1, 300)]
-    public int ConnectionTimeoutSeconds { get; set; } = 30;
+    public int ConnectionTimeoutSeconds { get; set; } = Constants.ConnectionDefaults.DefaultConnectionTimeoutSeconds;
 
     /// <summary>
     /// Keep-alive interval in seconds (0 to disable).
     /// </summary>
     [Range(0, 3600)]
-    public int KeepAliveIntervalSeconds { get; set; } = 60;
+    public int KeepAliveIntervalSeconds { get; set; } = Constants.ConnectionDefaults.DefaultKeepAliveIntervalSeconds;
 
     /// <summary>
     /// Auto-reconnect when connection is lost.
@@ -81,7 +81,7 @@ public sealed class AppSettings
     /// <summary>
     /// Maximum number of reconnection attempts.
     /// </summary>
-    public int MaxReconnectAttempts { get; set; } = 3;
+    public int MaxReconnectAttempts { get; set; } = Constants.ConnectionDefaults.MaxReconnectAttempts;
 
     /// <summary>
     /// Base delay for reconnection attempts in milliseconds.
@@ -89,7 +89,7 @@ public sealed class AppSettings
     /// Default: 1000ms (1 second).
     /// </summary>
     [Range(100, 10000)]
-    public int ReconnectBaseDelayMs { get; set; } = 1000;
+    public int ReconnectBaseDelayMs { get; set; } = Constants.ConnectionDefaults.ReconnectBaseDelayMs;
 
     /// <summary>
     /// Maximum delay between reconnection attempts in milliseconds.
@@ -97,7 +97,7 @@ public sealed class AppSettings
     /// Default: 30000ms (30 seconds).
     /// </summary>
     [Range(1000, 120000)]
-    public int ReconnectMaxDelayMs { get; set; } = 30000;
+    public int ReconnectMaxDelayMs { get; set; } = Constants.ConnectionDefaults.ReconnectMaxDelayMs;
 
     /// <summary>
     /// Monitor network connectivity and auto-reconnect when network is restored.
@@ -284,6 +284,11 @@ public sealed class AppSettings
     /// Saved window height.
     /// </summary>
     public int? WindowHeight { get; set; }
+
+    /// <summary>
+    /// Saved left panel width (host list panel).
+    /// </summary>
+    public double? LeftPanelWidth { get; set; }
 
     // ===== Backup Settings =====
 

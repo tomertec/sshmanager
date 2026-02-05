@@ -11,12 +11,12 @@ public sealed partial class HostEnvironmentVariable : IValidatableObject
     /// <summary>
     /// Maximum length for environment variable name.
     /// </summary>
-    private const int MaxNameLength = 100;
+    private const int MaxNameLength = Constants.StringLimits.MaxEnvironmentVariableNameLength;
 
     /// <summary>
     /// Maximum length for environment variable value.
     /// </summary>
-    private const int MaxValueLength = 1000;
+    private const int MaxValueLength = Constants.StringLimits.MaxEnvironmentVariableValueLength;
 
     public Guid Id { get; set; } = Guid.NewGuid();
 

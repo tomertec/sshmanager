@@ -55,10 +55,10 @@ public sealed class RemoteFileEditorService : IRemoteFileEditorService, IDisposa
         _logger.LogDebug("Downloaded {Bytes} bytes from {RemotePath}", content.Length, remotePath);
 
         // Detect encoding (default to UTF-8)
-        var encoding = DetectEncoding(content);
+        var encoding = FileEncodingHelper.DetectEncoding(content);
 
         // Compute hash of original content
-        var originalHash = ComputeHash(content);
+        var originalHash = FileEncodingHelper.ComputeHash(content);
 
         // Create temp file with a unique name but preserving the original extension
         var sessionId = Guid.NewGuid();
@@ -118,7 +118,7 @@ public sealed class RemoteFileEditorService : IRemoteFileEditorService, IDisposa
         ValidateSession(session);
 
         var currentBytes = await File.ReadAllBytesAsync(session.LocalTempPath, ct);
-        var currentHash = ComputeHash(currentBytes);
+        var currentHash = FileEncodingHelper.ComputeHash(currentBytes);
 
         return !string.Equals(session.OriginalHash, currentHash, StringComparison.Ordinal);
     }
@@ -131,7 +131,7 @@ public sealed class RemoteFileEditorService : IRemoteFileEditorService, IDisposa
         {
             // Read current local content
             var currentBytes = await File.ReadAllBytesAsync(session.LocalTempPath, ct);
-            var currentHash = ComputeHash(currentBytes);
+            var currentHash = FileEncodingHelper.ComputeHash(currentBytes);
 
             var contentChanged = !string.Equals(session.OriginalHash, currentHash, StringComparison.Ordinal);
 
@@ -156,7 +156,7 @@ public sealed class RemoteFileEditorService : IRemoteFileEditorService, IDisposa
                 try
                 {
                     var remoteBytes = await session.SftpSession.ReadAllBytesAsync(session.RemotePath, ct);
-                    var remoteHash = ComputeHash(remoteBytes);
+                    var remoteHash = FileEncodingHelper.ComputeHash(remoteBytes);
 
                     if (!string.Equals(session.OriginalHash, remoteHash, StringComparison.Ordinal))
                     {
@@ -216,8 +216,8 @@ public sealed class RemoteFileEditorService : IRemoteFileEditorService, IDisposa
         // Write to temp file
         await File.WriteAllBytesAsync(session.LocalTempPath, content, ct);
 
-        // Note: We don't update the OriginalHash here to preserve dirty tracking
-        // The user can see if their reloaded content differs from what was originally opened
+        // Update OriginalHash so conflict detection works correctly on subsequent saves
+        session.OriginalHash = FileEncodingHelper.ComputeHash(content);
 
         var text = session.Encoding.GetString(content);
 
@@ -339,33 +339,7 @@ public sealed class RemoteFileEditorService : IRemoteFileEditorService, IDisposa
         }
     }
 
-    private static string ComputeHash(byte[] content)
-    {
-        var hashBytes = SHA256.HashData(content);
-        return Convert.ToHexString(hashBytes);
-    }
 
-    private static Encoding DetectEncoding(byte[] content)
-    {
-        // Check for BOM (Byte Order Mark)
-        if (content.Length >= 3 &&
-            content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF)
-        {
-            return Encoding.UTF8;
-        }
-
-        if (content.Length >= 2)
-        {
-            if (content[0] == 0xFE && content[1] == 0xFF)
-                return Encoding.BigEndianUnicode;
-
-            if (content[0] == 0xFF && content[1] == 0xFE)
-                return Encoding.Unicode; // UTF-16 LE
-        }
-
-        // Default to UTF-8 without BOM
-        return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-    }
 
     private static string SanitizeFileName(string fileName)
     {

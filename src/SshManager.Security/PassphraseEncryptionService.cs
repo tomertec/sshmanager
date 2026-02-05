@@ -12,17 +12,6 @@ namespace SshManager.Security;
 /// </summary>
 public class PassphraseEncryptionService : IPassphraseEncryptionService
 {
-    // AES-GCM parameters
-    private const int SaltSize = 16;      // 128 bits
-    private const int KeySize = 32;       // 256 bits
-    private const int NonceSize = 12;     // 96 bits (GCM standard)
-    private const int TagSize = 16;       // 128 bits
-
-    // Default Argon2id parameters (OWASP recommended)
-    private const int DefaultMemorySize = 65536;    // 64 MB
-    private const int DefaultIterations = 3;
-    private const int DefaultParallelism = 4;
-
     private readonly ILogger<PassphraseEncryptionService> _logger;
 
     public PassphraseEncryptionService(ILogger<PassphraseEncryptionService>? logger = null)
@@ -48,29 +37,29 @@ public class PassphraseEncryptionService : IPassphraseEncryptionService
 
         try
         {
-            salt = RandomNumberGenerator.GetBytes(SaltSize);
+            salt = RandomNumberGenerator.GetBytes(SecurityConstants.PassphraseEncryption.SaltSize);
             var kdfParams = new Argon2Parameters
             {
-                MemorySize = DefaultMemorySize,
-                Iterations = DefaultIterations,
-                Parallelism = DefaultParallelism
+                MemorySize = SecurityConstants.PassphraseEncryption.DefaultMemorySize,
+                Iterations = SecurityConstants.PassphraseEncryption.DefaultIterations,
+                Parallelism = SecurityConstants.PassphraseEncryption.DefaultParallelism
             };
 
             key = DeriveKey(passphrase, salt, kdfParams);
 
             plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
-            nonce = RandomNumberGenerator.GetBytes(NonceSize);
+            nonce = RandomNumberGenerator.GetBytes(SecurityConstants.PassphraseEncryption.NonceSize);
             ciphertext = new byte[plaintextBytes.Length];
-            tag = new byte[TagSize];
+            tag = new byte[SecurityConstants.PassphraseEncryption.TagSize];
 
-            using var aes = new AesGcm(key, TagSize);
+            using var aes = new AesGcm(key, SecurityConstants.PassphraseEncryption.TagSize);
             aes.Encrypt(nonce, plaintextBytes, ciphertext, tag);
 
             // Combine: nonce || ciphertext || tag
-            combined = new byte[NonceSize + ciphertext.Length + TagSize];
-            Buffer.BlockCopy(nonce, 0, combined, 0, NonceSize);
-            Buffer.BlockCopy(ciphertext, 0, combined, NonceSize, ciphertext.Length);
-            Buffer.BlockCopy(tag, 0, combined, NonceSize + ciphertext.Length, TagSize);
+            combined = new byte[SecurityConstants.PassphraseEncryption.NonceSize + ciphertext.Length + SecurityConstants.PassphraseEncryption.TagSize];
+            Buffer.BlockCopy(nonce, 0, combined, 0, SecurityConstants.PassphraseEncryption.NonceSize);
+            Buffer.BlockCopy(ciphertext, 0, combined, SecurityConstants.PassphraseEncryption.NonceSize, ciphertext.Length);
+            Buffer.BlockCopy(tag, 0, combined, SecurityConstants.PassphraseEncryption.NonceSize + ciphertext.Length, SecurityConstants.PassphraseEncryption.TagSize);
 
             var result = new EncryptedSyncData
             {
@@ -132,22 +121,22 @@ public class PassphraseEncryptionService : IPassphraseEncryptionService
             key = DeriveKey(passphrase, salt, data.KdfParameters);
 
             // Extract: nonce || ciphertext || tag
-            if (combined.Length < NonceSize + TagSize)
+            if (combined.Length < SecurityConstants.PassphraseEncryption.NonceSize + SecurityConstants.PassphraseEncryption.TagSize)
             {
                 throw new CryptographicException("Invalid encrypted data format");
             }
 
-            nonce = new byte[NonceSize];
-            ciphertext = new byte[combined.Length - NonceSize - TagSize];
-            tag = new byte[TagSize];
+            nonce = new byte[SecurityConstants.PassphraseEncryption.NonceSize];
+            ciphertext = new byte[combined.Length - SecurityConstants.PassphraseEncryption.NonceSize - SecurityConstants.PassphraseEncryption.TagSize];
+            tag = new byte[SecurityConstants.PassphraseEncryption.TagSize];
 
-            Buffer.BlockCopy(combined, 0, nonce, 0, NonceSize);
-            Buffer.BlockCopy(combined, NonceSize, ciphertext, 0, ciphertext.Length);
-            Buffer.BlockCopy(combined, NonceSize + ciphertext.Length, tag, 0, TagSize);
+            Buffer.BlockCopy(combined, 0, nonce, 0, SecurityConstants.PassphraseEncryption.NonceSize);
+            Buffer.BlockCopy(combined, SecurityConstants.PassphraseEncryption.NonceSize, ciphertext, 0, ciphertext.Length);
+            Buffer.BlockCopy(combined, SecurityConstants.PassphraseEncryption.NonceSize + ciphertext.Length, tag, 0, SecurityConstants.PassphraseEncryption.TagSize);
 
             plaintextBytes = new byte[ciphertext.Length];
 
-            using var aes = new AesGcm(key, TagSize);
+            using var aes = new AesGcm(key, SecurityConstants.PassphraseEncryption.TagSize);
             aes.Decrypt(nonce, ciphertext, tag, plaintextBytes);
 
             var result = Encoding.UTF8.GetString(plaintextBytes);
@@ -203,7 +192,7 @@ public class PassphraseEncryptionService : IPassphraseEncryptionService
                 DegreeOfParallelism = parameters.Parallelism
             };
 
-            return argon2.GetBytes(KeySize);
+            return argon2.GetBytes(SecurityConstants.PassphraseEncryption.KeySize);
         }
         finally
         {

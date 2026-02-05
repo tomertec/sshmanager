@@ -15,6 +15,9 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
 {
     private readonly ILogger<TerminalSession> _logger;
     private bool _disposed;
+    private volatile bool _isActive = true;
+    private volatile string _status = "Connecting...";
+    private volatile string _lastOutputPreview = string.Empty;
 
     public Guid Id { get; } = Guid.NewGuid();
 
@@ -66,8 +69,13 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
 
     /// <summary>
     /// Whether this session is still active.
+    /// Thread-safe: backing field is volatile for cross-thread reads/writes.
     /// </summary>
-    public bool IsActive { get; private set; } = true;
+    public bool IsActive
+    {
+        get => _isActive;
+        private set => _isActive = value;
+    }
 
     /// <summary>
     /// Whether this session uses embedded terminal (true) or external terminal (false).
@@ -87,8 +95,13 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
 
     /// <summary>
     /// Connection status message.
+    /// Thread-safe: backing field is volatile for cross-thread reads/writes.
     /// </summary>
-    public string Status { get; set; } = "Connecting...";
+    public string Status
+    {
+        get => _status;
+        set => _status = value;
+    }
 
     /// <summary>
     /// Whether this session is selected for broadcast input.
@@ -131,33 +144,38 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
     /// </summary>
     public TerminalStats Stats { get; } = new();
 
+    private long _totalBytesSent;
+    private long _totalBytesReceived;
+
     /// <summary>
     /// Total bytes sent during this session.
     /// Thread-safe counter for throughput calculation.
     /// </summary>
-    public long TotalBytesSent { get; set; }
+    public long TotalBytesSent
+    {
+        get => Interlocked.Read(ref _totalBytesSent);
+        set => Interlocked.Exchange(ref _totalBytesSent, value);
+    }
 
     /// <summary>
     /// Total bytes received during this session.
     /// Thread-safe counter for throughput calculation.
     /// </summary>
-    public long TotalBytesReceived { get; set; }
+    public long TotalBytesReceived
+    {
+        get => Interlocked.Read(ref _totalBytesReceived);
+        set => Interlocked.Exchange(ref _totalBytesReceived, value);
+    }
 
     /// <summary>
     /// Last few lines of terminal output for tooltip preview.
     /// Limited to ~200 characters for performance.
+    /// Thread-safe: backing field is volatile for cross-thread reads/writes.
     /// </summary>
-    private string _lastOutputPreview = string.Empty;
     public string LastOutputPreview
     {
         get => _lastOutputPreview;
-        set
-        {
-            if (_lastOutputPreview != value)
-            {
-                _lastOutputPreview = value;
-            }
-        }
+        set => _lastOutputPreview = value;
     }
 
     /// <summary>
@@ -306,128 +324,6 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
         SessionClosed?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>
-    /// Closes the session and disposes resources synchronously.
-    /// Note: For proper async cleanup, prefer using CloseAsync or DisposeAsync.
-    /// </summary>
-    [Obsolete("Use CloseAsync instead to avoid potential deadlocks")]
-    public void Close()
-    {
-        if (_disposed) return;
-        _disposed = true;
-
-        IsActive = false;
-        Status = "Disconnected";
-
-        _logger.LogInformation("Closing terminal session {SessionId} ({Title})", Id, Title);
-
-        // Cancel data receive loop
-        try
-        {
-            ReceiveCts?.Cancel();
-            ReceiveCts?.Dispose();
-            ReceiveCts = null;
-            _logger.LogDebug("Receive loop cancelled for session {SessionId}", Id);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error cancelling receive loop for session {SessionId}", Id);
-        }
-
-        // Dispose connection
-        try
-        {
-            Connection?.Dispose();
-            Connection = null;
-            _logger.LogDebug("Connection disposed for session {SessionId}", Id);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error disposing connection for session {SessionId}", Id);
-        }
-
-        // Clear bridge reference
-        Bridge = null;
-
-        // Dispose serial bridge - block on async disposal to ensure proper cleanup
-        try
-        {
-            if (SerialBridge != null)
-            {
-                SerialBridge.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                SerialBridge = null;
-                _logger.LogDebug("Serial bridge disposed for session {SessionId}", Id);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error disposing serial bridge for session {SessionId}", Id);
-        }
-
-        // Dispose serial connection - block on async disposal to ensure proper cleanup
-        try
-        {
-            if (SerialConnection != null)
-            {
-                SerialConnection.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                SerialConnection = null;
-                _logger.LogDebug("Serial connection disposed for session {SessionId}", Id);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error disposing serial connection for session {SessionId}", Id);
-        }
-
-        // Dispose session recorder - block on async disposal to ensure proper cleanup
-        try
-        {
-            if (SessionRecorder != null)
-            {
-                SessionRecorder.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                SessionRecorder = null;
-                _logger.LogDebug("Session recorder disposed for session {SessionId}", Id);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error disposing session recorder for session {SessionId}", Id);
-        }
-
-        // Dispose session logger - block on async disposal to ensure proper cleanup
-        try
-        {
-            if (SessionLogger != null)
-            {
-                SessionLogger.LogEvent("SESSION", "Session closed");
-                SessionLogger.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                SessionLogger = null;
-                _logger.LogDebug("Session logger disposed for session {SessionId}", Id);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error disposing session logger for session {SessionId}", Id);
-        }
-
-        // Securely clear and dispose sensitive data
-        try
-        {
-            if (DecryptedPassword != null)
-            {
-                DecryptedPassword.Dispose();
-                DecryptedPassword = null;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error disposing decrypted password for session {SessionId}", Id);
-        }
-
-        _logger.LogInformation("Terminal session {SessionId} closed", Id);
-        SessionClosed?.Invoke(this, EventArgs.Empty);
-    }
-
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
@@ -438,9 +334,14 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-#pragma warning disable CS0618 // Close() is obsolete but required for sync Dispose pattern
-        Close();
-#pragma warning restore CS0618
+        // Avoid sync-over-async: CloseAsync fires SessionClosed which uses
+        // Dispatcher.InvokeAsync (async, doesn't block). Running on thread pool
+        // prevents blocking the caller during cleanup.
+        Task.Run(async () =>
+        {
+            try { await CloseAsync().ConfigureAwait(false); }
+            catch { /* Already logged inside CloseAsync */ }
+        }).Wait(TimeSpan.FromSeconds(5));
         GC.SuppressFinalize(this);
     }
 }

@@ -50,6 +50,8 @@ public partial class SessionPickerViewModel : ObservableObject
     [ObservableProperty]
     private int _selectedTabIndex;
 
+    private IReadOnlyList<HostEntry>? _filteredHosts;
+
     /// <summary>
     /// Event raised when dialog should close with result.
     /// </summary>
@@ -71,23 +73,23 @@ public partial class SessionPickerViewModel : ObservableObject
     /// <summary>
     /// Gets the filtered hosts based on search text.
     /// </summary>
-    public IEnumerable<HostEntry> FilteredHosts
-    {
-        get
-        {
-            if (string.IsNullOrWhiteSpace(SearchText))
-                return Hosts;
+    public IReadOnlyList<HostEntry> FilteredHosts => _filteredHosts ??= ComputeFilteredHosts();
 
-            var search = SearchText.ToLowerInvariant();
-            return Hosts.Where(h =>
-                h.DisplayName.ToLowerInvariant().Contains(search) ||
-                h.Hostname.ToLowerInvariant().Contains(search) ||
-                (h.Username?.ToLowerInvariant().Contains(search) ?? false));
-        }
+    private IReadOnlyList<HostEntry> ComputeFilteredHosts()
+    {
+        if (string.IsNullOrWhiteSpace(SearchText))
+            return Hosts.ToList();
+
+        var search = SearchText.ToLowerInvariant();
+        return Hosts.Where(h =>
+            h.DisplayName.ToLowerInvariant().Contains(search) ||
+            h.Hostname.ToLowerInvariant().Contains(search) ||
+            (h.Username?.ToLowerInvariant().Contains(search) ?? false)).ToList();
     }
 
     partial void OnSearchTextChanged(string value)
     {
+        _filteredHosts = null;
         OnPropertyChanged(nameof(FilteredHosts));
     }
 

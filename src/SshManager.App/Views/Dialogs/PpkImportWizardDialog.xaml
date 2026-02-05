@@ -170,7 +170,7 @@
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
                     <ui:Button Icon="{ui:SymbolIcon Add24}"
                               Content="Add Files..."
-                              Command="{Binding BrowseFilesCommand}"
+                              Command="{Binding BrowseFilesAsyncCommand}"
                               Margin="0,0,8,0" />
                     <ui:Button Icon="{ui:SymbolIcon Delete24}"
                               Content="Remove Selected"

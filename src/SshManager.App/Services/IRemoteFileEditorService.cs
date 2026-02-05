@@ -26,7 +26,7 @@ public sealed class RemoteEditSession : IAsyncDisposable
     /// SHA256 hash of the original content when downloaded.
     /// Used for change detection.
     /// </summary>
-    public required string OriginalHash { get; init; }
+    public required string OriginalHash { get; set; }
 
     /// <summary>
     /// The SFTP session used for this editing session.

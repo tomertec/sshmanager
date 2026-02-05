@@ -68,10 +68,17 @@ public sealed class BroadcastInputService : IBroadcastInputService
     {
         try
         {
-            if (session.Connection?.IsConnected == true && session.Connection.ShellStream != null)
+            var connection = session.Connection;
+            if (connection?.IsConnected != true)
             {
-                session.Connection.ShellStream.Write(data, 0, data.Length);
-                session.Connection.ShellStream.Flush();
+                return;
+            }
+
+            var stream = connection.ShellStream;
+            if (stream != null)
+            {
+                stream.Write(data, 0, data.Length);
+                stream.Flush();
             }
         }
         catch (Exception ex)

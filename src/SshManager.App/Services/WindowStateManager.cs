@@ -74,9 +74,32 @@ public class WindowStateManager : IWindowStateManager
                 await _settingsRepo.UpdateAsync(settings);
             }
         }
-        catch
+        catch (Exception)
         {
             // Ignore errors during shutdown - window position is not critical
+        }
+    }
+
+    public async Task<double?> GetLeftPanelWidthAsync()
+    {
+        var settings = await _settingsRepo.GetAsync();
+        return settings.RememberWindowPosition ? settings.LeftPanelWidth : null;
+    }
+
+    public async Task SaveLeftPanelWidthAsync(double width)
+    {
+        try
+        {
+            var settings = await _settingsRepo.GetAsync();
+            if (settings.RememberWindowPosition)
+            {
+                settings.LeftPanelWidth = width;
+                await _settingsRepo.UpdateAsync(settings);
+            }
+        }
+        catch (Exception)
+        {
+            // Ignore errors during shutdown - panel width is not critical
         }
     }
 }

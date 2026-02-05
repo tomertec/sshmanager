@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using RJCP.IO.Ports;
 using SshManager.Terminal.Models;
+using SshManager.Terminal.Services;
 
 namespace SshManager.Terminal.Controls;
 
@@ -229,7 +230,7 @@ public partial class TerminalStatusBar : UserControl
         SerialSettingsText.Text = GetSerialSettingsString(info);
 
         // Handshake / Flow control
-        SerialHandshakeText.Text = GetHandshakeString(info.Handshake);
+        SerialHandshakeText.Text = SerialPortFormatHelper.GetHandshakeString(info.Handshake);
     }
 
     /// <summary>
@@ -260,40 +261,9 @@ public partial class TerminalStatusBar : UserControl
     /// <returns>A string like "8N1" for 8 data bits, No parity, 1 stop bit.</returns>
     private static string GetSerialSettingsString(SerialConnectionInfo info)
     {
-        var parityChar = info.Parity switch
-        {
-            Parity.None => 'N',
-            Parity.Odd => 'O',
-            Parity.Even => 'E',
-            Parity.Mark => 'M',
-            Parity.Space => 'S',
-            _ => '?'
-        };
-
-        var stopBitsStr = info.StopBits switch
-        {
-            StopBits.One => "1",
-            StopBits.One5 => "1.5",
-            StopBits.Two => "2",
-            _ => "?"
-        };
-
+        var parityChar = SerialPortFormatHelper.GetParityChar(info.Parity);
+        var stopBitsStr = SerialPortFormatHelper.GetStopBitsString(info.StopBits);
         return $"{info.DataBits}{parityChar}{stopBitsStr}";
-    }
-
-    /// <summary>
-    /// Gets a display string for handshake/flow control mode.
-    /// </summary>
-    private static string GetHandshakeString(Handshake handshake)
-    {
-        return handshake switch
-        {
-            Handshake.None => "None",
-            Handshake.XOn => "XON/XOFF",
-            Handshake.Rts => "RTS/CTS",
-            Handshake.RtsXOn => "RTS+XON",
-            _ => "?"
-        };
     }
 
     private static string FormatUptime(TimeSpan uptime)

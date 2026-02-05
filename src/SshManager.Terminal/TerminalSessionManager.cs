@@ -117,17 +117,22 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
         if (sender is not TerminalSession session) return;
 
         session.SessionClosed -= OnSessionClosed;
-        Sessions.Remove(session);
 
-        _logger.LogDebug("Session {SessionId} removed from active sessions", session.Id);
-
-        // Select next session if current was closed
-        if (CurrentSession == session)
+        // ObservableCollection must be modified on the UI thread
+        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            CurrentSession = Sessions.FirstOrDefault();
-        }
+            Sessions.Remove(session);
 
-        SessionClosed?.Invoke(this, session);
+            _logger.LogDebug("Session {SessionId} removed from active sessions", session.Id);
+
+            // Select next session if current was closed
+            if (CurrentSession == session)
+            {
+                CurrentSession = Sessions.FirstOrDefault();
+            }
+
+            SessionClosed?.Invoke(this, session);
+        });
     }
 
     public IEnumerable<TerminalSession> GetBroadcastSessions()

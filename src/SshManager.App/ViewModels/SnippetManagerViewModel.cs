@@ -11,6 +11,7 @@ namespace SshManager.App.ViewModels;
 public partial class SnippetManagerViewModel : ObservableObject
 {
     private readonly ISnippetRepository _snippetRepo;
+    private CancellationTokenSource? _searchCts;
 
     [ObservableProperty]
     private ObservableCollection<CommandSnippet> _snippets = [];
@@ -57,15 +58,25 @@ public partial class SnippetManagerViewModel : ObservableObject
 
     partial void OnSearchTextChanged(string value)
     {
-        _ = SearchAsync();
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = new CancellationTokenSource();
+        _ = SearchAsync(_searchCts.Token).ContinueWith(t =>
+            System.Diagnostics.Debug.WriteLine($"Search error: {t.Exception}"),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
     partial void OnSelectedCategoryChanged(string? value)
     {
-        _ = FilterAsync();
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = new CancellationTokenSource();
+        _ = FilterAsync(_searchCts.Token).ContinueWith(t =>
+            System.Diagnostics.Debug.WriteLine($"Filter error: {t.Exception}"),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
-    private async Task SearchAsync()
+    private async Task SearchAsync(CancellationToken ct = default)
     {
         IsLoading = true;
         try
@@ -75,19 +86,26 @@ public partial class SnippetManagerViewModel : ObservableObject
             if (string.IsNullOrWhiteSpace(SearchText))
             {
                 snippets = SelectedCategory != null
-                    ? await _snippetRepo.GetByCategoryAsync(SelectedCategory)
-                    : await _snippetRepo.GetAllAsync();
+                    ? await _snippetRepo.GetByCategoryAsync(SelectedCategory, ct)
+                    : await _snippetRepo.GetAllAsync(ct);
             }
             else
             {
-                snippets = await _snippetRepo.SearchAsync(SearchText);
+                snippets = await _snippetRepo.SearchAsync(SearchText, ct);
                 if (SelectedCategory != null)
                 {
                     snippets = snippets.Where(s => s.Category == SelectedCategory).ToList();
                 }
             }
 
-            Snippets = new ObservableCollection<CommandSnippet>(snippets);
+            if (!ct.IsCancellationRequested)
+            {
+                Snippets = new ObservableCollection<CommandSnippet>(snippets);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when search is cancelled, ignore
         }
         finally
         {
@@ -95,9 +113,9 @@ public partial class SnippetManagerViewModel : ObservableObject
         }
     }
 
-    private async Task FilterAsync()
+    private async Task FilterAsync(CancellationToken ct = default)
     {
-        await SearchAsync();
+        await SearchAsync(ct);
     }
 
     [RelayCommand]
