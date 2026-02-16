@@ -335,8 +335,10 @@ public sealed class WebTerminalBridge : IDisposable
             return;
         }
 
-        // Strip ANSI escape sequences for cleaner preview
-        var cleanData = StripAnsiEscapeSequences(data);
+        // Only strip ANSI from the tail of the data since the preview buffer is only
+        // MaxPreviewLength (200) chars. Processing more than ~500 chars is wasteful.
+        var tail = data.Length > 500 ? data[^500..] : data;
+        var cleanData = StripAnsiEscapeSequences(tail);
 
         lock (_previewBufferLock)
         {

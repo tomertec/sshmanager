@@ -48,6 +48,9 @@ public sealed class HostRepository : IHostRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
+        // Materialize once to avoid double enumeration of IEnumerable
+        var tagIdsList = tagIds?.ToList();
+
         var query = db.Hosts
             .Include(h => h.Group)
             .Include(h => h.Tags)
@@ -65,17 +68,13 @@ public sealed class HostRepository : IHostRepository
         }
 
         // Apply tag filter if provided (OR logic - host must have at least one of the specified tags)
-        if (tagIds != null)
+        if (tagIdsList is { Count: > 0 })
         {
-            var tagIdsList = tagIds.ToList();
-            if (tagIdsList.Count > 0)
-            {
-                query = query.Where(h => h.Tags.Any(t => tagIdsList.Contains(t.Id)));
-            }
+            query = query.Where(h => h.Tags.Any(t => tagIdsList.Contains(t.Id)));
         }
 
         // Order by display name when searching, otherwise maintain group/sort order
-        if (!string.IsNullOrWhiteSpace(searchTerm) || (tagIds != null && tagIds.Any()))
+        if (!string.IsNullOrWhiteSpace(searchTerm) || tagIdsList is { Count: > 0 })
         {
             return await query
                 .OrderBy(h => h.DisplayName)
@@ -105,7 +104,7 @@ public sealed class HostRepository : IHostRepository
         var validationResults = new List<ValidationResult>();
         if (!Validator.TryValidateObject(host, validationContext, validationResults, validateAllProperties: true))
         {
-            throw new ValidationException(validationResults.First().ErrorMessage);
+            throw new ValidationException(string.Join("; ", validationResults.Select(r => r.ErrorMessage)));
         }
 
         host.CreatedAt = DateTimeOffset.UtcNow;
@@ -133,7 +132,7 @@ public sealed class HostRepository : IHostRepository
         var validationResults = new List<ValidationResult>();
         if (!Validator.TryValidateObject(host, validationContext, validationResults, validateAllProperties: true))
         {
-            throw new ValidationException(validationResults.First().ErrorMessage);
+            throw new ValidationException(string.Join("; ", validationResults.Select(r => r.ErrorMessage)));
         }
 
         host.UpdatedAt = DateTimeOffset.UtcNow;

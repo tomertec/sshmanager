@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SshManager.App.Models;
 using SshManager.App.Services;
 using SshManager.Core.Models;
@@ -21,6 +22,7 @@ namespace SshManager.App.Views.Controls;
 /// </summary>
 public partial class TerminalPane : UserControl, ITerminalPaneTarget
 {
+    private readonly ILogger<TerminalPane> _logger;
     private PaneLeafNode? _paneNode;
     private bool _terminalAttached;
     private readonly object _attachLock = new();
@@ -41,8 +43,13 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
     /// </summary>
     public event EventHandler<TerminalSession>? SessionDisconnected;
 
-    public TerminalPane()
+    public TerminalPane() : this(null)
     {
+    }
+
+    public TerminalPane(ILogger<TerminalPane>? logger = null)
+    {
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<TerminalPane>.Instance;
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
 
@@ -178,7 +185,7 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in PaneNode_PropertyChanged: {ex.Message}");
+            _logger.LogError(ex, "Error in PaneNode_PropertyChanged");
         }
     }
 
@@ -193,7 +200,7 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in Terminal_Loaded: {ex.Message}");
+            _logger.LogError(ex, "Error in Terminal_Loaded");
         }
     }
 
@@ -209,7 +216,7 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
 
         if (_serviceProvider == null)
         {
-            System.Diagnostics.Debug.WriteLine("Service provider not set on TerminalPane");
+            _logger.LogWarning("Service provider not set on TerminalPane");
             return;
         }
 
@@ -242,7 +249,7 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
         {
             if (_serviceProvider == null)
             {
-                System.Diagnostics.Debug.WriteLine("Service provider not set on TerminalPane");
+                _logger.LogWarning("Service provider not set on TerminalPane");
                 return;
             }
 
@@ -265,8 +272,7 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
         }
         catch (Exception ex)
         {
-            // Log error and fall back to default theme
-            System.Diagnostics.Debug.WriteLine($"Failed to apply theme: {ex.Message}");
+            _logger.LogError(ex, "Failed to apply theme");
         }
     }
 

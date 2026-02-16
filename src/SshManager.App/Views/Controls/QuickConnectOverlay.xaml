@@ -447,6 +447,21 @@
                                Margin="0,4,0,0" />
                 </StackPanel>
 
+                <!-- Overflow hint for large result sets -->
+                <Border Grid.Row="1"
+                        Background="{DynamicResource ControlFillColorTertiaryBrush}"
+                        CornerRadius="6"
+                        Padding="10,6"
+                        Margin="12,0,12,8"
+                        VerticalAlignment="Bottom"
+                        Visibility="{Binding HasOverflowResults, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="{Binding ResultsSummaryText}"
+                               FontSize="11"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                </Border>
+
                 <!-- Keyboard shortcuts hint -->
                 <Border Grid.Row="2"
                         Background="{DynamicResource ControlFillColorDefaultBrush}"

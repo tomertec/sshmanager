@@ -82,6 +82,12 @@ public static class DbMigrator
         var connection = db.Database.GetDbConnection();
         await connection.OpenAsync();
 
+        // Ensure SchemaVersion table exists and read current version
+        var currentVersion = await GetSchemaVersionAsync(connection);
+        logger.Information("Current schema version: {Version}", currentVersion);
+
+        if (currentVersion < 1)
+        {
         // First, create missing tables
         await CreateMissingTablesAsync(db, connection, logger);
 
@@ -176,6 +182,8 @@ public static class DbMigrator
             ["HostListViewMode"] = ("INTEGER", AppConstants.MigrationDefaults.HostListViewMode.ToString()),  // Normal = 1
             ["ShowHostConnectionStats"] = ("INTEGER", AppConstants.MigrationDefaults.ShowHostConnectionStats.ToString()),
             ["PinFavoritesToTop"] = ("INTEGER", AppConstants.MigrationDefaults.PinFavoritesToTop.ToString()),
+            // Settings dialog UI state
+            ["IsAdvancedMode"] = ("INTEGER", AppConstants.MigrationDefaults.IsAdvancedMode.ToString()),
             // Performance settings (Phase 1)
             ["TerminalOutputFlushIntervalMs"] = ("INTEGER", AppConstants.MigrationDefaults.TerminalOutputFlushIntervalMs.ToString()),
             ["TerminalOutputMaxBatchSize"] = ("INTEGER", AppConstants.MigrationDefaults.TerminalOutputMaxBatchSize.ToString()),
@@ -216,6 +224,56 @@ public static class DbMigrator
                 "ALTER TABLE Groups ADD COLUMN Color TEXT DEFAULT NULL");
             logger.Information("Added missing column Color to Groups table");
         }
+
+        await UpdateSchemaVersionAsync(connection, 1);
+        logger.Information("Schema version updated to 1");
+        } // end if (currentVersion < 1)
+
+        // Future migrations go here as: if (currentVersion < 2) { ... }
+    }
+
+    /// <summary>
+    /// Reads the current schema version from the SchemaVersion table.
+    /// Creates the table if it does not exist.
+    /// </summary>
+    private static async Task<int> GetSchemaVersionAsync(DbConnection connection)
+    {
+        // Create SchemaVersion table if it doesn't exist
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "CREATE TABLE IF NOT EXISTS SchemaVersion (Version INTEGER NOT NULL DEFAULT 0)";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        // Read current version
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "SELECT Version FROM SchemaVersion LIMIT 1";
+            var result = await cmd.ExecuteScalarAsync();
+            if (result is null or DBNull)
+            {
+                // No row yet, insert default version 0
+                await using var insertCmd = connection.CreateCommand();
+                insertCmd.CommandText = "INSERT INTO SchemaVersion (Version) VALUES (0)";
+                await insertCmd.ExecuteNonQueryAsync();
+                return 0;
+            }
+            return Convert.ToInt32(result);
+        }
+    }
+
+    /// <summary>
+    /// Updates the schema version to the specified value.
+    /// </summary>
+    private static async Task UpdateSchemaVersionAsync(DbConnection connection, int version)
+    {
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = "UPDATE SchemaVersion SET Version = @version";
+        var param = cmd.CreateParameter();
+        param.ParameterName = "@version";
+        param.Value = version;
+        cmd.Parameters.Add(param);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     /// <summary>

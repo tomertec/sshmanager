@@ -15,5 +15,28 @@
         <!-- WebView2 Terminal Control -->
         <wv2:WebView2 x:Name="WebViewControl"
                       DefaultBackgroundColor="#1E1E1E" />
+
+        <!-- Error message shown when WebView2 runtime is not installed -->
+        <Border x:Name="ErrorPanel"
+                Visibility="Collapsed"
+                Background="#1E1E1E"
+                Padding="24">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="WebView2 Runtime Not Found"
+                           Foreground="#FF6B6B"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,12" />
+                <TextBlock x:Name="ErrorMessageText"
+                           Text="The Microsoft Edge WebView2 Runtime is required for the terminal to function. Please install it from https://developer.microsoft.com/en-us/microsoft-edge/webview2/"
+                           Foreground="#CCCCCC"
+                           FontSize="13"
+                           TextWrapping="Wrap"
+                           HorizontalAlignment="Center"
+                           MaxWidth="500"
+                           TextAlignment="Center" />
+            </StackPanel>
+        </Border>
     </Grid>
 </UserControl>

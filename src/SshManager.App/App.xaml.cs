@@ -21,6 +21,8 @@ namespace SshManager.App;
 
 public partial class App : Application
 {
+    private static readonly string MutexName = @"Global\SshManager_SingleInstance_B7E3F2A1";
+    private Mutex? _singleInstanceMutex;
     private readonly IHost _host;
 #if DEBUG
     private ITestServer? _testServer;
@@ -28,6 +30,20 @@ public partial class App : Application
 
     public App()
     {
+        // Enforce single instance before any other initialization
+        _singleInstanceMutex = new Mutex(true, MutexName, out var createdNew);
+        if (!createdNew)
+        {
+            MessageBox.Show(
+                "SshManager is already running.\n\nOnly one instance can run at a time.",
+                "SshManager",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Shutdown(0);
+            _host = null!;
+            return;
+        }
+
         // Configure Serilog early for bootstrap logging
         Bootstrapper.ConfigureSerilog();
 
@@ -155,6 +171,14 @@ public partial class App : Application
         }
         finally
         {
+            // Release single-instance mutex so another instance can start
+            if (_singleInstanceMutex != null)
+            {
+                _singleInstanceMutex.ReleaseMutex();
+                _singleInstanceMutex.Dispose();
+                _singleInstanceMutex = null;
+            }
+
             Log.Information("Application exit complete");
             await Log.CloseAndFlushAsync();
         }

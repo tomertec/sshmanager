@@ -341,11 +341,12 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
 
         var totalClosed = 0;
 
-        // Process each pool entry asynchronously
+        // Process each pool entry asynchronously with per-connection dispose timeouts
         var drainTasks = new List<Task<int>>();
         foreach (var entry in _pools.Values)
         {
-            drainTasks.Add(Task.Run(() => entry.DrainOutsideLock()));
+            var logger = _logger;
+            drainTasks.Add(Task.Run(() => entry.DrainOutsideLock(logger)));
         }
 
         // Wait for all drain operations to complete
@@ -497,11 +498,17 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         }
 
         /// <summary>
+        /// Per-connection dispose timeout to prevent unresponsive servers from hanging the app.
+        /// </summary>
+        private static readonly TimeSpan DisposeTimeout = TimeSpan.FromSeconds(5);
+
+        /// <summary>
         /// Drains all connections from this entry, disposing outside the lock
-        /// to avoid blocking other pool operations.
+        /// to avoid blocking other pool operations. Each connection dispose has
+        /// a 5-second timeout to prevent unresponsive servers from hanging.
         /// </summary>
         /// <returns>Number of connections drained.</returns>
-        public int DrainOutsideLock()
+        public int DrainOutsideLock(ILogger? logger = null)
         {
             List<PooledClient> clientsToDispose;
 
@@ -512,15 +519,21 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
                 _clients.Clear();
             }
 
-            // Dispose connections outside the lock to avoid blocking
+            // Dispose connections outside the lock with per-connection timeout
             var count = clientsToDispose.Count;
             foreach (var item in clientsToDispose)
             {
                 try
                 {
-                    // SSH.NET's Dispose can block during disconnection
-                    // Running in Task.Run allows concurrent disposal
-                    item.Client.Dispose();
+                    // SSH.NET's Dispose can block during disconnection.
+                    // Use a timeout so unresponsive servers don't hang the app.
+                    var disposeTask = Task.Run(() => item.Client.Dispose());
+                    if (!disposeTask.Wait(DisposeTimeout))
+                    {
+                        logger?.LogWarning(
+                            "Connection dispose timed out after {TimeoutSeconds}s — abandoning connection",
+                            DisposeTimeout.TotalSeconds);
+                    }
                 }
                 catch
                 {

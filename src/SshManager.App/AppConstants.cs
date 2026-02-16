@@ -88,6 +88,9 @@ internal static class AppConstants
         public const int ShowHostConnectionStats = 1;
         public const int PinFavoritesToTop = 1;
 
+        // Settings dialog UI
+        public const int IsAdvancedMode = 0;
+
         // Performance settings (Phase 1)
         public const int TerminalOutputFlushIntervalMs = 16;
         public const int TerminalOutputMaxBatchSize = 8192;

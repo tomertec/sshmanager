@@ -20,6 +20,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -77,12 +78,50 @@
             </ui:CardControl>
         </Grid>
 
+        <!-- Filters and paging -->
+        <Grid Grid.Row="2" Margin="16,0,16,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Text="Status:"
+                       VerticalAlignment="Center"
+                       Margin="0,0,8,0" />
+
+            <ComboBox Grid.Column="1"
+                      Width="120"
+                      ItemsSource="{Binding StatusFilters}"
+                      SelectedItem="{Binding SelectedStatusFilter, Mode=TwoWay}" />
+
+            <TextBlock Grid.Column="2"
+                       Text="{Binding PagingSummary}"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"
+                       Opacity="0.8" />
+
+            <ui:Button Grid.Column="3"
+                       Content="Previous"
+                       Command="{Binding PreviousPageCommand}"
+                       Margin="0,0,8,0"
+                       MinWidth="80" />
+
+            <ui:Button Grid.Column="4"
+                       Content="Next"
+                       Command="{Binding NextPageCommand}"
+                       MinWidth="80" />
+        </Grid>
+
         <!-- History List -->
-        <DataGrid Grid.Row="2"
-                 ItemsSource="{Binding HistoryEntries}"
-                 AutoGenerateColumns="False"
-                 IsReadOnly="True"
-                 SelectionMode="Single"
+        <DataGrid Grid.Row="3"
+                  ItemsSource="{Binding HistoryEntries}"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  SelectionMode="Single"
                  Margin="16,8"
                  CanUserAddRows="False"
                  CanUserDeleteRows="False"
@@ -162,7 +201,7 @@
         </DataGrid>
 
         <!-- Action Buttons -->
-        <Grid Grid.Row="3" Margin="16">
+        <Grid Grid.Row="4" Margin="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />

@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SshManager.App.Models;
 using SshManager.App.Services;
 using SshManager.App.ViewModels;
@@ -29,6 +30,7 @@ public partial class MainWindow : FluentWindow
     private readonly IWindowStateManager _windowStateManager;
     private readonly IPaneOrchestrator _paneOrchestrator;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<MainWindow> _logger;
     
     private bool _isUpdatingGroupFilter;
     private bool _isSyncingSessionFromPaneFocus;
@@ -42,7 +44,8 @@ public partial class MainWindow : FluentWindow
         IKeyboardShortcutHandler keyboardHandler,
         IWindowStateManager windowStateManager,
         IPaneOrchestrator paneOrchestrator,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        ILogger<MainWindow> logger)
     {
         _viewModel = viewModel;
         _trayService = trayService;
@@ -53,6 +56,7 @@ public partial class MainWindow : FluentWindow
         _windowStateManager = windowStateManager;
         _paneOrchestrator = paneOrchestrator;
         _serviceProvider = serviceProvider;
+        _logger = logger;
         DataContext = viewModel;
 
         InitializeComponent();
@@ -128,7 +132,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in OnLoaded: {ex}");
+            _logger.LogError(ex, "Error in OnLoaded");
         }
     }
 
@@ -191,7 +195,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in OnGroupFilterItemClick: {ex}");
+            _logger.LogError(ex, "Error in OnGroupFilterItemClick");
         }
     }
 
@@ -247,7 +251,7 @@ public partial class MainWindow : FluentWindow
             }
             catch (Exception saveEx)
             {
-                System.Diagnostics.Debug.WriteLine($"Error saving window state: {saveEx}");
+                _logger.LogError(saveEx, "Error saving window state");
             }
 
             // Save left panel width - wrapped in try-catch as properties may be unreliable during teardown
@@ -257,7 +261,7 @@ public partial class MainWindow : FluentWindow
             }
             catch (Exception saveEx)
             {
-                System.Diagnostics.Debug.WriteLine($"Error saving panel width: {saveEx}");
+                _logger.LogError(saveEx, "Error saving panel width");
             }
 
             // Unsubscribe from all events
@@ -283,7 +287,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in OnClosing: {ex}");
+            _logger.LogError(ex, "Error in OnClosing");
         }
     }
 
@@ -387,7 +391,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in OnQuickConnectRequested: {ex}");
+            _logger.LogError(ex, "Error in OnQuickConnectRequested");
         }
     }
 
@@ -525,7 +529,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in PaneContainer_PaneCloseRequested: {ex}");
+            _logger.LogError(ex, "Error in PaneContainer_PaneCloseRequested");
         }
     }
 
@@ -540,7 +544,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in PaneContainer_SessionDisconnected: {ex}");
+            _logger.LogError(ex, "Error in PaneContainer_SessionDisconnected");
         }
     }
 
@@ -640,7 +644,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in TerminalToolbar_TunnelBuilderRequested: {ex}");
+            _logger.LogError(ex, "Error in TerminalToolbar_TunnelBuilderRequested");
         }
     }
 
@@ -656,7 +660,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in TerminalToolbar_ManagePortForwardingProfilesRequested: {ex}");
+            _logger.LogError(ex, "Error in TerminalToolbar_ManagePortForwardingProfilesRequested");
         }
     }
 
@@ -677,7 +681,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in WelcomePanel_ImportFromFileRequested: {ex}");
+            _logger.LogError(ex, "Error in WelcomePanel_ImportFromFileRequested");
         }
     }
 
@@ -689,7 +693,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in WelcomePanel_ImportFromSshConfigRequested: {ex}");
+            _logger.LogError(ex, "Error in WelcomePanel_ImportFromSshConfigRequested");
         }
     }
 
@@ -701,7 +705,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in WelcomePanel_ImportFromPuttyRequested: {ex}");
+            _logger.LogError(ex, "Error in WelcomePanel_ImportFromPuttyRequested");
         }
     }
 
@@ -800,7 +804,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in ShowSerialQuickConnectDialog: {ex}");
+            _logger.LogError(ex, "Error in ShowSerialQuickConnectDialog");
         }
     }
 
@@ -827,7 +831,7 @@ public partial class MainWindow : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in ShowQuickConnectDialog: {ex}");
+            _logger.LogError(ex, "Error in ShowQuickConnectDialog");
         }
     }
 

@@ -11,121 +11,190 @@
     <UserControl.Resources>
         <!-- Local BindingProxy for context menu bindings -->
         <converters:BindingProxy x:Key="ParentDataContextProxy" Data="{Binding}" />
+
+        <!-- Scroll button style -->
+        <Style x:Key="TabScrollButton" TargetType="RepeatButton">
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="Interval" Value="50" />
+            <Setter Property="Delay" Value="300" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border x:Name="RootBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Margin="2,4,2,0">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="RootBorder" Property="Background"
+                                        Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="RootBorder" Property="Background"
+                                        Value="{DynamicResource ControlFillColorTertiaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
-    <!-- Session Tabs -->
-    <ListBox x:Name="SessionTabs"
-             ItemsSource="{Binding Session.Sessions}"
-             SelectedItem="{Binding Session.CurrentSession, Mode=TwoWay}"
-             SelectionChanged="SessionTabs_SelectionChanged"
-             Background="Transparent"
-             BorderThickness="0"
-             Padding="0,4,4,0"
-             Margin="8,0,0,0">
-        <ListBox.ItemsPanel>
-            <ItemsPanelTemplate>
-                <StackPanel Orientation="Horizontal" />
-            </ItemsPanelTemplate>
-        </ListBox.ItemsPanel>
-        <ListBox.ItemContainerStyle>
-            <Style TargetType="ListBoxItem">
-                <Setter Property="Padding" Value="0" />
-                <Setter Property="Margin" Value="0,0,2,0" />
-                <Setter Property="Background" Value="Transparent" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="ListBoxItem">
-                            <ContentPresenter />
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-        </ListBox.ItemContainerStyle>
-        <ListBox.ItemTemplate>
-            <DataTemplate>
-                <Border CornerRadius="10,10,0,0"
-                       Padding="12,8">
-                    <Border.ToolTip>
-                        <ToolTip MaxWidth="400">
-                            <StackPanel>
-                                <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" FontSize="13"/>
-                                <TextBlock Opacity="0.6" FontSize="11" Margin="0,2,0,0">
-                                    <TextBlock.Text>
-                                        <MultiBinding StringFormat="{}{0}@{1}">
-                                            <Binding Path="Host.Username" />
-                                            <Binding Path="Host.Hostname" />
-                                        </MultiBinding>
-                                    </TextBlock.Text>
-                                </TextBlock>
-                                <Border Background="#1A1A1A" CornerRadius="4" Margin="0,8,0,0" Padding="8"
-                                        Visibility="{Binding LastOutputPreview, Converter={StaticResource NullToBoolConverter}, FallbackValue=Collapsed}">
-                                    <TextBlock Text="{Binding LastOutputPreview, FallbackValue='Terminal output preview...'}"
-                                               FontFamily="Cascadia Code, Consolas, monospace"
-                                               FontSize="10"
-                                               Foreground="#AAAAAA"
-                                               TextWrapping="Wrap"
-                                               MaxHeight="80"
-                                               TextTrimming="CharacterEllipsis"/>
-                                </Border>
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Opacity="0.5">
-                                    <TextBlock Text="Connected: " FontSize="10"/>
-                                    <TextBlock Text="{Binding Stats.Uptime, StringFormat='{}{0:hh\\:mm\\:ss}', FallbackValue='00:00:00'}" FontSize="10"/>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Left scroll button -->
+        <RepeatButton x:Name="ScrollLeftButton"
+                      Grid.Column="0"
+                      Style="{StaticResource TabScrollButton}"
+                      Click="ScrollLeftButton_Click"
+                      Visibility="Collapsed">
+            <ui:SymbolIcon Symbol="ChevronLeft20" FontSize="14" />
+        </RepeatButton>
+
+        <!-- Session Tabs -->
+        <ListBox x:Name="SessionTabs"
+                 Grid.Column="1"
+                 ItemsSource="{Binding Session.Sessions}"
+                 SelectedItem="{Binding Session.CurrentSession, Mode=TwoWay}"
+                 SelectionChanged="SessionTabs_SelectionChanged"
+                 ScrollViewer.HorizontalScrollBarVisibility="Hidden"
+                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                 ScrollViewer.CanContentScroll="False"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 Padding="0,4,4,0"
+                 Margin="4,0,0,0"
+                 PreviewMouseWheel="SessionTabs_PreviewMouseWheel">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="0,0,2,0" />
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <ContentPresenter />
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Border CornerRadius="10,10,0,0"
+                           Padding="12,8">
+                        <Border.ToolTip>
+                            <ToolTip MaxWidth="400">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" FontSize="13"/>
+                                    <TextBlock Opacity="0.6" FontSize="11" Margin="0,2,0,0">
+                                        <TextBlock.Text>
+                                            <MultiBinding StringFormat="{}{0}@{1}">
+                                                <Binding Path="Host.Username" />
+                                                <Binding Path="Host.Hostname" />
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                    <Border Background="#1A1A1A" CornerRadius="4" Margin="0,8,0,0" Padding="8"
+                                            Visibility="{Binding LastOutputPreview, Converter={StaticResource NullToBoolConverter}, FallbackValue=Collapsed}">
+                                        <TextBlock Text="{Binding LastOutputPreview, FallbackValue='Terminal output preview...'}"
+                                                   FontFamily="Cascadia Code, Consolas, monospace"
+                                                   FontSize="10"
+                                                   Foreground="#AAAAAA"
+                                                   TextWrapping="Wrap"
+                                                   MaxHeight="80"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Border>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Opacity="0.5">
+                                        <TextBlock Text="Connected: " FontSize="10"/>
+                                        <TextBlock Text="{Binding Stats.Uptime, StringFormat='{}{0:hh\\:mm\\:ss}', FallbackValue='00:00:00'}" FontSize="10"/>
+                                    </StackPanel>
                                 </StackPanel>
-                            </StackPanel>
-                        </ToolTip>
-                    </Border.ToolTip>
-                    <Border.BorderBrush>
-                        <MultiBinding Converter="{StaticResource SessionTabBorderConverter}">
-                            <Binding Path="IsSelected" RelativeSource="{RelativeSource AncestorType=ListBoxItem}" />
-                            <Binding Path="Host.Group.Color" />
-                            <Binding Path="IsSelectedForBroadcast" />
-                            <Binding Path="Host.ConnectionType" />
-                        </MultiBinding>
-                    </Border.BorderBrush>
-                    <Border.Style>
-                        <Style TargetType="Border">
-                            <Setter Property="Background" Value="{ui:ThemeResource ControlFillColorDefaultBrush}" />
-                            <Setter Property="BorderThickness" Value="0,3,0,0" />
-                            <Style.Triggers>
-                                <!-- Expand border when tab is selected (active) -->
-                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                                    <Setter Property="BorderThickness" Value="2,3,2,2" />
-                                </DataTrigger>
-                                <!-- Highlight when selected for broadcast -->
-                                <DataTrigger Binding="{Binding IsSelectedForBroadcast}" Value="True">
-                                    <Setter Property="Background" Value="#40FF5500" />
-                                    <Setter Property="BorderThickness" Value="2" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
-                    <StackPanel Orientation="Horizontal">
-                        <!-- Group color vertical bar indicator -->
-                        <Border Width="3"
-                               Margin="-12,-8,8,-8"
-                               CornerRadius="10,0,0,0"
-                               Visibility="{Binding Host.Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
-                            <Border.Background>
-                                <Binding Path="Host.Group.Color" Converter="{StaticResource GroupColorConverter}" />
-                            </Border.Background>
-                        </Border>
-                        <!-- Broadcast selection checkbox (visible when broadcast mode is on) -->
-                        <CheckBox IsChecked="{Binding IsSelectedForBroadcast, Mode=TwoWay}"
-                                 Visibility="{Binding DataContext.BroadcastInput.IsBroadcastMode, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibilityConverter}}"
-                                 VerticalAlignment="Center"
-                                 Margin="0,0,6,0"
-                                 ToolTip="Include in broadcast" />
-                        <TextBlock Text="{Binding Title}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                        <ui:Button Icon="{ui:SymbolIcon Dismiss12}"
-                                  Padding="2"
-                                  Background="Transparent"
-                                  Command="{Binding DataContext.Session.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                  CommandParameter="{Binding}" />
-                    </StackPanel>
-                </Border>
-            </DataTemplate>
-        </ListBox.ItemTemplate>
-    </ListBox>
+                            </ToolTip>
+                        </Border.ToolTip>
+                        <Border.BorderBrush>
+                            <MultiBinding Converter="{StaticResource SessionTabBorderConverter}">
+                                <Binding Path="IsSelected" RelativeSource="{RelativeSource AncestorType=ListBoxItem}" />
+                                <Binding Path="Host.Group.Color" />
+                                <Binding Path="IsSelectedForBroadcast" />
+                                <Binding Path="Host.ConnectionType" />
+                            </MultiBinding>
+                        </Border.BorderBrush>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{ui:ThemeResource ControlFillColorDefaultBrush}" />
+                                <Setter Property="BorderThickness" Value="0,3,0,0" />
+                                <Style.Triggers>
+                                    <!-- Expand border when tab is selected (active) -->
+                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                        <Setter Property="BorderThickness" Value="2,3,2,2" />
+                                    </DataTrigger>
+                                    <!-- Highlight when selected for broadcast -->
+                                    <DataTrigger Binding="{Binding IsSelectedForBroadcast}" Value="True">
+                                        <Setter Property="Background" Value="#40FF5500" />
+                                        <Setter Property="BorderThickness" Value="2" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <!-- Group color vertical bar indicator -->
+                            <Border Width="3"
+                                   Margin="-12,-8,8,-8"
+                                   CornerRadius="10,0,0,0"
+                                   Visibility="{Binding Host.Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                <Border.Background>
+                                    <Binding Path="Host.Group.Color" Converter="{StaticResource GroupColorConverter}" />
+                                </Border.Background>
+                            </Border>
+                            <!-- Broadcast selection checkbox (visible when broadcast mode is on) -->
+                            <CheckBox IsChecked="{Binding IsSelectedForBroadcast, Mode=TwoWay}"
+                                     Visibility="{Binding DataContext.BroadcastInput.IsBroadcastMode, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibilityConverter}}"
+                                     VerticalAlignment="Center"
+                                     Margin="0,0,6,0"
+                                     ToolTip="Include in broadcast" />
+                            <TextBlock Text="{Binding Title}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <ui:Button Icon="{ui:SymbolIcon Dismiss12}"
+                                      Padding="2"
+                                      Background="Transparent"
+                                      Command="{Binding DataContext.Session.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                      CommandParameter="{Binding}" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Right scroll button -->
+        <RepeatButton x:Name="ScrollRightButton"
+                      Grid.Column="2"
+                      Style="{StaticResource TabScrollButton}"
+                      Click="ScrollRightButton_Click"
+                      Visibility="Collapsed">
+            <ui:SymbolIcon Symbol="ChevronRight20" FontSize="14" />
+        </RepeatButton>
+    </Grid>
 </UserControl>

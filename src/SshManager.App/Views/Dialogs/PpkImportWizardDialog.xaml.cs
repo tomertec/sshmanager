@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Extensions.Logging;
 using SshManager.App.ViewModels;
 
 namespace SshManager.App.Views.Dialogs;
@@ -11,11 +12,13 @@ namespace SshManager.App.Views.Dialogs;
 public partial class PpkImportWizardDialog
 {
     private readonly PpkImportWizardViewModel _viewModel;
+    private readonly ILogger<PpkImportWizardDialog> _logger;
 
-    public PpkImportWizardDialog(PpkImportWizardViewModel viewModel)
+    public PpkImportWizardDialog(PpkImportWizardViewModel viewModel, ILogger<PpkImportWizardDialog>? logger = null)
     {
         InitializeComponent();
         _viewModel = viewModel;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<PpkImportWizardDialog>.Instance;
         DataContext = _viewModel;
 
         _viewModel.RequestClose += () =>
@@ -40,7 +43,7 @@ public partial class PpkImportWizardDialog
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in Window_Drop: {ex}");
+            _logger.LogError(ex, "Error in Window_Drop");
         }
     }
 

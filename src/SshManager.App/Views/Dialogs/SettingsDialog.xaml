@@ -68,7 +68,7 @@
         <!-- Main Content: Sidebar + Content Area -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="230" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
@@ -77,49 +77,98 @@
                     Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
                     BorderBrush="{ui:ThemeResource ControlStrokeColorDefaultBrush}"
                     BorderThickness="0,0,1,0">
-                <ListBox ItemsSource="{Binding SettingsCategories}"
-                         SelectedItem="{Binding SelectedSettingsCategory}"
-                         Background="Transparent"
-                         BorderThickness="0"
-                         Padding="8,12"
-                         ItemContainerStyle="{StaticResource SettingsNavItemStyle}">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Orientation="Horizontal">
-                                <ui:SymbolIcon Symbol="WindowConsole20" Margin="0,0,12,0" FontSize="16">
-                                    <ui:SymbolIcon.Style>
-                                        <Style TargetType="ui:SymbolIcon">
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding}" Value="Terminal">
-                                                    <Setter Property="Symbol" Value="WindowConsole20" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding}" Value="Connection">
-                                                    <Setter Property="Symbol" Value="PlugConnected24" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding}" Value="Security">
-                                                    <Setter Property="Symbol" Value="Shield24" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding}" Value="Appearance">
-                                                    <Setter Property="Symbol" Value="PaintBrush24" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding}" Value="Behavior">
-                                                    <Setter Property="Symbol" Value="Settings24" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding}" Value="Data">
-                                                    <Setter Property="Symbol" Value="Database24" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding}" Value="Backup &amp; Sync">
-                                                    <Setter Property="Symbol" Value="Cloud24" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ui:SymbolIcon.Style>
-                                </ui:SymbolIcon>
-                                <TextBlock Text="{Binding}" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <StackPanel>
+                    <ui:CardControl Margin="6,12,6,6">
+                        <StackPanel>
+                            <TextBlock Text="Settings Mode"
+                                       FontWeight="SemiBold"
+                                       Margin="0,0,0,8" />
+                            <Border Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
+                                    CornerRadius="6"
+                                    BorderBrush="{ui:ThemeResource ControlStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    Padding="4">
+                                <Grid Margin="0,2,0,2"
+                                      HorizontalAlignment="Left">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0"
+                                               Text="Basic"
+                                               VerticalAlignment="Center"
+                                               FontSize="13"
+                                               Margin="0,0,4,0"
+                                               Opacity="0.8" />
+
+                                    <ui:ToggleSwitch Grid.Column="1"
+                                                     Width="44"
+                                                     VerticalAlignment="Center"
+                                                     IsChecked="{Binding IsAdvancedMode, Mode=TwoWay}" />
+
+                                    <TextBlock Grid.Column="2"
+                                               Text="Advanced"
+                                               VerticalAlignment="Center"
+                                               FontSize="13"
+                                               Margin="4,0,0,0"
+                                               Opacity="0.8" />
+                                </Grid>
+                            </Border>
+                            <TextBlock Text="{Binding SettingsModeDescription}"
+                                       FontSize="11"
+                                       Opacity="0.7"
+                                       Margin="0,6,0,0"
+                                       MaxWidth="188"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </ui:CardControl>
+
+                    <ListBox ItemsSource="{Binding SettingsCategories}"
+                             SelectedItem="{Binding SelectedSettingsCategory}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Padding="8,6,8,12"
+                             ItemContainerStyle="{StaticResource SettingsNavItemStyle}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="WindowConsole20" Margin="0,0,12,0" FontSize="16">
+                                        <ui:SymbolIcon.Style>
+                                            <Style TargetType="ui:SymbolIcon">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding}" Value="Terminal">
+                                                        <Setter Property="Symbol" Value="WindowConsole20" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding}" Value="Connection">
+                                                        <Setter Property="Symbol" Value="PlugConnected24" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding}" Value="Security">
+                                                        <Setter Property="Symbol" Value="Shield24" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding}" Value="Appearance">
+                                                        <Setter Property="Symbol" Value="PaintBrush24" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding}" Value="Behavior">
+                                                        <Setter Property="Symbol" Value="Settings24" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding}" Value="Data">
+                                                        <Setter Property="Symbol" Value="Database24" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding}" Value="Backup &amp; Sync">
+                                                        <Setter Property="Symbol" Value="Cloud24" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ui:SymbolIcon.Style>
+                                    </ui:SymbolIcon>
+                                    <TextBlock Text="{Binding}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
             </Border>
 
             <!-- Content Area -->
@@ -305,7 +354,10 @@
                         </ui:CardExpander>
 
                         <!-- Autocompletion Settings -->
-                        <ui:CardExpander Header="Autocompletion" IsExpanded="False" Margin="0,0,0,8">
+                        <ui:CardExpander Header="Autocompletion"
+                                         IsExpanded="False"
+                                         Margin="0,0,0,8"
+                                         Visibility="{Binding IsAdvancedMode, Converter={StaticResource BoolToVisibilityConverter}}">
                             <ui:CardExpander.Icon>
                                 <ui:SymbolIcon Symbol="Keyboard24" />
                             </ui:CardExpander.Icon>
@@ -383,7 +435,9 @@
                         </ui:CardExpander>
 
                         <!-- X11 Forwarding -->
-                        <ui:CardExpander IsExpanded="False" Margin="0,0,0,8">
+                        <ui:CardExpander IsExpanded="False"
+                                         Margin="0,0,0,8"
+                                         Visibility="{Binding IsAdvancedMode, Converter={StaticResource BoolToVisibilityConverter}}">
                             <ui:CardExpander.Header>
                                 <StackPanel>
                                     <TextBlock Text="X11 Forwarding" FontWeight="SemiBold" />
@@ -538,7 +592,8 @@
                         </ui:CardExpander>
 
                         <!-- Auto-Reconnect -->
-                        <ui:CardControl Margin="0,0,0,8">
+                        <ui:CardControl Margin="0,0,0,8"
+                                        Visibility="{Binding IsAdvancedMode, Converter={StaticResource BoolToVisibilityConverter}}">
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Auto-Reconnect" FontWeight="SemiBold" />
@@ -594,8 +649,21 @@
                         </ui:CardControl>
 
                         <ui:CardExpander IsExpanded="False"
-                                         Margin="0,0,0,8"
-                                         Visibility="{Binding EnableConnectionPooling, Converter={StaticResource BoolToVisibilityConverter}}">
+                                          Margin="0,0,0,8">
+                            <ui:CardExpander.Style>
+                                <Style TargetType="ui:CardExpander">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsAdvancedMode}" Value="True" />
+                                                <Condition Binding="{Binding EnableConnectionPooling}" Value="True" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ui:CardExpander.Style>
                             <ui:CardExpander.Header>
                                 <StackPanel>
                                     <TextBlock Text="Connection Pool Settings" FontWeight="SemiBold" />
@@ -1254,6 +1322,15 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
+
+            <ui:Button Grid.Column="0"
+                       Content="Reset Basic Mode"
+                       Icon="{ui:SymbolIcon ArrowReset24}"
+                       Command="{Binding ResetToBasicModeCommand}"
+                       Appearance="Secondary"
+                       Width="160"
+                       HorizontalAlignment="Left"
+                       Visibility="{Binding IsAdvancedMode, Converter={StaticResource BoolToVisibilityConverter}}" />
 
             <ui:Button Grid.Column="1"
                        Content="Cancel"

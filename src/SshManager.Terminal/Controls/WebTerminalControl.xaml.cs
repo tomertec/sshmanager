@@ -136,11 +136,30 @@ public partial class WebTerminalControl : UserControl, IDisposable
         {
             _logger.LogDebug("Initializing WebTerminalControl");
 
+            // Check if WebView2 runtime is installed before attempting initialization
+            if (!IsWebView2RuntimeAvailable())
+            {
+                _logger.LogError("WebView2 Runtime is not installed");
+                ShowError("The Microsoft Edge WebView2 Runtime is required for the terminal to function. "
+                    + "Please install it from https://developer.microsoft.com/en-us/microsoft-edge/webview2/ and restart the application.");
+                return;
+            }
+
             // Create TaskCompletionSource to wait for terminal ready
             _readyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             // Ensure WebView2 runtime is initialized
-            await WebViewControl.EnsureCoreWebView2Async();
+            try
+            {
+                await WebViewControl.EnsureCoreWebView2Async();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "EnsureCoreWebView2Async failed — WebView2 Runtime may be corrupted or unavailable");
+                ShowError("Failed to initialize the WebView2 terminal engine. "
+                    + "The WebView2 Runtime may need to be reinstalled from https://developer.microsoft.com/en-us/microsoft-edge/webview2/");
+                return;
+            }
 
             // Disable browser accelerator keys (Ctrl+W, Ctrl+N, Ctrl+T, etc.)
             // This allows these keys to pass through to xterm.js instead of being
@@ -560,6 +579,26 @@ public partial class WebTerminalControl : UserControl, IDisposable
     private void OnBridgeDataWritten(string preview)
     {
         DataWritten?.Invoke(preview);
+    }
+
+    private static bool IsWebView2RuntimeAvailable()
+    {
+        try
+        {
+            var version = CoreWebView2Environment.GetAvailableBrowserVersionString();
+            return !string.IsNullOrEmpty(version);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void ShowError(string message)
+    {
+        WebViewControl.Visibility = Visibility.Collapsed;
+        ErrorMessageText.Text = message;
+        ErrorPanel.Visibility = Visibility.Visible;
     }
 
     private void OnWebViewGotFocus(object sender, RoutedEventArgs e)

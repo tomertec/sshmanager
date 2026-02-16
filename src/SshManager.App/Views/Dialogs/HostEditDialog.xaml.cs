@@ -18,10 +18,12 @@ public partial class HostEditDialog : FluentWindow
     private readonly IHostRepository? _hostRepo;
     private readonly IReadOnlyList<HostEntry>? _availableHosts;
     private readonly ISshKeyManager? _keyManager;
+    private readonly ILogger<HostEditDialog> _logger;
 
-    public HostEditDialog(HostDialogViewModel viewModel)
+    public HostEditDialog(HostDialogViewModel viewModel, ILogger<HostEditDialog>? logger = null)
     {
         _viewModel = viewModel;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<HostEditDialog>.Instance;
         DataContext = viewModel;
 
         InitializeComponent();
@@ -46,6 +48,7 @@ public partial class HostEditDialog : FluentWindow
     /// <param name="hostRepo">The host repository.</param>
     /// <param name="availableHosts">Available hosts for proxy jump configuration.</param>
     /// <param name="keyManager">The SSH key manager.</param>
+    /// <param name="logger">The logger.</param>
     public HostEditDialog(
         HostDialogViewModel viewModel,
         IHostProfileRepository? hostProfileRepo,
@@ -53,8 +56,9 @@ public partial class HostEditDialog : FluentWindow
         IPortForwardingProfileRepository? portForwardingRepo,
         IHostRepository? hostRepo,
         IReadOnlyList<HostEntry>? availableHosts = null,
-        ISshKeyManager? keyManager = null)
-        : this(viewModel)
+        ISshKeyManager? keyManager = null,
+        ILogger<HostEditDialog>? logger = null)
+        : this(viewModel, logger)
     {
         _hostProfileRepo = hostProfileRepo;
         _proxyJumpRepo = proxyJumpRepo;
@@ -148,7 +152,7 @@ public partial class HostEditDialog : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in SelectKey: {ex}");
+            _logger.LogError(ex, "Error in SelectKey");
         }
     }
 
@@ -184,7 +188,7 @@ public partial class HostEditDialog : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in ManageHostProfiles: {ex}");
+            _logger.LogError(ex, "Error in ManageHostProfiles");
         }
     }
 
@@ -218,7 +222,7 @@ public partial class HostEditDialog : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in ManageProxyJumpProfiles: {ex}");
+            _logger.LogError(ex, "Error in ManageProxyJumpProfiles");
         }
     }
 
@@ -252,7 +256,7 @@ public partial class HostEditDialog : FluentWindow
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error in ManagePortForwarding: {ex}");
+            _logger.LogError(ex, "Error in ManagePortForwarding");
         }
     }
 

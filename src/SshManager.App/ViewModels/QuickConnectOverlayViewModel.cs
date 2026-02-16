@@ -13,6 +13,8 @@ namespace SshManager.App.ViewModels;
 /// </summary>
 public partial class QuickConnectOverlayViewModel : ObservableObject
 {
+    private const int MaxSearchResults = 100;
+
     private readonly List<HostEntry> _allHosts = new();
     private readonly IConnectionHistoryRepository _connectionHistoryRepository;
     private Dictionary<Guid, HostConnectionStats> _hostStats = new();
@@ -49,10 +51,26 @@ public partial class QuickConnectOverlayViewModel : ObservableObject
     [ObservableProperty]
     private IReadOnlyDictionary<Guid, HostStatus>? _hostStatuses;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasOverflowResults), nameof(ResultsSummaryText))]
+    private int _totalMatchingCount;
+
     /// <summary>
     /// Gets whether there are search results to display.
     /// </summary>
     public bool HasResults => FilteredHosts.Count > 0;
+
+    /// <summary>
+    /// Gets whether additional results exist beyond the current display cap.
+    /// </summary>
+    public bool HasOverflowResults => TotalMatchingCount > FilteredHosts.Count;
+
+    /// <summary>
+    /// Gets a summary text for current search results.
+    /// </summary>
+    public string ResultsSummaryText => HasOverflowResults
+        ? $"Showing {FilteredHosts.Count} of {TotalMatchingCount} results. Keep typing to narrow down."
+        : $"{FilteredHosts.Count} result{(FilteredHosts.Count == 1 ? string.Empty : "s")}";
 
     /// <summary>
     /// Gets whether the recent section should be shown.
@@ -186,9 +204,6 @@ public partial class QuickConnectOverlayViewModel : ObservableObject
 
     private void FilterHosts()
     {
-        FilteredHosts.Clear();
-        MatchedIndices.Clear();
-
         var searchText = SearchText?.Trim() ?? "";
 
         IEnumerable<(HostEntry Host, int Score, List<int> Indices)> filtered;
@@ -212,21 +227,29 @@ public partial class QuickConnectOverlayViewModel : ObservableObject
                 .ThenBy(x => x.Host.DisplayName);
         }
 
+        var filteredList = filtered.ToList();
+        TotalMatchingCount = filteredList.Count;
+
         var newIndices = new Dictionary<Guid, List<int>>();
-        foreach (var (host, score, indices) in filtered.Take(20)) // Limit to 20 results for performance
+        var newHosts = new List<HostEntry>();
+        foreach (var (host, score, indices) in filteredList.Take(MaxSearchResults))
         {
-            FilteredHosts.Add(host);
+            newHosts.Add(host);
             if (indices.Count > 0)
             {
                 newIndices[host.Id] = indices;
             }
         }
+
+        // Assign new collections to fire single PropertyChanged instead of many CollectionChanged events
+        FilteredHosts = new ObservableCollection<HostEntry>(newHosts);
         MatchedIndices = newIndices;
 
         // Auto-select first result
         SelectedHost = FilteredHosts.FirstOrDefault();
 
         OnPropertyChanged(nameof(HasResults));
+        OnPropertyChanged(nameof(ResultsSummaryText));
     }
 
     private static (HostEntry Host, int Score, List<int> Indices) CalculateFuzzyMatchScore(HostEntry host, string searchText)

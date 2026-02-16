@@ -126,10 +126,14 @@ public partial class ProxyJumpProfileDialogViewModel : ObservableObject, IDispos
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanAddJumpHop))]
+    [RelayCommand]
     private void AddJumpHop()
     {
-        if (SelectedHostToAdd == null) return;
+        if (SelectedHostToAdd == null)
+        {
+            ValidationError = "Select a host to add to the jump chain.";
+            return;
+        }
 
         // Check if this host is already in the chain
         if (JumpHops.Any(h => h.HostId == SelectedHostToAdd.Id))
@@ -146,8 +150,6 @@ public partial class ProxyJumpProfileDialogViewModel : ObservableObject, IDispos
         _logger.LogDebug("Added jump hop: {HostDisplayName} at position {SortOrder}",
             newHop.HostDisplayName, newHop.SortOrder);
     }
-
-    private bool CanAddJumpHop() => SelectedHostToAdd != null;
 
     [RelayCommand]
     private void RemoveJumpHop(JumpHopItemViewModel? hop)
@@ -222,7 +224,10 @@ public partial class ProxyJumpProfileDialogViewModel : ObservableObject, IDispos
 
     partial void OnSelectedHostToAddChanged(HostEntry? value)
     {
-        AddJumpHopCommand.NotifyCanExecuteChanged();
+        if (value != null)
+        {
+            ValidationError = null;
+        }
     }
 
     [RelayCommand]

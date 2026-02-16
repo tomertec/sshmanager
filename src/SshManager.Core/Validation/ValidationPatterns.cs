@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Text.RegularExpressions;
 
 namespace SshManager.Core.Validation;
@@ -87,13 +89,35 @@ public static partial class ValidationPatterns
     }
 
     /// <summary>
-    /// Validates if a string is a valid hostname or IPv4 address.
+    /// Validates if a string is a valid IPv6 address.
+    /// Handles bracketed notation (e.g., [::1]) by stripping brackets before parsing.
+    /// </summary>
+    /// <param name="address">The IPv6 address to validate.</param>
+    /// <returns>True if valid IPv6 address, false otherwise.</returns>
+    public static bool IsValidIpv6Address(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+            return false;
+
+        // Strip brackets if present (e.g., [::1] -> ::1)
+        var toParse = address;
+        if (toParse.StartsWith('[') && toParse.EndsWith(']'))
+        {
+            toParse = toParse[1..^1];
+        }
+
+        return IPAddress.TryParse(toParse, out var ip)
+               && ip.AddressFamily == AddressFamily.InterNetworkV6;
+    }
+
+    /// <summary>
+    /// Validates if a string is a valid hostname, IPv4 address, or IPv6 address.
     /// </summary>
     /// <param name="hostOrIp">The host or IP to validate.</param>
-    /// <returns>True if valid hostname or IPv4 address, false otherwise.</returns>
+    /// <returns>True if valid hostname, IPv4, or IPv6 address, false otherwise.</returns>
     public static bool IsValidHostOrIpAddress(string? hostOrIp)
     {
-        return IsValidHostname(hostOrIp) || IsValidIpv4Address(hostOrIp);
+        return IsValidIpv4Address(hostOrIp) || IsValidIpv6Address(hostOrIp) || IsValidHostname(hostOrIp);
     }
 
     /// <summary>
@@ -156,7 +180,7 @@ public static partial class ValidationPatterns
     /// <returns>True if the path is safe, false if it contains traversal sequences.</returns>
     /// <remarks>
     /// This method checks for:
-    /// - Path traversal sequences (..)
+    /// - Path traversal sequences (..) including URL-encoded variants
     /// - Null bytes that could be used for path injection
     /// </remarks>
     public static bool IsPathTraversalSafe(string? path)
@@ -164,8 +188,25 @@ public static partial class ValidationPatterns
         if (string.IsNullOrEmpty(path))
             return true; // Empty paths are safe (they'll fail other validations)
 
-        // Check for path traversal sequences
-        if (path.Contains(".."))
+        // Decode URL-encoded characters repeatedly to catch double/multi-encoded traversal
+        // sequences (e.g., %252e%252e decodes to %2e%2e, which decodes to ..)
+        var decoded = path;
+        string previous;
+        do
+        {
+            previous = decoded;
+            try
+            {
+                decoded = Uri.UnescapeDataString(decoded);
+            }
+            catch (FormatException)
+            {
+                // Malformed percent-encoded sequences (e.g., %ZZ) are suspicious
+                return false;
+            }
+        } while (decoded != previous);
+
+        if (decoded.Contains(".."))
             return false;
 
         // Check for null bytes

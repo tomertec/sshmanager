@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SshManager.Data;
@@ -13,12 +14,44 @@ public static class DataServiceExtensions
 {
     public static IServiceCollection AddDataServices(this IServiceCollection services)
     {
-        // Database context factory
+        // Database context factory with WAL mode and busy timeout for concurrent access safety
         services.AddDbContextFactory<AppDbContext>(options =>
         {
             var dbPath = DbPaths.GetDbPath();
-            options.UseSqlite($"Data Source={dbPath}");
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                // busy_timeout prevents "database is locked" errors under concurrent access
+                DefaultTimeout = 5
+            }.ToString();
+
+            options.UseSqlite(connectionString, sqliteOptions =>
+            {
+                sqliteOptions.CommandTimeout(30);
+            });
         });
+
+        // Execute WAL mode pragma once at startup via a shared connection.
+        // WAL mode persists across connections once set, so we only need to do this once.
+        {
+            var dbPath = DbPaths.GetDbPath();
+            var pragmaConnection = new SqliteConnection($"Data Source={dbPath}");
+            try
+            {
+                pragmaConnection.Open();
+                using var walCmd = pragmaConnection.CreateCommand();
+                walCmd.CommandText = "PRAGMA journal_mode=WAL;";
+                walCmd.ExecuteNonQuery();
+                using var busyCmd = pragmaConnection.CreateCommand();
+                busyCmd.CommandText = "PRAGMA busy_timeout=5000;";
+                busyCmd.ExecuteNonQuery();
+            }
+            finally
+            {
+                pragmaConnection.Close();
+                pragmaConnection.Dispose();
+            }
+        }
 
         // Repositories
         services.AddSingleton<IHostRepository, HostRepository>();

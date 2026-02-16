@@ -362,19 +362,19 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
             LoadPortForwardingCountAsync(ct)
         };
 
-        // Initialize agent status if appropriate
+        await Task.WhenAll(tasks);
+
+        // Run diagnostics in the background so dialog opening is never blocked
+        // by external agent/Kerberos checks.
         if (AuthType == AuthType.SshAgent)
         {
-            tasks.Add(RefreshAgentStatusAsync());
+            _ = RefreshAgentStatusAsync();
         }
 
-        // Initialize Kerberos status if appropriate
         if (AuthType == AuthType.Kerberos)
         {
-            tasks.Add(RefreshKerberosStatusAsync());
+            _ = RefreshKerberosStatusAsync();
         }
-
-        await Task.WhenAll(tasks);
     }
 
     /// <summary>

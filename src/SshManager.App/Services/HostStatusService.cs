@@ -58,10 +58,10 @@ public class HostStatusService : IHostStatusService, IDisposable
             var pingTask = TryPingAsync(hostname, ct);
             var tcpTask = TryTcpAsync(hostname, port, ct);
 
-            await Task.WhenAll(pingTask, tcpTask);
+            await Task.WhenAll(pingTask, tcpTask).ConfigureAwait(false);
 
-            var pingLatencyMs = pingTask.Result;
-            var tcpLatencyMs = tcpTask.Result;
+            var pingLatencyMs = await pingTask.ConfigureAwait(false);
+            var tcpLatencyMs = await tcpTask.ConfigureAwait(false);
 
             // Determine online status and build enhanced status
             var isOnline = pingLatencyMs.HasValue || tcpLatencyMs.HasValue;
@@ -137,7 +137,16 @@ public class HostStatusService : IHostStatusService, IDisposable
         try
         {
             using var ping = new Ping();
-            var reply = await ping.SendPingAsync(hostname, PingTimeoutMs);
+            var pingTask = ping.SendPingAsync(hostname, PingTimeoutMs);
+            var cancelTask = Task.Delay(Timeout.Infinite, ct);
+            var completed = await Task.WhenAny(pingTask, cancelTask).ConfigureAwait(false);
+
+            if (completed == cancelTask)
+            {
+                ct.ThrowIfCancellationRequested();
+            }
+
+            var reply = await pingTask.ConfigureAwait(false);
             return reply.Status == IPStatus.Success
                 ? (int)reply.RoundtripTime
                 : null;

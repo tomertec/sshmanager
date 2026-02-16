@@ -74,6 +74,14 @@ public interface IKeyEncryptionService
     /// <param name="privateKeyContent">The private key content in PEM format.</param>
     /// <returns>True if the key content is encrypted; otherwise, false.</returns>
     bool IsKeyContentEncrypted(string privateKeyContent);
+
+    /// <summary>
+    /// Cleans up old backup files for a given key file, keeping only the most recent ones.
+    /// This method can be called during maintenance to prevent backup accumulation.
+    /// </summary>
+    /// <param name="privateKeyPath">Path to the private key file.</param>
+    /// <param name="maxBackups">Maximum number of backups to keep. Defaults to 5.</param>
+    void CleanupOldBackups(string privateKeyPath, int maxBackups = 5);
 }
 
 /// <summary>

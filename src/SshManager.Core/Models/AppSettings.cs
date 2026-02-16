@@ -197,6 +197,11 @@ public sealed class AppSettings
     public string Theme { get; set; } = "Dark";
 
     /// <summary>
+    /// Whether advanced settings mode is enabled in the settings dialog.
+    /// </summary>
+    public bool IsAdvancedMode { get; set; } = false;
+
+    /// <summary>
     /// Enable session crash recovery.
     /// When enabled, active sessions are saved on shutdown and can be restored after a crash.
     /// </summary>

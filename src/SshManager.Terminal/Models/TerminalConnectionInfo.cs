@@ -260,18 +260,18 @@ public readonly record struct EnvironmentVariableEntry(string Name, string Value
             return false;
         }
 
-        // First character must be letter or underscore
+        // First character must be ASCII letter or underscore
         var first = name[0];
-        if (!char.IsLetter(first) && first != '_')
+        if (!char.IsAsciiLetter(first) && first != '_')
         {
             return false;
         }
 
-        // Remaining characters must be letters, digits, or underscores
+        // Remaining characters must be ASCII letters, digits, or underscores
         for (var i = 1; i < name.Length; i++)
         {
             var c = name[i];
-            if (!char.IsLetterOrDigit(c) && c != '_')
+            if (!char.IsAsciiLetterOrDigit(c) && c != '_')
             {
                 return false;
             }

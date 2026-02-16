@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.Terminal.Services;
+using System.Text.Json;
 
 namespace SshManager.App.ViewModels;
 
@@ -13,6 +14,13 @@ namespace SshManager.App.ViewModels;
 /// </summary>
 public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<RemoteQuickAccess>, IDisposable
 {
+    private const int FavoritesSchemaVersion = 1;
+
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private ISftpSession? _session;
     private bool _disposed;
     private string _hostname = "";
@@ -101,12 +109,10 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
         try
         {
             var allFavorites = _getFavoritesCallback();
-            var hostPrefix = $"{_hostname}:";
+            var favoritesByHost = ParseFavoritesByHost(allFavorites);
 
-            var hostFavorites = allFavorites
-                .Split('|', StringSplitOptions.RemoveEmptyEntries)
-                .Where(f => f.StartsWith(hostPrefix))
-                .Select(f => f[hostPrefix.Length..])
+            var hostFavorites = favoritesByHost
+                .GetValueOrDefault(_hostname, [])
                 .Select(path => new RemoteQuickAccess
                 {
                     Name = GetFavoriteDisplayName(path),
@@ -127,11 +133,6 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
     /// <summary>
     /// Saves favorites to storage.
     /// </summary>
-    /// <remarks>
-    /// TODO: The pipe-delimited format (hostname:path|hostname:path) is fragile.
-    /// Hostnames or paths containing '|' or ':' will break parsing.
-    /// Consider migrating to JSON serialization for robustness.
-    /// </remarks>
     private void SaveFavorites()
     {
         if (_saveFavoritesCallback == null || string.IsNullOrEmpty(_hostname))
@@ -141,20 +142,25 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
 
         try
         {
-            // Get existing favorites for other hosts
             var allFavorites = _getFavoritesCallback?.Invoke() ?? "";
-            var hostPrefix = $"{_hostname}:";
+            var favoritesByHost = ParseFavoritesByHost(allFavorites);
 
-            var otherHostFavorites = allFavorites
-                .Split('|', StringSplitOptions.RemoveEmptyEntries)
-                .Where(f => !f.StartsWith(hostPrefix))
+            var thisHostFavorites = Favorites
+                .Select(f => NormalizePath(f.Path))
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
 
-            // Add this host's favorites
-            var thisHostFavorites = Favorites.Select(f => $"{hostPrefix}{f.Path}");
+            if (thisHostFavorites.Count == 0)
+            {
+                favoritesByHost.Remove(_hostname);
+            }
+            else
+            {
+                favoritesByHost[_hostname] = thisHostFavorites;
+            }
 
-            var combined = otherHostFavorites.Concat(thisHostFavorites);
-            var newValue = string.Join("|", combined);
+            var newValue = SerializeFavorites(favoritesByHost);
 
             _saveFavoritesCallback(newValue);
             _logger.LogDebug("Saved favorites for {Host}", _hostname);
@@ -173,6 +179,122 @@ public partial class RemoteFileBrowserViewModel : FileBrowserViewModelBase<Remot
         if (path == "/") return "/";
         var name = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
         return string.IsNullOrEmpty(name) ? path : name;
+    }
+
+    private Dictionary<string, List<string>> ParseFavoritesByHost(string rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var trimmed = rawValue.Trim();
+        if (!trimmed.StartsWith('{'))
+        {
+            return ParseLegacyPipeFavorites(trimmed);
+        }
+
+        try
+        {
+            var model = JsonSerializer.Deserialize<FavoriteStorageModel>(trimmed, _jsonOptions);
+            if (model?.Hosts == null)
+            {
+                return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (host, paths) in model.Hosts)
+            {
+                if (string.IsNullOrWhiteSpace(host) || paths == null)
+                {
+                    continue;
+                }
+
+                var normalizedPaths = paths
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Select(NormalizePath)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+
+                if (normalizedPaths.Count > 0)
+                {
+                    result[host] = normalizedPaths;
+                }
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse JSON favorites. Falling back to legacy parsing.");
+            return ParseLegacyPipeFavorites(trimmed);
+        }
+    }
+
+    private static Dictionary<string, List<string>> ParseLegacyPipeFavorites(string rawValue)
+    {
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in rawValue.Split('|', StringSplitOptions.RemoveEmptyEntries))
+        {
+            // Try ":/") first to correctly handle IPv6 hostnames (e.g. "[::1]:/path")
+            var separatorIndex = entry.IndexOf(":/", StringComparison.Ordinal);
+            if (separatorIndex > 0)
+            {
+                // Found ":/", host is everything before it, path starts at the '/'
+                var host = entry[..separatorIndex];
+                var path = entry[(separatorIndex + 1)..];
+
+                if (!result.TryGetValue(host, out var list))
+                {
+                    list = [];
+                    result[host] = list;
+                }
+
+                if (!list.Contains(path, StringComparer.Ordinal))
+                {
+                    list.Add(path);
+                }
+
+                continue;
+            }
+
+            // Fall back to single ':' for backward compatibility
+            separatorIndex = entry.IndexOf(':');
+            if (separatorIndex <= 0 || separatorIndex == entry.Length - 1)
+            {
+                continue;
+            }
+
+            var hostFallback = entry[..separatorIndex];
+            var pathFallback = entry[(separatorIndex + 1)..];
+
+            if (!result.TryGetValue(hostFallback, out var listFallback))
+            {
+                listFallback = [];
+                result[hostFallback] = listFallback;
+            }
+
+            if (!listFallback.Contains(pathFallback, StringComparer.Ordinal))
+            {
+                listFallback.Add(pathFallback);
+            }
+        }
+
+        return result;
+    }
+
+    private static string SerializeFavorites(Dictionary<string, List<string>> favoritesByHost)
+    {
+        var model = new FavoriteStorageModel
+        {
+            Version = FavoritesSchemaVersion,
+            Hosts = favoritesByHost
+                .Where(kvp => kvp.Value.Count > 0)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+        };
+
+        return JsonSerializer.Serialize(model, _jsonOptions);
     }
 
     /// <summary>
@@ -508,4 +630,10 @@ public class RemoteQuickAccess
     public required string Name { get; init; }
     public required string Path { get; init; }
     public string Icon { get; init; } = "Folder";
+}
+
+internal sealed class FavoriteStorageModel
+{
+    public int Version { get; set; }
+    public Dictionary<string, List<string>> Hosts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

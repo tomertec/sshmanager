@@ -12,6 +12,7 @@ using SshManager.Terminal;
 using SshManager.Terminal.Models;
 using SshManager.Terminal.Services;
 using SshManager.App.Services;
+using System.Collections.Concurrent;
 using SshManager.App.Views.Dialogs;
 
 namespace SshManager.App.ViewModels;
@@ -35,16 +36,16 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private readonly ILogger<SessionViewModel> _logger;
 
     /// <summary>
-    /// Semaphore for synchronizing connection attempts to prevent race conditions.
-    /// Ensures only one connection operation can proceed at a time.
+    /// Per-host semaphores for synchronizing connection attempts.
+    /// Allows concurrent connections to different hosts while preventing duplicate attempts per host.
     /// </summary>
-    private readonly SemaphoreSlim _connectionLock = new(1, 1);
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _hostConnectionLocks = new();
 
     /// <summary>
-    /// Tracks hosts currently being connected to prevent duplicate connection attempts.
-    /// Thread-safe HashSet protected by _connectionLock.
+    /// Tracks hosts currently being connected, mapping hostId to display name.
+    /// Serves as both duplicate-connection guard and progress UI state source.
     /// </summary>
-    private readonly HashSet<Guid> _connectingHosts = new();
+    private readonly ConcurrentDictionary<Guid, string> _connectingHosts = new();
 
     [ObservableProperty]
     private TerminalSession? _currentSession;
@@ -54,6 +55,58 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string? _connectingHostName;
+
+    private SemaphoreSlim GetHostConnectionLock(Guid hostId) =>
+        _hostConnectionLocks.GetOrAdd(hostId, _ => new SemaphoreSlim(1, 1));
+
+    private void AddConnectingHost(HostEntry host)
+    {
+        _connectingHosts[host.Id] = host.DisplayName;
+        UpdateConnectionProgressState();
+    }
+
+    private void RemoveConnectingHost(Guid hostId)
+    {
+        _connectingHosts.TryRemove(hostId, out _);
+        UpdateConnectionProgressState();
+        TryCleanupHostConnectionLock(hostId);
+    }
+
+    /// <summary>
+    /// Attempts to remove and dispose the per-host semaphore if no one is waiting on it.
+    /// </summary>
+    private void TryCleanupHostConnectionLock(Guid hostId)
+    {
+        if (_hostConnectionLocks.TryRemove(hostId, out var semaphore))
+        {
+            if (semaphore.CurrentCount < 1)
+            {
+                // Someone is still holding or waiting on the semaphore; put it back.
+                _hostConnectionLocks.TryAdd(hostId, semaphore);
+            }
+            else
+            {
+                semaphore.Dispose();
+            }
+        }
+    }
+
+    private void UpdateConnectionProgressState()
+    {
+        var activeCount = _connectingHosts.Count;
+        IsConnecting = activeCount > 0;
+
+        if (activeCount == 0)
+        {
+            ConnectingHostName = null;
+            return;
+        }
+
+        var currentHost = _connectingHosts.Values.FirstOrDefault() ?? "Host";
+        ConnectingHostName = activeCount == 1
+            ? currentHost
+            : $"{currentHost} (+{activeCount - 1} more)";
+    }
 
     /// <summary>
     /// Event raised when a new session is created (for pane management).
@@ -145,46 +198,35 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         if (host == null) return;
 
-        // First check: Is this host already being connected? (outside lock for quick rejection)
-        bool isAlreadyConnecting;
-        lock (_connectingHosts)
-        {
-            isAlreadyConnecting = _connectingHosts.Contains(host.Id);
-        }
-
-        if (isAlreadyConnecting)
+        // Quick rejection if already connecting
+        if (_connectingHosts.ContainsKey(host.Id))
         {
             _logger.LogWarning("Connection to {DisplayName} already in progress, ignoring duplicate request", host.DisplayName);
             return;
         }
 
-        // Acquire connection lock to serialize connection attempts
-        // Use timeout to prevent indefinite blocking if a previous connection is stuck
-        if (!await _connectionLock.WaitAsync(TimeSpan.FromSeconds(Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds)))
+        var hostConnectionLock = GetHostConnectionLock(host.Id);
+
+        // Acquire per-host connection lock to prevent duplicate attempts for this host
+        if (!await hostConnectionLock.WaitAsync(TimeSpan.FromSeconds(Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds)))
         {
-            _logger.LogWarning("Failed to acquire connection lock for {DisplayName} within {Timeout}s timeout", host.DisplayName, Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds);
+            _logger.LogWarning("Failed to acquire host connection lock for {DisplayName} within {Timeout}s timeout", host.DisplayName, Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds);
             return;
         }
 
         try
         {
-            // Double-check inside lock to prevent race condition
-            lock (_connectingHosts)
+            // Double-check inside semaphore to prevent race condition
+            if (!_connectingHosts.TryAdd(host.Id, host.DisplayName))
             {
-                if (!_connectingHosts.Add(host.Id))
-                {
-                    _logger.LogWarning("Connection to {DisplayName} already in progress (race condition detected), aborting", host.DisplayName);
-                    return;
-                }
+                _logger.LogWarning("Connection to {DisplayName} already in progress (race condition detected), aborting", host.DisplayName);
+                return;
             }
 
             _logger.LogInformation("Initiating connection to {DisplayName} ({Hostname}:{Port}) using {AuthType}",
                 host.DisplayName, host.Hostname, host.Port, host.AuthType);
 
-            // Set connecting state (ObservableProperty updates must be on UI thread for WPF)
-            // These are now protected by the semaphore
-            IsConnecting = true;
-            ConnectingHostName = $"{host.DisplayName} ({host.Hostname})";
+            UpdateConnectionProgressState();
 
             try
             {
@@ -240,21 +282,13 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
             finally
             {
-                // Clear connecting state
-                IsConnecting = false;
-                ConnectingHostName = null;
-
-                // Remove from connecting hosts set
-                lock (_connectingHosts)
-                {
-                    _connectingHosts.Remove(host.Id);
-                }
+                RemoveConnectingHost(host.Id);
             }
         }
         finally
         {
-            // Always release the semaphore
-            _connectionLock.Release();
+            // Always release the per-host semaphore
+            hostConnectionLock.Release();
         }
     }
 
@@ -264,37 +298,29 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// </summary>
     public async Task<TerminalSession?> CreateSessionForHostAsync(HostEntry host)
     {
-        // Check if already connecting to prevent duplicate sessions
-        bool isAlreadyConnecting;
-        lock (_connectingHosts)
-        {
-            isAlreadyConnecting = _connectingHosts.Contains(host.Id);
-        }
-
-        if (isAlreadyConnecting)
+        // Quick rejection if already connecting
+        if (_connectingHosts.ContainsKey(host.Id))
         {
             _logger.LogWarning("Session creation for {DisplayName} already in progress, ignoring duplicate request", host.DisplayName);
             return null;
         }
 
-        // Acquire connection lock for thread safety
-        // Use timeout to prevent indefinite blocking if a previous connection is stuck
-        if (!await _connectionLock.WaitAsync(TimeSpan.FromSeconds(Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds)))
+        var hostConnectionLock = GetHostConnectionLock(host.Id);
+
+        // Acquire per-host connection lock for thread safety
+        if (!await hostConnectionLock.WaitAsync(TimeSpan.FromSeconds(Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds)))
         {
-            _logger.LogWarning("Failed to acquire connection lock for session creation of {DisplayName} within {Timeout}s timeout", host.DisplayName, Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds);
+            _logger.LogWarning("Failed to acquire host connection lock for session creation of {DisplayName} within {Timeout}s timeout", host.DisplayName, Constants.ConnectionDefaults.ConnectionLockTimeoutSeconds);
             return null;
         }
 
         try
         {
-            // Mark host as connecting
-            lock (_connectingHosts)
+            // Double-check inside semaphore
+            if (!_connectingHosts.TryAdd(host.Id, host.DisplayName))
             {
-                if (!_connectingHosts.Add(host.Id))
-                {
-                    _logger.LogWarning("Session creation for {DisplayName} already in progress (race condition), aborting", host.DisplayName);
-                    return null;
-                }
+                _logger.LogWarning("Session creation for {DisplayName} already in progress (race condition), aborting", host.DisplayName);
+                return null;
             }
 
             try
@@ -324,16 +350,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
             finally
             {
-                // Remove from connecting hosts set
-                lock (_connectingHosts)
-                {
-                    _connectingHosts.Remove(host.Id);
-                }
+                RemoveConnectingHost(host.Id);
             }
         }
         finally
         {
-            _connectionLock.Release();
+            hostConnectionLock.Release();
         }
     }
 
@@ -576,7 +598,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _sessionManager.SessionClosed -= OnSessionClosed;
         _sessionManager.CurrentSessionChanged -= OnCurrentSessionChanged;
 
-        // Dispose the connection lock semaphore
-        _connectionLock.Dispose();
+        foreach (var semaphore in _hostConnectionLocks.Values)
+        {
+            semaphore.Dispose();
+        }
+
+        _hostConnectionLocks.Clear();
+        _connectingHosts.Clear();
     }
 }

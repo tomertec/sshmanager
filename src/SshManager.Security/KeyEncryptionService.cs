@@ -1,3 +1,4 @@
+using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,12 @@ namespace SshManager.Security;
 public sealed class KeyEncryptionService : IKeyEncryptionService
 {
     private readonly ILogger<KeyEncryptionService> _logger;
+
+    /// <summary>
+    /// Maximum number of backup files to keep per key file.
+    /// Older backups beyond this count will be cleaned up.
+    /// </summary>
+    public const int MaxBackupCount = 5;
 
     public KeyEncryptionService(ILogger<KeyEncryptionService>? logger = null)
     {
@@ -531,7 +538,82 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
 
         File.Copy(privateKeyPath, backupPath, overwrite: true);
 
+        // Copy ACL from original file to backup so permissions are not more permissive
+        try
+        {
+            var originalInfo = new FileInfo(privateKeyPath);
+            var backupInfo = new FileInfo(backupPath);
+            var acl = originalInfo.GetAccessControl();
+            backupInfo.SetAccessControl(acl);
+        }
+        catch (Exception ex)
+        {
+            // ACL copy failure should not prevent the backup from being created
+            _logger.LogWarning(ex, "Failed to copy ACL from original to backup: {BackupPath}", backupPath);
+        }
+
+        // Clean up old backups after creating a new one
+        CleanupOldBackups(privateKeyPath);
+
         return backupPath;
+    }
+
+    /// <summary>
+    /// Cleans up old backup files for a given key file, keeping only the most recent ones.
+    /// </summary>
+    /// <param name="privateKeyPath">The path to the private key file.</param>
+    /// <param name="maxBackups">Maximum number of backups to keep. Defaults to <see cref="MaxBackupCount"/>.</param>
+    public void CleanupOldBackups(string privateKeyPath, int maxBackups = MaxBackupCount)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(privateKeyPath);
+
+        try
+        {
+            var directory = Path.GetDirectoryName(privateKeyPath);
+            if (string.IsNullOrEmpty(directory))
+            {
+                directory = Directory.GetCurrentDirectory();
+            }
+
+            var fileName = Path.GetFileName(privateKeyPath);
+            var backupPattern = $"{fileName}.backup.*";
+
+            // Sort by filename descending instead of CreationTimeUtc because Windows file
+            // tunneling can make CreationTimeUtc unreliable. Since filenames end with
+            // .backup.yyyyMMddHHmmss, lexicographic ordering gives correct chronological order.
+            var backupFiles = Directory.GetFiles(directory, backupPattern)
+                .Select(f => new FileInfo(f))
+                .Where(f => f.Name.StartsWith(fileName + ".backup."))
+                .OrderByDescending(f => f.Name)
+                .ToList();
+
+            if (backupFiles.Count <= maxBackups)
+            {
+                _logger.LogDebug("No backup cleanup needed for {Path}, found {Count} backups", privateKeyPath, backupFiles.Count);
+                return;
+            }
+
+            var filesToDelete = backupFiles.Skip(maxBackups).ToList();
+            foreach (var file in filesToDelete)
+            {
+                try
+                {
+                    file.Delete();
+                    _logger.LogDebug("Deleted old backup: {BackupPath}", file.FullName);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete old backup: {BackupPath}", file.FullName);
+                }
+            }
+
+            _logger.LogInformation("Cleaned up {Count} old backup(s) for {Path}", filesToDelete.Count, privateKeyPath);
+        }
+        catch (Exception ex)
+        {
+            // Don't fail the main operation if cleanup fails
+            _logger.LogWarning(ex, "Failed to cleanup old backups for {Path}", privateKeyPath);
+        }
     }
 
     /// <summary>

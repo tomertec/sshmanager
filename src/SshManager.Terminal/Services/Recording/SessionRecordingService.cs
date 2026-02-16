@@ -37,6 +37,16 @@ public sealed partial class SessionRecordingService : ISessionRecordingService
     /// <summary>
     /// Starts recording a terminal session.
     /// </summary>
+    /// <summary>
+    /// Minimum free disk space required to start recording (100 MB).
+    /// </summary>
+    private const long MinimumFreeDiskSpaceBytes = 100L * 1024 * 1024;
+
+    /// <summary>
+    /// Maximum recording file size before auto-stopping (500 MB).
+    /// </summary>
+    public const long MaxRecordingFileSizeBytes = 500L * 1024 * 1024;
+
     public async Task<SessionRecorder> StartRecordingAsync(
         Guid sessionId,
         HostEntry? host,
@@ -49,6 +59,18 @@ public sealed partial class SessionRecordingService : ISessionRecordingService
         if (_activeRecorders.ContainsKey(sessionId))
         {
             throw new InvalidOperationException($"Session {sessionId} is already being recorded");
+        }
+
+        // Validate available disk space before starting
+        var pathRoot = Path.GetPathRoot(RecordingsDirectory);
+        if (!string.IsNullOrEmpty(pathRoot))
+        {
+            var drive = new DriveInfo(pathRoot);
+            if (drive.IsReady && drive.AvailableFreeSpace < MinimumFreeDiskSpaceBytes)
+            {
+                throw new InvalidOperationException(
+                    "Insufficient disk space for session recording. At least 100 MB free space is required.");
+            }
         }
 
         // Generate filename and title

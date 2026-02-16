@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Microsoft.Extensions.Logging;
 using SshManager.App.Models;
 using SshManager.App.Services;
 using SshManager.Terminal;
@@ -12,6 +13,7 @@ namespace SshManager.App.Views.Controls;
 /// </summary>
 public partial class TerminalPaneContainer : UserControl
 {
+    private readonly ILogger<TerminalPaneContainer> _logger;
     private IPaneLayoutManager? _layoutManager;
     private IServiceProvider? _serviceProvider;
     private readonly Dictionary<Guid, TerminalPane> _paneControls = new();
@@ -31,8 +33,13 @@ public partial class TerminalPaneContainer : UserControl
     /// </summary>
     public event EventHandler<TerminalSession>? SessionDisconnected;
 
-    public TerminalPaneContainer()
+    public TerminalPaneContainer() : this(null)
     {
+    }
+
+    public TerminalPaneContainer(ILogger<TerminalPaneContainer>? logger = null)
+    {
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<TerminalPaneContainer>.Instance;
         InitializeComponent();
         Loaded += OnLoaded;
     }
@@ -236,7 +243,7 @@ public partial class TerminalPaneContainer : UserControl
     /// Ensures a pane control is fully detached from any parent before adding to a new container.
     /// This prevents "Visual is already a child of another Visual" errors.
     /// </summary>
-    private static void EnsureDetachedFromParent(TerminalPane pane)
+    private void EnsureDetachedFromParent(TerminalPane pane)
     {
         if (pane.Parent == null)
             return;
@@ -266,8 +273,7 @@ public partial class TerminalPaneContainer : UserControl
         // This is a safety net for edge cases
         if (pane.Parent != null)
         {
-            System.Diagnostics.Debug.WriteLine(
-                $"WARNING: Could not detach pane from parent of type {pane.Parent.GetType().Name}");
+            _logger.LogWarning("Could not detach pane from parent of type {ParentType}", pane.Parent.GetType().Name);
         }
     }
 

@@ -179,6 +179,14 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _selectedSettingsCategory = "Terminal";
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SettingsModeDescription))]
+    private bool _isAdvancedMode;
+
+    public string SettingsModeDescription => IsAdvancedMode
+        ? "Advanced mode: all settings are visible"
+        : "Basic mode: only common settings are shown";
+
     // ===== UI State =====
     [ObservableProperty]
     private bool _isSaving;
@@ -309,6 +317,7 @@ public partial class SettingsViewModel : ObservableObject
         ConfirmOnClose = _settings.ConfirmOnClose;
         RememberWindowPosition = _settings.RememberWindowPosition;
         Theme = _settings.Theme;
+        IsAdvancedMode = _settings.IsAdvancedMode;
         StartMinimized = _settings.StartMinimized;
         MinimizeToTray = _settings.MinimizeToTray;
 
@@ -395,6 +404,7 @@ public partial class SettingsViewModel : ObservableObject
             _settings.ConfirmOnClose = ConfirmOnClose;
             _settings.RememberWindowPosition = RememberWindowPosition;
             _settings.Theme = Theme;
+            _settings.IsAdvancedMode = IsAdvancedMode;
             _settings.StartMinimized = StartMinimized;
             _settings.MinimizeToTray = MinimizeToTray;
 
@@ -449,6 +459,31 @@ public partial class SettingsViewModel : ObservableObject
     {
         DialogResult = false;
         RequestClose?.Invoke();
+    }
+
+    [RelayCommand]
+    private void ToggleAdvancedMode()
+    {
+        IsAdvancedMode = !IsAdvancedMode;
+    }
+
+    [RelayCommand]
+    private void SetBasicMode()
+    {
+        IsAdvancedMode = false;
+    }
+
+    [RelayCommand]
+    private void SetAdvancedMode()
+    {
+        IsAdvancedMode = true;
+    }
+
+    [RelayCommand]
+    private void ResetToBasicMode()
+    {
+        IsAdvancedMode = false;
+        SelectedSettingsCategory = "Terminal";
     }
 
     [RelayCommand]

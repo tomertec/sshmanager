@@ -202,41 +202,14 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
     /// <summary>
     /// Refreshes the hosts list based on current search text, group filter, and tag filter.
     /// </summary>
-    public async Task RefreshHostsAsync()
+    public async Task RefreshHostsAsync(CancellationToken cancellationToken = default)
     {
         IsLoading = true;
         try
         {
-            IEnumerable<HostEntry> hosts;
+            var hosts = await QueryHostsAsync(SearchText, SelectedGroupFilter, SelectedFilterTags, cancellationToken);
 
-            // Get tag IDs from selected filter tags
-            var tagIds = SelectedFilterTags.Any()
-                ? SelectedFilterTags.Select(t => t.Id).ToList()
-                : null;
-
-            if (string.IsNullOrWhiteSpace(SearchText))
-            {
-                // If tags are selected, use SearchAsync with empty search term to apply tag filter
-                if (tagIds != null)
-                {
-                    hosts = await _hostRepo.SearchAsync(null, tagIds);
-                }
-                else
-                {
-                    hosts = await _hostRepo.GetAllAsync();
-                }
-            }
-            else
-            {
-                hosts = await _hostRepo.SearchAsync(SearchText, tagIds);
-            }
-
-            // Apply group filter if selected
-            if (SelectedGroupFilter != null)
-            {
-                hosts = hosts.Where(h => h.GroupId == SelectedGroupFilter.Id);
-            }
-
+            cancellationToken.ThrowIfCancellationRequested();
             Hosts = new ObservableCollection<HostEntry>(hosts);
         }
         finally
@@ -248,31 +221,25 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task SearchAsync(CancellationToken cancellationToken = default)
     {
-        IsLoading = true;
+        // Marshal IsLoading to UI thread since SearchAsync may run on a background thread (via OnSearchTextChanged)
+        await Application.Current.Dispatcher.InvokeAsync(() => IsLoading = true);
         try
         {
-            // Get tag IDs from selected filter tags
-            var tagIds = SelectedFilterTags.Any()
-                ? SelectedFilterTags.Select(t => t.Id).ToList()
-                : null;
-
-            var hosts = string.IsNullOrWhiteSpace(SearchText)
-                ? (tagIds != null ? await _hostRepo.SearchAsync(null, tagIds) : await _hostRepo.GetAllAsync())
-                : await _hostRepo.SearchAsync(SearchText, tagIds);
+            var hosts = await QueryHostsAsync(SearchText, SelectedGroupFilter, SelectedFilterTags, cancellationToken);
 
             // Check if cancelled before updating UI
             if (cancellationToken.IsCancellationRequested)
                 return;
 
             // Marshal to UI thread for ObservableCollection update
-            Application.Current.Dispatcher.Invoke(() =>
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 Hosts = new ObservableCollection<HostEntry>(hosts);
             });
         }
         finally
         {
-            IsLoading = false;
+            await Application.Current.Dispatcher.InvokeAsync(() => IsLoading = false);
         }
     }
 
@@ -353,47 +320,95 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task AddHostAsync()
     {
-        var viewModel = new HostDialogViewModel(
-            _validationService,
-            _secretProtector,
-            _serialConnectionService,
-            _agentDiagnosticsService,
-            _kerberosAuthService,
-            _hostProfileRepo,
-            _proxyJumpRepo,
-            _portForwardingRepo,
-            _tagRepo,
-            _envVarRepo,
-            host: null,
-            groups: Groups);
-
-        // Load all async data (profiles, tags, agent status, etc.)
-        await viewModel.LoadDataAsync();
-
-        var dialog = new HostEditDialog(
-            viewModel,
-            _hostProfileRepo,
-            _proxyJumpRepo,
-            _portForwardingRepo,
-            _hostRepo);
-        dialog.Owner = Application.Current.MainWindow;
-
-        if (dialog.ShowDialog() == true)
+        try
         {
-            var host = viewModel.GetHost();
-            await _hostRepo.AddAsync(host);
+            var viewModel = new HostDialogViewModel(
+                _validationService,
+                _secretProtector,
+                _serialConnectionService,
+                _agentDiagnosticsService,
+                _kerberosAuthService,
+                _hostProfileRepo,
+                _proxyJumpRepo,
+                _portForwardingRepo,
+                _tagRepo,
+                _envVarRepo,
+                host: null,
+                groups: Groups);
 
-            // Save environment variables
-            var envVars = viewModel.GetEnvironmentVariables().ToList();
-            if (envVars.Count > 0)
+            try
             {
-                await _envVarRepo.SetForHostAsync(host.Id, envVars);
+                await viewModel.LoadDataAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load Add Host dialog data; opening with partial data");
             }
 
-            _hostCacheService.Invalidate(); // Invalidate cache after add
-            Hosts.Add(host);
-            SelectedHost = host;
+            var dialog = new HostEditDialog(
+                viewModel,
+                _hostProfileRepo,
+                _proxyJumpRepo,
+                _portForwardingRepo,
+                _hostRepo);
+
+            if (Application.Current?.MainWindow != null)
+            {
+                dialog.Owner = Application.Current.MainWindow;
+            }
+
+            if (dialog.ShowDialog() == true)
+            {
+                var host = viewModel.GetHost();
+                await _hostRepo.AddAsync(host);
+
+                // Save environment variables
+                var envVars = viewModel.GetEnvironmentVariables().ToList();
+                if (envVars.Count > 0)
+                {
+                    await _envVarRepo.SetForHostAsync(host.Id, envVars);
+                }
+
+                _hostCacheService.Invalidate(); // Invalidate cache after add
+                Hosts.Add(host);
+                SelectedHost = host;
+            }
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open Add Host dialog");
+            MessageBox.Show(
+                $"Failed to open Add Host dialog.\n\n{ex.Message}",
+                "Add Host Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private async Task<List<HostEntry>> QueryHostsAsync(
+        string? searchText,
+        HostGroup? groupFilter,
+        IReadOnlyCollection<Tag>? selectedTags,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var tagIds = selectedTags?.Any() == true
+            ? selectedTags.Select(t => t.Id).ToList()
+            : null;
+
+        IEnumerable<HostEntry> hosts = string.IsNullOrWhiteSpace(searchText)
+            ? (tagIds != null ? await _hostRepo.SearchAsync(null, tagIds) : await _hostRepo.GetAllAsync())
+            : await _hostRepo.SearchAsync(searchText, tagIds);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (groupFilter != null)
+        {
+            hosts = hosts.Where(h => h.GroupId == groupFilter.Id);
+        }
+
+        return hosts.ToList();
     }
 
     [RelayCommand]
