@@ -549,34 +549,39 @@ public sealed partial class AgentKeyService : IAgentKeyService
     #region Helper Methods
 
     /// <summary>
-    /// Checks if the OpenSSH Agent service is running on Windows.
+    /// Checks if an SSH agent is listening on the OpenSSH named pipe.
+    /// This detects any compatible agent (Windows OpenSSH Agent, 1Password, etc.)
+    /// by testing actual pipe connectivity instead of querying the Windows service.
     /// </summary>
     private async Task<bool> IsOpenSshAgentServiceRunningAsync(CancellationToken ct)
     {
         try
         {
-            var startInfo = new ProcessStartInfo
+            return await Task.Run(() =>
             {
-                FileName = "sc",
-                ArgumentList = { "query", "ssh-agent" },
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-
-            var output = await RunProcessAsync(startInfo, ct);
-
-            // Check if output contains "RUNNING"
-            bool isRunning = output.Output.Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
-
-            _logger.LogDebug("OpenSSH Agent service running: {IsRunning}", isRunning);
-
-            return isRunning;
+                try
+                {
+                    using var pipe = new System.IO.Pipes.NamedPipeClientStream(
+                        ".", "openssh-ssh-agent", System.IO.Pipes.PipeDirection.InOut);
+                    pipe.Connect(500); // 500ms timeout
+                    _logger.LogDebug("OpenSSH Agent pipe is reachable (agent detected)");
+                    return true;
+                }
+                catch (TimeoutException)
+                {
+                    _logger.LogDebug("OpenSSH Agent pipe connection timed out");
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "OpenSSH Agent pipe not available: {Message}", ex.Message);
+                    return false;
+                }
+            }, ct);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Error checking OpenSSH Agent service status");
+            _logger.LogDebug(ex, "Error checking OpenSSH Agent pipe availability");
             return false;
         }
     }

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -8,6 +9,7 @@ using SshManager.Core;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
+using SshManager.Security.OnePassword;
 using SshManager.Terminal;
 using SshManager.Terminal.Models;
 using SshManager.Terminal.Services;
@@ -33,6 +35,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     private readonly IHostFingerprintRepository _fingerprintRepo;
     private readonly ISessionLoggingService _sessionLoggingService;
     private readonly IExternalTerminalService _externalTerminalService;
+    private readonly IOnePasswordService _onePasswordService;
     private readonly ILogger<SessionViewModel> _logger;
 
     /// <summary>
@@ -124,6 +127,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         IHostFingerprintRepository fingerprintRepo,
         ISessionLoggingService sessionLoggingService,
         IExternalTerminalService externalTerminalService,
+        IOnePasswordService onePasswordService,
         ILogger<SessionViewModel>? logger = null)
     {
         _sessionManager = sessionManager;
@@ -136,6 +140,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         _fingerprintRepo = fingerprintRepo;
         _sessionLoggingService = sessionLoggingService;
         _externalTerminalService = externalTerminalService;
+        _onePasswordService = onePasswordService;
         _logger = logger ?? NullLogger<SessionViewModel>.Instance;
 
         // Subscribe to session events
@@ -238,7 +243,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                     _logger.LogInformation("Using external terminal for {DisplayName}", host.DisplayName);
 
                     // Get password for password auth (note: SSH prompts interactively, this is just for logging)
-                    string? password = GetPasswordForHost(host, settings);
+                    string? password = await GetPasswordForHostAsync(host, settings);
 
                     var launched = await _externalTerminalService.LaunchSshConnectionAsync(host, password);
 
@@ -258,7 +263,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
                 // Embedded terminal mode (default behavior)
                 // Get password - check cache first, then fall back to stored password
-                string? embeddedPassword = GetPasswordForHost(host, settings);
+                string? embeddedPassword = await GetPasswordForHostAsync(host, settings);
                 bool usedCachedCredential = embeddedPassword != null && host.AuthType == AuthType.Password &&
                                              settings.EnableCredentialCaching &&
                                              _credentialCache.GetCachedCredential(host.Id) != null;
@@ -331,7 +336,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 var settings = await _settingsRepo.GetAsync();
 
                 // Get password - check cache first, then fall back to stored password
-                string? password = GetPasswordForHost(host, settings);
+                string? password = await GetPasswordForHostAsync(host, settings);
 
                 // Create session
                 var session = _sessionManager.CreateSession(host.DisplayName);
@@ -502,12 +507,20 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// <summary>
     /// Retrieves the password for a host entry, checking the cache first and falling back to the stored encrypted password.
     /// If credential caching is enabled and a password is retrieved from storage, it will be cached for future use.
+    /// Supports 1Password credential resolution for hosts using OnePassword auth type.
     /// </summary>
     /// <param name="host">The host entry to retrieve the password for.</param>
     /// <param name="settings">The application settings.</param>
     /// <returns>The decrypted password, or null if no password is available or decryption fails.</returns>
-    private string? GetPasswordForHost(HostEntry host, AppSettings settings)
+    private async Task<string?> GetPasswordForHostAsync(HostEntry host, AppSettings settings)
     {
+        if (host.AuthType == AuthType.OnePassword)
+        {
+            // Run on background thread to avoid UI freeze — op CLI may trigger
+            // a Windows Hello biometric prompt that interacts with the UI message pump
+            return await Task.Run(() => GetOnePasswordCredentialAsync(host, settings));
+        }
+
         if (host.AuthType != AuthType.Password)
         {
             return null;
@@ -548,6 +561,105 @@ public partial class SessionViewModel : ObservableObject, IDisposable
         }
 
         return password;
+    }
+
+    /// <summary>
+    /// Resolves credentials from 1Password for hosts using the OnePassword auth type.
+    /// Fetches the password via the op:// secret reference. For SSH keys, the key is fetched
+    /// and written to a temp file, and the host's PrivateKeyPath is updated for the auth factory.
+    /// </summary>
+    private async Task<string?> GetOnePasswordCredentialAsync(HostEntry host, AppSettings settings)
+    {
+        // Try cache first
+        if (settings.EnableCredentialCaching)
+        {
+            var cachedCredential = _credentialCache.GetCachedCredential(host.Id);
+            if (cachedCredential != null)
+            {
+                _logger.LogDebug("Using cached 1Password credential for host {DisplayName}", host.DisplayName);
+                return cachedCredential.GetValue();
+            }
+        }
+
+        // Resolve SSH key from 1Password if configured
+        if (!string.IsNullOrWhiteSpace(host.OnePasswordKeyReference))
+        {
+            try
+            {
+                var keyContent = await _onePasswordService.ReadSshKeyAsync(host.OnePasswordKeyReference);
+
+                if (!string.IsNullOrEmpty(keyContent))
+                {
+                    // Write key to a secure temp file for the auth factory to use
+                    var tempKeyPath = Path.Combine(Path.GetTempPath(), $"sshm_op_{Guid.NewGuid():N}");
+                    await File.WriteAllTextAsync(tempKeyPath, keyContent);
+                    host.PrivateKeyPath = tempKeyPath;
+
+                    _logger.LogInformation("SSH key fetched from 1Password for host {DisplayName}", host.DisplayName);
+
+                    // If there's also a password reference, fetch it (might be the key passphrase)
+                    if (!string.IsNullOrWhiteSpace(host.OnePasswordReference))
+                    {
+                        var password = await _onePasswordService.ReadSecretAsync(host.OnePasswordReference);
+
+                        if (!string.IsNullOrEmpty(password) && settings.EnableCredentialCaching)
+                        {
+                            CacheCredentialForHost(host.Id, password, CredentialType.Password);
+                        }
+                        return password;
+                    }
+
+                    return null;
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to fetch SSH key from 1Password for host {DisplayName}", host.DisplayName);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching SSH key from 1Password for host {DisplayName}", host.DisplayName);
+            }
+        }
+
+        // Resolve password from 1Password
+        if (!string.IsNullOrWhiteSpace(host.OnePasswordReference))
+        {
+            try
+            {
+                var password = await _onePasswordService.ReadSecretAsync(host.OnePasswordReference);
+
+                if (!string.IsNullOrEmpty(password))
+                {
+                    _logger.LogDebug("Password fetched from 1Password for host {DisplayName}", host.DisplayName);
+
+                    if (settings.EnableCredentialCaching)
+                    {
+                        CacheCredentialForHost(host.Id, password, CredentialType.Password);
+                    }
+
+                    return password;
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to fetch password from 1Password for host {DisplayName}", host.DisplayName);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching password from 1Password for host {DisplayName}", host.DisplayName);
+            }
+        }
+
+        // If we get here, credential resolution failed — throw so the connection
+        // aborts with a clear error instead of silently falling back to agent auth
+        var hasRefs = !string.IsNullOrWhiteSpace(host.OnePasswordReference) ||
+                      !string.IsNullOrWhiteSpace(host.OnePasswordKeyReference);
+        var message = hasRefs
+            ? $"Failed to fetch credentials from 1Password for host {host.DisplayName}. Check the op:// reference and ensure the item name is unique in the vault."
+            : $"No 1Password references configured for host {host.DisplayName}. Edit the host and set an op:// password or SSH key reference.";
+        _logger.LogWarning(message);
+        throw new InvalidOperationException(message);
     }
 
     /// <summary>

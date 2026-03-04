@@ -229,7 +229,37 @@ public static class DbMigrator
         logger.Information("Schema version updated to 1");
         } // end if (currentVersion < 1)
 
-        // Future migrations go here as: if (currentVersion < 2) { ... }
+        if (currentVersion < 2)
+        {
+            // 1Password integration columns on Hosts table
+            var hostsColumns2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA table_info(Hosts)";
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    hostsColumns2.Add(reader.GetString(1));
+                }
+            }
+
+            if (!hostsColumns2.Contains("OnePasswordReference"))
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "ALTER TABLE Hosts ADD COLUMN OnePasswordReference TEXT DEFAULT NULL");
+                logger.Information("Added missing column OnePasswordReference to Hosts table");
+            }
+
+            if (!hostsColumns2.Contains("OnePasswordKeyReference"))
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "ALTER TABLE Hosts ADD COLUMN OnePasswordKeyReference TEXT DEFAULT NULL");
+                logger.Information("Added missing column OnePasswordKeyReference to Hosts table");
+            }
+
+            await UpdateSchemaVersionAsync(connection, 2);
+            logger.Information("Schema version updated to 2");
+        }
     }
 
     /// <summary>

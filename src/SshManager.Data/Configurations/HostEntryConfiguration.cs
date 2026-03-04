@@ -79,5 +79,11 @@ public sealed class HostEntryConfiguration : IEntityTypeConfiguration<HostEntry>
             .HasMaxLength(400);
         builder.Property(x => x.KerberosDelegateCredentials)
             .HasDefaultValue(false);
+
+        // 1Password integration
+        builder.Property(x => x.OnePasswordReference)
+            .HasMaxLength(500);
+        builder.Property(x => x.OnePasswordKeyReference)
+            .HasMaxLength(500);
     }
 }

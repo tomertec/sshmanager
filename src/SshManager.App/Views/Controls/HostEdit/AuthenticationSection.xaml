@@ -42,6 +42,9 @@
                                     <DataTrigger Binding="{Binding}" Value="{x:Static models:AuthType.Kerberos}">
                                         <Setter Property="Text" Value="Kerberos/GSSAPI" />
                                     </DataTrigger>
+                                    <DataTrigger Binding="{Binding}" Value="{x:Static models:AuthType.OnePassword}">
+                                        <Setter Property="Text" Value="1Password" />
+                                    </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </TextBlock.Style>
@@ -221,6 +224,107 @@
                       Content="Enable credential delegation (ticket forwarding)"
                       Margin="0,0,0,4" />
             <TextBlock Text="Allows the remote host to act on your behalf. Use with trusted servers only."
+                       Style="{StaticResource HintTextStyle}"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- 1Password Settings (shown only for OnePassword auth) -->
+        <StackPanel Visibility="{Binding SshSettings.ShowOnePasswordSettings, Converter={StaticResource BoolToVisibilityConverter}}"
+                    Margin="0,0,0,16">
+
+            <!-- 1Password Status -->
+            <Border Style="{StaticResource StatusBorderStyle}"
+                    Margin="0,0,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Status Icon -->
+                    <ui:SymbolIcon Grid.Column="0"
+                                   FontSize="16"
+                                   Margin="0,0,8,0"
+                                   VerticalAlignment="Center">
+                        <ui:SymbolIcon.Style>
+                            <Style TargetType="ui:SymbolIcon">
+                                <Setter Property="Symbol" Value="Warning16" />
+                                <Setter Property="Foreground" Value="#FFC107" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SshSettings.IsOnePasswordAvailable}" Value="True">
+                                        <Setter Property="Symbol" Value="Checkmark16" />
+                                        <Setter Property="Foreground" Value="#4CAF50" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ui:SymbolIcon.Style>
+                    </ui:SymbolIcon>
+
+                    <!-- Status Text -->
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding SshSettings.OnePasswordStatusText}"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap" />
+
+                    <!-- Refresh Button -->
+                    <ui:Button Grid.Column="2"
+                               Icon="{ui:SymbolIcon ArrowSync16}"
+                               ToolTip="Refresh 1Password status"
+                               Command="{Binding SshSettings.RefreshOnePasswordStatusAsyncCommand}"
+                               Width="32" Height="32"
+                               Padding="0"
+                               Margin="8,0,0,0">
+                        <ui:Button.Style>
+                            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SshSettings.IsCheckingOnePassword}" Value="True">
+                                        <Setter Property="IsEnabled" Value="False" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ui:Button.Style>
+                    </ui:Button>
+                </Grid>
+            </Border>
+
+            <!-- Password Secret Reference -->
+            <TextBlock Text="Password Reference"
+                       Style="{StaticResource SectionLabelStyle}" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:TextBox Grid.Column="0"
+                            Text="{Binding SshSettings.OnePasswordReference, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="op://vault/item/password"
+                            Margin="0,0,4,0" />
+                <ui:Button Grid.Column="1"
+                           Content="Browse..."
+                           Click="BrowseOnePasswordPassword_Click" />
+            </Grid>
+            <TextBlock Text="1Password secret reference for the SSH password"
+                       Style="{StaticResource HintTextStyle}"
+                       Margin="0,0,0,12" />
+
+            <!-- SSH Key Secret Reference -->
+            <TextBlock Text="SSH Key Reference (Optional)"
+                       Style="{StaticResource SectionLabelStyle}" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:TextBox Grid.Column="0"
+                            Text="{Binding SshSettings.OnePasswordKeyReference, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="op://vault/item/private key"
+                            Margin="0,0,4,0" />
+                <ui:Button Grid.Column="1"
+                           Content="Browse..."
+                           Click="BrowseOnePasswordKey_Click" />
+            </Grid>
+            <TextBlock Text="1Password secret reference for the SSH private key (overrides password if set)"
                        Style="{StaticResource HintTextStyle}"
                        TextWrapping="Wrap" />
         </StackPanel>

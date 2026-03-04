@@ -12,6 +12,7 @@ using SshManager.App.Views.Dialogs;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
+using SshManager.Security.OnePassword;
 using SshManager.Terminal;
 using SshManager.Terminal.Services;
 using Wpf.Ui;
@@ -720,8 +721,9 @@ public partial class MainWindow : FluentWindow
         var credentialCache = _serviceProvider.GetRequiredService<ICredentialCache>();
         var themeService = _serviceProvider.GetRequiredService<ITerminalThemeService>();
         var x11ForwardingService = _serviceProvider.GetRequiredService<IX11ForwardingService>();
+        var onePasswordService = _serviceProvider.GetRequiredService<IOnePasswordService>();
 
-        var viewModel = new SettingsViewModel(settingsRepo, historyRepo, credentialCache, themeService, x11ForwardingService);
+        var viewModel = new SettingsViewModel(settingsRepo, historyRepo, credentialCache, themeService, x11ForwardingService, onePasswordService);
         var dialog = new SettingsDialog(viewModel, _viewModel, _serviceProvider) { Owner = this };
         dialog.ShowDialog();
     }

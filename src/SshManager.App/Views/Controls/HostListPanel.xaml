@@ -140,11 +140,11 @@
                 BorderThickness="1"
                 CornerRadius="6"
                 Padding="8,6"
-                Visibility="{Binding HostManagement.AllTags.Count, Converter={StaticResource NullToBoolConverter}, ConverterParameter=Inverse, FallbackValue=Collapsed}">
+                Visibility="{Binding HostManagement.AllTags.Count, Converter={StaticResource CountToVisibilityConverter}, FallbackValue=Collapsed}">
             <StackPanel>
                 <!-- Selected Filter Tags (with remove buttons) -->
                 <ItemsControl ItemsSource="{Binding HostManagement.SelectedFilterTags}"
-                             Visibility="{Binding HostManagement.SelectedFilterTags.Count, Converter={StaticResource NullToBoolConverter}, FallbackValue=Collapsed}"
+                             Visibility="{Binding HostManagement.SelectedFilterTags.Count, Converter={StaticResource CountToVisibilityConverter}, FallbackValue=Collapsed}"
                              Margin="0,0,0,4">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -411,6 +411,7 @@
                      Margin="8,8,8,0"
                      Background="Transparent"
                      BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.VirtualizationMode="Recycling"
@@ -724,44 +725,46 @@
                             </StackPanel>
 
                             <!-- Row 2: Connection type, Group and Hostname -->
-                            <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
-                                       Orientation="Horizontal"
-                                       Margin="0,2,0,0">
-                                <!-- Connection type icon (SSH or Serial) -->
-                                <ui:SymbolIcon Symbol="{Binding ConnectionType, Converter={StaticResource ConnectionTypeIconConverter}}"
-                                              FontSize="11"
+                            <Grid Grid.Row="1" Grid.Column="1"
+                                  Margin="0,2,0,0"
+                                  ClipToBounds="True">
+                                <StackPanel Orientation="Horizontal">
+                                    <!-- Connection type icon (SSH or Serial) -->
+                                    <ui:SymbolIcon Symbol="{Binding ConnectionType, Converter={StaticResource ConnectionTypeIconConverter}}"
+                                                  FontSize="11"
+                                                  Opacity="0.5"
+                                                  Margin="0,0,4,0"
+                                                  VerticalAlignment="Center">
+                                        <ui:SymbolIcon.ToolTip>
+                                            <TextBlock>
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="SSH Connection" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ConnectionType}" Value="Serial">
+                                                                <Setter Property="Text" Value="Serial Connection" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </ui:SymbolIcon.ToolTip>
+                                    </ui:SymbolIcon>
+                                    <TextBlock Text="{Binding Group.Name, FallbackValue='Ungrouped'}"
                                               Opacity="0.5"
-                                              Margin="0,0,4,0"
-                                              VerticalAlignment="Center">
-                                    <ui:SymbolIcon.ToolTip>
-                                        <TextBlock>
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Text" Value="SSH Connection" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding ConnectionType}" Value="Serial">
-                                                            <Setter Property="Text" Value="Serial Connection" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </ui:SymbolIcon.ToolTip>
-                                </ui:SymbolIcon>
-                                <TextBlock Text="{Binding Group.Name, FallbackValue='Ungrouped'}"
-                                          Opacity="0.5"
-                                          FontSize="11"
-                                          FontStyle="Italic"
-                                          TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text=" · "
-                                          Opacity="0.4"
-                                          FontSize="11" />
-                                <TextBlock Text="{Binding Hostname}"
-                                          Opacity="0.7"
-                                          FontSize="11"
-                                          TextTrimming="CharacterEllipsis"
-                                          MaxWidth="160" />
-                            </StackPanel>
+                                              FontSize="11"
+                                              FontStyle="Italic"
+                                              TextTrimming="CharacterEllipsis"
+                                              MaxWidth="100" />
+                                    <TextBlock Text=" · "
+                                              Opacity="0.4"
+                                              FontSize="11" />
+                                    <TextBlock Text="{Binding Hostname}"
+                                              Opacity="0.7"
+                                              FontSize="11"
+                                              TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Grid>
                         </Grid>
                     </Border>
                     </Grid>

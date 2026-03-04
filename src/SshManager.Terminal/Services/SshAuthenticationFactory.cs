@@ -42,6 +42,9 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
             // Kerberos/GSSAPI authentication using Windows domain credentials
             AuthType.Kerberos => CreateKerberosAuth(connectionInfo, kbInteractiveCallback),
 
+            // 1Password: credentials are pre-resolved by the App layer and passed via Password/PrivateKeyPath
+            AuthType.OnePassword => CreateOnePasswordAuth(connectionInfo, kbInteractiveCallback),
+
             // Default fallback - log a warning if we expected password auth
             _ when connectionInfo.AuthType == AuthType.Password =>
                 LogAndFallback(connectionInfo, kbInteractiveCallback, "Password auth configured but no password provided"),
@@ -321,6 +324,36 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
             _logger.LogError(ex, "Failed to load private key from {KeyPath}", connectionInfo.PrivateKeyPath);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Creates authentication for 1Password-backed hosts.
+    /// Credentials are pre-resolved by the App layer and passed via existing fields.
+    /// If an SSH key path is provided, uses private key auth; if a password is provided, uses password auth;
+    /// otherwise falls back to SSH agent auth.
+    /// </summary>
+    private SshAuthenticationResult CreateOnePasswordAuth(
+        TerminalConnectionInfo connectionInfo,
+        KeyboardInteractiveCallback? kbInteractiveCallback)
+    {
+        _logger.LogDebug("Creating 1Password authentication for {Username}@{Host}",
+            connectionInfo.Username, connectionInfo.Hostname);
+
+        // SSH key takes priority if both are resolved
+        if (!string.IsNullOrEmpty(connectionInfo.PrivateKeyPath))
+        {
+            _logger.LogInformation("Using 1Password-provided SSH key for authentication");
+            return CreatePrivateKeyAuth(connectionInfo, kbInteractiveCallback);
+        }
+
+        if (!string.IsNullOrEmpty(connectionInfo.Password))
+        {
+            _logger.LogInformation("Using 1Password-provided password for authentication");
+            return CreatePasswordAuth(connectionInfo, kbInteractiveCallback);
+        }
+
+        _logger.LogWarning("1Password auth configured but no credentials were resolved, falling back to agent auth");
+        return CreateAgentAuth(connectionInfo, kbInteractiveCallback);
     }
 
     /// <summary>

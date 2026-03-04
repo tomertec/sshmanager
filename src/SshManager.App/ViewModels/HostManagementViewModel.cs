@@ -12,6 +12,7 @@ using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Data.Services;
 using SshManager.Security;
+using SshManager.Security.OnePassword;
 using SshManager.Terminal.Services;
 using SshManager.App.Views.Dialogs;
 using SshManager.App.Behaviors;
@@ -36,6 +37,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
     private readonly ISerialConnectionService _serialConnectionService;
     private readonly IAgentDiagnosticsService? _agentDiagnosticsService;
     private readonly IKerberosAuthService? _kerberosAuthService;
+    private readonly IOnePasswordService? _onePasswordService;
     private readonly IHostValidationService _validationService;
     private readonly IHostCacheService _hostCacheService;
     private readonly ILogger<HostManagementViewModel> _logger;
@@ -90,6 +92,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         IHostCacheService hostCacheService,
         IAgentDiagnosticsService? agentDiagnosticsService = null,
         IKerberosAuthService? kerberosAuthService = null,
+        IOnePasswordService? onePasswordService = null,
         ILogger<HostManagementViewModel>? logger = null)
     {
         _hostRepo = hostRepo;
@@ -105,6 +108,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         _hostCacheService = hostCacheService;
         _agentDiagnosticsService = agentDiagnosticsService;
         _kerberosAuthService = kerberosAuthService;
+        _onePasswordService = onePasswordService;
         _logger = logger ?? NullLogger<HostManagementViewModel>.Instance;
 
         // Subscribe to initial collection changes
@@ -328,6 +332,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
                 _serialConnectionService,
                 _agentDiagnosticsService,
                 _kerberosAuthService,
+                _onePasswordService,
                 _hostProfileRepo,
                 _proxyJumpRepo,
                 _portForwardingRepo,
@@ -361,6 +366,10 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
             {
                 var host = viewModel.GetHost();
                 await _hostRepo.AddAsync(host);
+
+                // Save tags via the proper many-to-many method
+                var tagIds = viewModel.Metadata.GetSelectedTagIds().ToList();
+                await _hostRepo.SetHostTagsAsync(host.Id, tagIds);
 
                 // Save environment variables
                 var envVars = viewModel.GetEnvironmentVariables().ToList();
@@ -422,6 +431,7 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
             _serialConnectionService,
             _agentDiagnosticsService,
             _kerberosAuthService,
+            _onePasswordService,
             _hostProfileRepo,
             _proxyJumpRepo,
             _portForwardingRepo,
@@ -445,6 +455,10 @@ public partial class HostManagementViewModel : ObservableObject, IDisposable
         {
             var updatedHost = viewModel.GetHost();
             await _hostRepo.UpdateAsync(updatedHost);
+
+            // Save tags via the proper many-to-many method
+            var tagIds = viewModel.Metadata.GetSelectedTagIds().ToList();
+            await _hostRepo.SetHostTagsAsync(updatedHost.Id, tagIds);
 
             // Save environment variables
             var envVars = viewModel.GetEnvironmentVariables().ToList();

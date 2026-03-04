@@ -5,7 +5,7 @@ namespace SshManager.App.Views.Controls.HostEdit;
 
 /// <summary>
 /// Authentication settings section: auth type selector and all auth method-specific UI.
-/// Handles SSH Agent, Private Key File, Password, and Kerberos authentication.
+/// Handles SSH Agent, Private Key File, Password, Kerberos, and 1Password authentication.
 /// </summary>
 public partial class AuthenticationSection : UserControl
 {
@@ -18,6 +18,12 @@ public partial class AuthenticationSection : UserControl
     /// Event raised when the password changes (PasswordBox cannot use data binding).
     /// </summary>
     public event EventHandler<string>? PasswordChanged;
+
+    /// <summary>
+    /// Event raised when the user wants to browse 1Password for a secret reference.
+    /// The string parameter indicates which field to populate: "password" or "key".
+    /// </summary>
+    public event EventHandler<string>? BrowseOnePasswordRequested;
 
     public AuthenticationSection()
     {
@@ -46,5 +52,15 @@ public partial class AuthenticationSection : UserControl
         {
             PasswordChanged?.Invoke(this, passwordBox.Password);
         }
+    }
+
+    private void BrowseOnePasswordPassword_Click(object sender, RoutedEventArgs e)
+    {
+        BrowseOnePasswordRequested?.Invoke(this, "password");
+    }
+
+    private void BrowseOnePasswordKey_Click(object sender, RoutedEventArgs e)
+    {
+        BrowseOnePasswordRequested?.Invoke(this, "key");
     }
 }

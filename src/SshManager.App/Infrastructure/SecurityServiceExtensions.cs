@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using SshManager.Security;
+using SshManager.Security.OnePassword;
 
 namespace SshManager.App.Infrastructure;
 
@@ -16,6 +17,7 @@ public static class SecurityServiceExtensions
         services.AddSingleton<IPpkConverter, PpkConverter>();
         services.AddSingleton<IPassphraseEncryptionService, PassphraseEncryptionService>();
         services.AddSingleton<IKeyEncryptionService, KeyEncryptionService>();
+        services.AddSingleton<IOnePasswordService, OnePasswordService>();
 
         return services;
     }

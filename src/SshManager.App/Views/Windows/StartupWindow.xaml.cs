@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Windows;
 using Wpf.Ui.Controls;
 
@@ -11,6 +12,11 @@ public partial class StartupWindow : FluentWindow
     public StartupWindow()
     {
         InitializeComponent();
+
+        var version = Assembly.GetExecutingAssembly().GetName().Version;
+        VersionText.Text = version != null
+            ? $"Version {version.Major}.{version.Minor}.{version.Build}"
+            : "Version";
     }
 
     /// <summary>

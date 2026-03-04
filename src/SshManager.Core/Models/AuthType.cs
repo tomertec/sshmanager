@@ -24,5 +24,11 @@ public enum AuthType
     /// Use Kerberos/GSSAPI authentication with Windows domain credentials.
     /// Supports enterprise SSO through Active Directory integration.
     /// </summary>
-    Kerberos = 3
+    Kerberos = 3,
+
+    /// <summary>
+    /// Use 1Password to fetch credentials at connection time via op:// secret references.
+    /// Requires the 1Password CLI (op) and desktop app integration.
+    /// </summary>
+    OnePassword = 4
 }

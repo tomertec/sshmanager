@@ -14,6 +14,7 @@
                 <ResourceDictionary Source="HostEditResources.xaml" />
             </ResourceDictionary.MergedDictionaries>
             <converters:StringToBrushConverter x:Key="StringToBrushConverter" />
+            <converters:CountToVisibilityConverter x:Key="CountToVisibilityConverter" />
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -33,7 +34,7 @@
         <!-- Selected Tags -->
         <ItemsControl ItemsSource="{Binding Metadata.SelectedTags}"
                       Margin="0,0,0,4"
-                      Visibility="{Binding Metadata.SelectedTags.Count, Converter={StaticResource BoolToVisibilityConverter}}">
+                      Visibility="{Binding Metadata.SelectedTags.Count, Converter={StaticResource CountToVisibilityConverter}}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <WrapPanel />

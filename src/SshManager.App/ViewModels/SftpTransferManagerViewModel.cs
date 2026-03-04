@@ -109,6 +109,7 @@ public partial class SftpTransferManagerViewModel : ObservableObject, IDisposabl
 
     /// <summary>
     /// Downloads files from remote paths to the local directory.
+    /// Supports both files and directories (directories are downloaded recursively).
     /// </summary>
     public async Task DownloadFilesAsync(
         IReadOnlyList<string> remotePaths,
@@ -117,17 +118,66 @@ public partial class SftpTransferManagerViewModel : ObservableObject, IDisposabl
     {
         var transfers = new List<(string LocalPath, string RemotePath)>();
 
-        // Build list of transfers with local paths
+        // Build list of transfers with local paths, expanding directories recursively
         foreach (var remotePath in remotePaths)
         {
             var fileName = GetRemoteFileName(remotePath);
             var localPath = Path.Combine(localBasePath, fileName);
+
+            try
+            {
+                var info = await _session.GetFileInfoAsync(remotePath);
+                if (info?.IsDirectory == true)
+                {
+                    // Recursively collect all files in the directory
+                    await CollectDirectoryFilesAsync(remotePath, localPath, transfers);
+                    continue;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not check if path is directory: {Path}", remotePath);
+            }
 
             transfers.Add((localPath, remotePath));
         }
 
         // Process each transfer with conflict resolution
         await ProcessTransfersAsync(transfers, isUpload: false, conflictResolver);
+    }
+
+    /// <summary>
+    /// Recursively collects all files from a remote directory into the transfers list,
+    /// preserving directory structure in local paths.
+    /// </summary>
+    private async Task CollectDirectoryFilesAsync(
+        string remoteDir,
+        string localDir,
+        List<(string LocalPath, string RemotePath)> transfers)
+    {
+        // Ensure local directory exists
+        Directory.CreateDirectory(localDir);
+
+        try
+        {
+            var items = await _session.ListDirectoryAsync(remoteDir);
+            foreach (var item in items)
+            {
+                var localItemPath = Path.Combine(localDir, item.Name);
+                if (item.IsDirectory)
+                {
+                    await CollectDirectoryFilesAsync(item.FullPath, localItemPath, transfers);
+                }
+                else
+                {
+                    transfers.Add((localItemPath, item.FullPath));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to list remote directory: {Path}", remoteDir);
+        }
     }
 
     private async Task ProcessTransfersAsync(

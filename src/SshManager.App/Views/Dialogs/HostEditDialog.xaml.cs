@@ -5,6 +5,7 @@ using SshManager.App.ViewModels;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
+using SshManager.Security.OnePassword;
 using Wpf.Ui.Controls;
 
 namespace SshManager.App.Views.Dialogs;
@@ -80,6 +81,7 @@ public partial class HostEditDialog : FluentWindow
         AuthenticationSection.SelectKeyRequested += (_, _) => SelectKey();
         // Password is now in SshSettings child ViewModel
         AuthenticationSection.PasswordChanged += (_, password) => _viewModel.SshSettings.Password = password;
+        AuthenticationSection.BrowseOnePasswordRequested += OnBrowseOnePassword;
 
         // AdvancedOptionsSection events
         AdvancedOptionsSection.ManageProxyJumpProfilesRequested += (_, _) => ManageProxyJumpProfiles();
@@ -111,6 +113,42 @@ public partial class HostEditDialog : FluentWindow
     }
 
     #region Section Event Handlers
+
+    private void OnBrowseOnePassword(object? sender, string fieldType)
+    {
+        try
+        {
+            var opService = App.TryGetService<IOnePasswordService>();
+            if (opService == null)
+            {
+                System.Windows.MessageBox.Show(
+                    "1Password service is not available.",
+                    "Feature Not Available",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            var vm = new OnePasswordBrowserViewModel(opService);
+            var dialog = new OnePasswordBrowserDialog(vm) { Owner = this };
+
+            if (dialog.ShowDialog() == true && !string.IsNullOrEmpty(dialog.SelectedReference))
+            {
+                if (fieldType == "key")
+                {
+                    _viewModel.SshSettings.OnePasswordKeyReference = dialog.SelectedReference;
+                }
+                else
+                {
+                    _viewModel.SshSettings.OnePasswordReference = dialog.SelectedReference;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error browsing 1Password");
+        }
+    }
 
     private async void SelectKey()
     {

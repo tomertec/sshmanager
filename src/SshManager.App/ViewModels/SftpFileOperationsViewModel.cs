@@ -226,14 +226,14 @@ public partial class SftpFileOperationsViewModel : ObservableObject
     {
         var allRemoteItems = GetSelectedRemoteItemsCallback?.Invoke() ?? [];
         var items = allRemoteItems
-            .Where(i => !i.IsParentDirectory && !i.IsDirectory)
+            .Where(i => !i.IsParentDirectory)
             .ToList();
 
         if (items.Count == 0)
         {
             // Try single selection
             var item = GetSelectedRemoteItemCallback?.Invoke();
-            if (item != null && !item.IsParentDirectory && !item.IsDirectory)
+            if (item != null && !item.IsParentDirectory)
             {
                 items.Add(item);
             }
@@ -241,11 +241,7 @@ public partial class SftpFileOperationsViewModel : ObservableObject
 
         if (items.Count == 0)
         {
-            var hasDirectories = allRemoteItems.Any(i => i.IsDirectory && !i.IsParentDirectory);
-            var message = hasDirectories
-                ? "Directory download is not yet supported. Please select individual files."
-                : "No files selected for download";
-            SetErrorMessageAction?.Invoke(message);
+            SetErrorMessageAction?.Invoke("No files selected for download");
             return;
         }
 

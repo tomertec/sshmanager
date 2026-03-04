@@ -7,6 +7,7 @@ using SshManager.App.ViewModels.HostEdit;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
+using SshManager.Security.OnePassword;
 using SshManager.Terminal.Services;
 
 namespace SshManager.App.ViewModels;
@@ -138,6 +139,7 @@ public partial class HostDialogViewModel : ObservableObject
         ISerialConnectionService serialConnectionService,
         IAgentDiagnosticsService? agentDiagnosticsService = null,
         IKerberosAuthService? kerberosAuthService = null,
+        IOnePasswordService? onePasswordService = null,
         IHostProfileRepository? hostProfileRepo = null,
         IProxyJumpProfileRepository? proxyJumpRepo = null,
         IPortForwardingProfileRepository? portForwardingRepo = null,
@@ -161,6 +163,7 @@ public partial class HostDialogViewModel : ObservableObject
             secretProtector,
             agentDiagnosticsService,
             kerberosAuthService,
+            onePasswordService,
             hostProfileRepo,
             proxyJumpRepo,
             portForwardingRepo,

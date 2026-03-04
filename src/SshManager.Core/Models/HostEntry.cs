@@ -73,6 +73,20 @@ public sealed partial class HostEntry : IValidatableObject
     public bool KerberosDelegateCredentials { get; set; }
 
     /// <summary>
+    /// 1Password secret reference for password (e.g., "op://vault/item/password").
+    /// Used when AuthType is OnePassword.
+    /// </summary>
+    [StringLength(500, ErrorMessage = "1Password reference cannot exceed 500 characters")]
+    public string? OnePasswordReference { get; set; }
+
+    /// <summary>
+    /// 1Password secret reference for SSH private key (e.g., "op://vault/item/private key").
+    /// Used when AuthType is OnePassword.
+    /// </summary>
+    [StringLength(500, ErrorMessage = "1Password key reference cannot exceed 500 characters")]
+    public string? OnePasswordKeyReference { get; set; }
+
+    /// <summary>
     /// Optional notes about this host.
     /// </summary>
     [StringLength(MaxNotesLength, ErrorMessage = "Notes cannot exceed 5000 characters")]
@@ -301,6 +315,33 @@ public sealed partial class HostEntry : IValidatableObject
             yield return new ValidationResult(
                 "Password is required when using Password authentication",
                 [nameof(PasswordProtected)]);
+        }
+
+        // Validate 1Password references when using OnePassword auth
+        if (AuthType == AuthType.OnePassword)
+        {
+            if (string.IsNullOrWhiteSpace(OnePasswordReference) && string.IsNullOrWhiteSpace(OnePasswordKeyReference))
+            {
+                yield return new ValidationResult(
+                    "At least one 1Password reference (password or SSH key) is required",
+                    [nameof(OnePasswordReference)]);
+            }
+
+            if (!string.IsNullOrWhiteSpace(OnePasswordReference) &&
+                !OnePasswordReference.StartsWith("op://", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return new ValidationResult(
+                    "1Password reference must start with 'op://'",
+                    [nameof(OnePasswordReference)]);
+            }
+
+            if (!string.IsNullOrWhiteSpace(OnePasswordKeyReference) &&
+                !OnePasswordKeyReference.StartsWith("op://", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return new ValidationResult(
+                    "1Password SSH key reference must start with 'op://'",
+                    [nameof(OnePasswordKeyReference)]);
+            }
         }
     }
 

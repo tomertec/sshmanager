@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
+using SshManager.Security.OnePassword;
 using SshManager.Terminal.Services;
 
 namespace SshManager.App.ViewModels;
@@ -14,6 +15,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly ICredentialCache _credentialCache;
     private readonly ITerminalThemeService _themeService;
     private readonly IX11ForwardingService _x11ForwardingService;
+    private readonly IOnePasswordService _onePasswordService;
     private AppSettings? _settings;
 
     // ===== Terminal Settings =====
@@ -80,6 +82,19 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _clearCacheOnExit = true;
+
+    // ===== 1Password Integration =====
+    [ObservableProperty]
+    private bool _isOnePasswordInstalled;
+
+    [ObservableProperty]
+    private bool _isOnePasswordAuthenticated;
+
+    [ObservableProperty]
+    private string _onePasswordStatusText = "Not checked";
+
+    [ObservableProperty]
+    private bool _isCheckingOnePassword;
 
     // ===== Application Behavior =====
     [ObservableProperty]
@@ -270,13 +285,15 @@ public partial class SettingsViewModel : ObservableObject
         IConnectionHistoryRepository historyRepo,
         ICredentialCache credentialCache,
         ITerminalThemeService themeService,
-        IX11ForwardingService x11ForwardingService)
+        IX11ForwardingService x11ForwardingService,
+        IOnePasswordService onePasswordService)
     {
         _settingsRepo = settingsRepo;
         _historyRepo = historyRepo;
         _credentialCache = credentialCache;
         _themeService = themeService;
         _x11ForwardingService = x11ForwardingService;
+        _onePasswordService = onePasswordService;
     }
 
     public async Task LoadAsync()
@@ -580,6 +597,56 @@ public partial class SettingsViewModel : ObservableObject
                 "Cache Cleared",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Information);
+        }
+    }
+
+    [RelayCommand]
+    private async Task TestOnePasswordConnectionAsync()
+    {
+        IsCheckingOnePassword = true;
+        OnePasswordStatusText = "Checking...";
+
+        try
+        {
+            var status = await _onePasswordService.GetStatusAsync();
+
+            IsOnePasswordInstalled = status.IsInstalled;
+            IsOnePasswordAuthenticated = status.IsAuthenticated;
+
+            if (!status.IsInstalled)
+            {
+                OnePasswordStatusText = "1Password CLI (op) not found. Install from https://1password.com/downloads/command-line/";
+            }
+            else if (!status.IsAuthenticated)
+            {
+                var hint = "Enable CLI integration in 1Password: Settings > Developer > Integrate with 1Password CLI.";
+                if (!string.IsNullOrEmpty(status.ErrorMessage))
+                {
+                    hint = status.ErrorMessage;
+                }
+                OnePasswordStatusText = $"1Password CLI installed but not authenticated. {hint}";
+            }
+            else
+            {
+                OnePasswordStatusText = !string.IsNullOrEmpty(status.AccountEmail)
+                    ? $"Connected as {status.AccountEmail}"
+                    : "Authenticated and ready";
+
+                if (!string.IsNullOrEmpty(status.AccountUrl))
+                {
+                    OnePasswordStatusText += $" ({status.AccountUrl})";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            OnePasswordStatusText = $"Error: {ex.Message}";
+            IsOnePasswordInstalled = false;
+            IsOnePasswordAuthenticated = false;
+        }
+        finally
+        {
+            IsCheckingOnePassword = false;
         }
     }
 

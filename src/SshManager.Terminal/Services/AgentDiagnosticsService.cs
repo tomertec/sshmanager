@@ -194,17 +194,33 @@ public sealed class AgentDiagnosticsService : IAgentDiagnosticsService
 
     /// <summary>
     /// Attempts to retrieve keys from OpenSSH Agent.
+    /// Detects any compatible agent on the OpenSSH pipe (Windows OpenSSH Agent, 1Password, etc.).
     /// </summary>
     private AgentScanResult TryGetOpenSshAgentKeys()
     {
         var keyInfos = new List<AgentKeyInfo>();
         bool available = false;
 
+        // First check if the pipe is reachable (detects 1Password, OpenSSH Agent, etc.)
+        try
+        {
+            using var pipe = new System.IO.Pipes.NamedPipeClientStream(
+                ".", "openssh-ssh-agent", System.IO.Pipes.PipeDirection.InOut);
+            pipe.Connect(500);
+            available = true; // Pipe is reachable — an agent is listening
+            _logger.LogDebug("OpenSSH Agent pipe is reachable");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "OpenSSH Agent pipe not available: {Message}", ex.Message);
+            return new AgentScanResult(false, keyInfos);
+        }
+
+        // Pipe is reachable, now try to enumerate keys via the SSH agent protocol
         try
         {
             var agent = new SshAgent();
             var keys = agent.RequestIdentities().ToList();
-            available = true; // Connection successful
 
             foreach (var key in keys)
             {
@@ -227,7 +243,9 @@ public sealed class AgentDiagnosticsService : IAgentDiagnosticsService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "OpenSSH Agent not available: {Message}", ex.Message);
+            // Agent pipe is reachable but RequestIdentities failed
+            // (e.g., 1Password waiting for user confirmation, protocol extension issues)
+            _logger.LogDebug(ex, "OpenSSH Agent pipe reachable but key enumeration failed: {Message}", ex.Message);
         }
 
         return new AgentScanResult(available, keyInfos);

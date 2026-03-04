@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
+using SshManager.Security.OnePassword;
 using SshManager.Terminal.Services;
 
 namespace SshManager.App.ViewModels.HostEdit;
@@ -22,6 +23,7 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
     private readonly ISecretProtector _secretProtector;
     private readonly IAgentDiagnosticsService? _agentDiagnosticsService;
     private readonly IKerberosAuthService? _kerberosAuthService;
+    private readonly IOnePasswordService? _onePasswordService;
     private readonly IHostProfileRepository? _hostProfileRepo;
     private readonly IProxyJumpProfileRepository? _proxyJumpRepo;
     private readonly IPortForwardingProfileRepository? _portForwardingRepo;
@@ -110,6 +112,25 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
 
     #endregion
 
+    #region 1Password Properties
+
+    [ObservableProperty]
+    private string _onePasswordReference = "";
+
+    [ObservableProperty]
+    private string _onePasswordKeyReference = "";
+
+    [ObservableProperty]
+    private bool _isOnePasswordAvailable;
+
+    [ObservableProperty]
+    private string _onePasswordStatusText = "Checking...";
+
+    [ObservableProperty]
+    private bool _isCheckingOnePassword;
+
+    #endregion
+
     #region Kerberos Properties
 
     [ObservableProperty]
@@ -150,6 +171,11 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
     /// Gets whether to show Kerberos settings.
     /// </summary>
     public bool ShowKerberosSettings => AuthType == AuthType.Kerberos;
+
+    /// <summary>
+    /// Gets whether to show 1Password settings.
+    /// </summary>
+    public bool ShowOnePasswordSettings => AuthType == AuthType.OnePassword;
 
     /// <summary>
     /// Gets the display text for port forwarding status.
@@ -206,6 +232,7 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
         ISecretProtector secretProtector,
         IAgentDiagnosticsService? agentDiagnosticsService = null,
         IKerberosAuthService? kerberosAuthService = null,
+        IOnePasswordService? onePasswordService = null,
         IHostProfileRepository? hostProfileRepo = null,
         IProxyJumpProfileRepository? proxyJumpRepo = null,
         IPortForwardingProfileRepository? portForwardingRepo = null,
@@ -215,6 +242,7 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
         _secretProtector = secretProtector;
         _agentDiagnosticsService = agentDiagnosticsService;
         _kerberosAuthService = kerberosAuthService;
+        _onePasswordService = onePasswordService;
         _hostProfileRepo = hostProfileRepo;
         _proxyJumpRepo = proxyJumpRepo;
         _portForwardingRepo = portForwardingRepo;
@@ -258,6 +286,10 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
         // Kerberos settings
         KerberosServicePrincipal = host.KerberosServicePrincipal;
         KerberosDelegateCredentials = host.KerberosDelegateCredentials;
+
+        // 1Password settings
+        OnePasswordReference = host.OnePasswordReference ?? "";
+        OnePasswordKeyReference = host.OnePasswordKeyReference ?? "";
 
         // Keep-alive settings
         if (host.KeepAliveIntervalSeconds.HasValue)
@@ -320,6 +352,22 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
             host.KerberosDelegateCredentials = false;
         }
 
+        // 1Password settings
+        if (AuthType == AuthType.OnePassword)
+        {
+            host.OnePasswordReference = string.IsNullOrWhiteSpace(OnePasswordReference)
+                ? null
+                : OnePasswordReference.Trim();
+            host.OnePasswordKeyReference = string.IsNullOrWhiteSpace(OnePasswordKeyReference)
+                ? null
+                : OnePasswordKeyReference.Trim();
+        }
+        else
+        {
+            host.OnePasswordReference = null;
+            host.OnePasswordKeyReference = null;
+        }
+
         // Host/Proxy profiles
         host.HostProfileId = SelectedHostProfile?.Id;
         host.HostProfile = SelectedHostProfile;
@@ -374,6 +422,11 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
         if (AuthType == AuthType.Kerberos)
         {
             _ = RefreshKerberosStatusAsync();
+        }
+
+        if (AuthType == AuthType.OnePassword)
+        {
+            _ = RefreshOnePasswordStatusAsync();
         }
     }
 
@@ -615,6 +668,58 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Refreshes 1Password CLI status information.
+    /// </summary>
+    [RelayCommand]
+    private async Task RefreshOnePasswordStatusAsync()
+    {
+        if (_onePasswordService == null)
+        {
+            OnePasswordStatusText = "1Password service not available";
+            IsOnePasswordAvailable = false;
+            return;
+        }
+
+        IsCheckingOnePassword = true;
+
+        try
+        {
+            var status = await _onePasswordService.GetStatusAsync();
+
+            IsOnePasswordAvailable = status.IsInstalled && status.IsAuthenticated;
+
+            if (status.IsAuthenticated)
+            {
+                OnePasswordStatusText = !string.IsNullOrEmpty(status.AccountEmail)
+                    ? $"Connected as {status.AccountEmail}"
+                    : "Authenticated";
+            }
+            else if (status.IsInstalled)
+            {
+                var hint = !string.IsNullOrEmpty(status.ErrorMessage) ? status.ErrorMessage
+                    : "Enable CLI integration in 1Password: Settings > Developer";
+                OnePasswordStatusText = $"Not authenticated — {hint}";
+            }
+            else
+            {
+                OnePasswordStatusText = "1Password CLI not installed";
+            }
+
+            _logger.LogDebug("1Password status refreshed: {StatusText}", OnePasswordStatusText);
+        }
+        catch (Exception ex)
+        {
+            OnePasswordStatusText = "Error checking 1Password status";
+            IsOnePasswordAvailable = false;
+            _logger.LogWarning(ex, "Failed to refresh 1Password status");
+        }
+        finally
+        {
+            IsCheckingOnePassword = false;
+        }
+    }
+
     #endregion
 
     #region Property Changed Handlers
@@ -625,6 +730,7 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowPassword));
         OnPropertyChanged(nameof(ShowAgentStatus));
         OnPropertyChanged(nameof(ShowKerberosSettings));
+        OnPropertyChanged(nameof(ShowOnePasswordSettings));
 
         // Refresh agent status when switching to SSH Agent auth
         if (value == AuthType.SshAgent)
@@ -636,6 +742,12 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
         if (value == AuthType.Kerberos)
         {
             _ = RefreshKerberosStatusAsync();
+        }
+
+        // Refresh 1Password status when switching to OnePassword auth
+        if (value == AuthType.OnePassword)
+        {
+            _ = RefreshOnePasswordStatusAsync();
         }
     }
 
@@ -707,6 +819,23 @@ public partial class SshConnectionSettingsViewModel : ObservableObject
                 else if (!File.Exists(keyPath))
                 {
                     errors.Add($"Private key file not found: {keyPath}");
+                }
+                break;
+
+            case AuthType.OnePassword:
+                var pwdRef = OnePasswordReference?.Trim() ?? "";
+                var keyRef = OnePasswordKeyReference?.Trim() ?? "";
+                if (string.IsNullOrWhiteSpace(pwdRef) && string.IsNullOrWhiteSpace(keyRef))
+                {
+                    errors.Add("At least one 1Password reference (password or SSH key) is required");
+                }
+                if (!string.IsNullOrWhiteSpace(pwdRef) && !pwdRef.StartsWith("op://", StringComparison.OrdinalIgnoreCase))
+                {
+                    errors.Add("Password reference must start with 'op://'");
+                }
+                if (!string.IsNullOrWhiteSpace(keyRef) && !keyRef.StartsWith("op://", StringComparison.OrdinalIgnoreCase))
+                {
+                    errors.Add("SSH key reference must start with 'op://'");
                 }
                 break;
         }

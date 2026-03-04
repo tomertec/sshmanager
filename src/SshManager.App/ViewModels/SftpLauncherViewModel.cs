@@ -7,6 +7,7 @@ using SshManager.App.Services;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
 using SshManager.Security;
+using SshManager.Security.OnePassword;
 using SshManager.Terminal.Models;
 using SshManager.Terminal.Services;
 using SshManager.App.Views.Windows;
@@ -23,6 +24,7 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
     private readonly ISftpService _sftpService;
     private readonly ISettingsRepository _settingsRepo;
     private readonly ISecretProtector _secretProtector;
+    private readonly IOnePasswordService _onePasswordService;
     private readonly IEditorThemeService _editorThemeService;
     private readonly ILogger<SftpLauncherViewModel> _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -32,6 +34,7 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
         ISftpService sftpService,
         ISettingsRepository settingsRepo,
         ISecretProtector secretProtector,
+        IOnePasswordService onePasswordService,
         IEditorThemeService editorThemeService,
         ILogger<SftpLauncherViewModel>? logger = null,
         ILoggerFactory? loggerFactory = null)
@@ -40,6 +43,7 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
         _sftpService = sftpService;
         _settingsRepo = settingsRepo;
         _secretProtector = secretProtector;
+        _onePasswordService = onePasswordService;
         _editorThemeService = editorThemeService;
         _logger = logger ?? NullLogger<SftpLauncherViewModel>.Instance;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
@@ -94,10 +98,12 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// Resolves the password for a host entry, checking cache first then stored credentials.
+    /// Supports Password and OnePassword auth types.
     /// </summary>
     private async Task<string?> ResolvePasswordForHostAsync(HostEntry host)
     {
-        if (host.AuthType != AuthType.Password) return null;
+        if (host.AuthType != AuthType.Password && host.AuthType != AuthType.OnePassword)
+            return null;
 
         var settings = await _settingsRepo.GetAsync();
 
@@ -112,7 +118,30 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
             }
         }
 
-        // Fall back to stored password
+        // 1Password: fetch from 1Password CLI
+        if (host.AuthType == AuthType.OnePassword)
+        {
+            return await Task.Run(async () =>
+            {
+                if (!string.IsNullOrWhiteSpace(host.OnePasswordReference))
+                {
+                    var secret = await _onePasswordService.ReadSecretAsync(host.OnePasswordReference);
+                    if (secret != null)
+                    {
+                        if (settings.EnableCredentialCaching)
+                            _sessionViewModel.CacheCredentialForHost(host.Id, secret, CredentialType.Password);
+                        return secret;
+                    }
+                }
+
+                _logger.LogWarning("Failed to fetch 1Password credential for SFTP to host {DisplayName}", host.DisplayName);
+                throw new InvalidOperationException(
+                    $"Failed to fetch credentials from 1Password for host {host.DisplayName}. " +
+                    "Check the op:// reference and ensure the item name is unique in the vault.");
+            });
+        }
+
+        // Fall back to stored password (Password auth type)
         if (string.IsNullOrEmpty(host.PasswordProtected)) return null;
 
         var password = _secretProtector.TryUnprotect(host.PasswordProtected);

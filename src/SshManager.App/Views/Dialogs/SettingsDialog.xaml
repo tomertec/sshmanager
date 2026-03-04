@@ -855,6 +855,80 @@
                                        Appearance="Caution"
                                        Command="{Binding ClearCredentialCacheCommand}" />
                         </ui:CardControl>
+
+                        <!-- 1Password Integration -->
+                        <TextBlock Text="1Password Integration"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Margin="0,16,0,12" />
+
+                        <ui:CardExpander IsExpanded="True" Margin="0,0,0,8">
+                            <ui:CardExpander.Header>
+                                <StackPanel>
+                                    <TextBlock Text="1Password CLI" FontWeight="SemiBold" />
+                                    <TextBlock Text="Fetch credentials from 1Password at connection time"
+                                               FontSize="12" Opacity="0.6" />
+                                </StackPanel>
+                            </ui:CardExpander.Header>
+                            <StackPanel Margin="8">
+                                <!-- Status Display -->
+                                <Border Padding="12"
+                                        CornerRadius="4"
+                                        Margin="0,0,0,12"
+                                        Background="{DynamicResource ControlFillColorDefaultBrush}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <ui:SymbolIcon Grid.Column="0"
+                                                       FontSize="16"
+                                                       Margin="0,0,8,0"
+                                                       VerticalAlignment="Center">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Symbol" Value="Warning16" />
+                                                    <Setter Property="Foreground" Value="#FFC107" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsOnePasswordAuthenticated}" Value="True">
+                                                            <Setter Property="Symbol" Value="Checkmark16" />
+                                                            <Setter Property="Foreground" Value="#4CAF50" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding OnePasswordStatusText}"
+                                                   TextWrapping="Wrap"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+
+                                <!-- Test Connection Button -->
+                                <ui:Button Content="Test Connection"
+                                           Icon="{ui:SymbolIcon PlugConnected24}"
+                                           Command="{Binding TestOnePasswordConnectionCommand}"
+                                           HorizontalAlignment="Left"
+                                           Margin="0,0,0,8">
+                                    <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCheckingOnePassword}" Value="True">
+                                                    <Setter Property="IsEnabled" Value="False" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:Button.Style>
+                                </ui:Button>
+
+                                <TextBlock Text="Requires the 1Password CLI (op) and desktop app with CLI integration enabled."
+                                           FontSize="11" Opacity="0.6"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </ui:CardExpander>
                     </StackPanel>
 
                     <!-- ===== Appearance Category ===== -->

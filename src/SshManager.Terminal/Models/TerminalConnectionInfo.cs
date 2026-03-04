@@ -56,6 +56,18 @@ public sealed class TerminalConnectionInfo
     public bool KerberosDelegateCredentials { get; init; }
 
     /// <summary>
+    /// 1Password secret reference for password (e.g., "op://vault/item/password").
+    /// Used when AuthType is OnePassword.
+    /// </summary>
+    public string? OnePasswordReference { get; init; }
+
+    /// <summary>
+    /// 1Password secret reference for SSH private key (e.g., "op://vault/item/private key").
+    /// Used when AuthType is OnePassword.
+    /// </summary>
+    public string? OnePasswordKeyReference { get; init; }
+
+    /// <summary>
     /// Connection timeout.
     /// </summary>
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
@@ -140,6 +152,8 @@ public sealed class TerminalConnectionInfo
             PrivateKeyPath = host.PrivateKeyPath,
             KerberosServicePrincipal = host.KerberosServicePrincipal,
             KerberosDelegateCredentials = host.KerberosDelegateCredentials,
+            OnePasswordReference = host.OnePasswordReference,
+            OnePasswordKeyReference = host.OnePasswordKeyReference,
             Timeout = timeout ?? TimeSpan.FromSeconds(30),
             KeepAliveInterval = keepAliveInterval,
             EnvironmentVariables = envVars,
