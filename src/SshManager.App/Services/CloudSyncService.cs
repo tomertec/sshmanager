@@ -469,7 +469,17 @@ public class CloudSyncService : ICloudSyncService
         var encryptedJson = JsonSerializer.Serialize(encryptedData, JsonOptions);
 
         var syncFilePath = GetSyncFilePath(settings);
-        await File.WriteAllTextAsync(syncFilePath, encryptedJson, ct);
+        var tempSyncFilePath = syncFilePath + ".tmp";
+        await File.WriteAllTextAsync(tempSyncFilePath, encryptedJson, ct);
+        try
+        {
+            File.Move(tempSyncFilePath, syncFilePath, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tempSyncFilePath); } catch { }
+            throw;
+        }
 
         _logger.LogDebug("Wrote sync file: {Path}", syncFilePath);
     }
@@ -588,6 +598,16 @@ public class CloudSyncService : ICloudSyncService
             json = JsonSerializer.Serialize(_deletedItems, JsonOptions);
         }
 
-        await File.WriteAllTextAsync(filePath, json, ct);
+        var tempFilePath = filePath + ".tmp";
+        await File.WriteAllTextAsync(tempFilePath, json, ct);
+        try
+        {
+            File.Move(tempFilePath, filePath, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tempFilePath); } catch { }
+            throw;
+        }
     }
 }

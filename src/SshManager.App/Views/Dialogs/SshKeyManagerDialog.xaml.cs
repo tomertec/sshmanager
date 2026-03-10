@@ -11,6 +11,7 @@ public partial class SshKeyManagerDialog : FluentWindow
 {
     private readonly SshKeyManagerViewModel _viewModel;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<SshKeyManagerDialog> _logger;
 
     /// <summary>
     /// Initializes a new instance of the SshKeyManagerDialog with dependency injection.
@@ -21,6 +22,7 @@ public partial class SshKeyManagerDialog : FluentWindow
     {
         _viewModel = viewModel;
         _serviceProvider = serviceProvider;
+        _logger = serviceProvider.GetRequiredService<ILogger<SshKeyManagerDialog>>();
         DataContext = viewModel;
 
         InitializeComponent();
@@ -35,7 +37,14 @@ public partial class SshKeyManagerDialog : FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        await _viewModel.LoadKeysAsync();
+        try
+        {
+            await _viewModel.LoadKeysAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SshKeyManagerDialog.OnLoaded");
+        }
     }
 
     private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -119,18 +128,25 @@ public partial class SshKeyManagerDialog : FluentWindow
 
     private async void TrackButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_viewModel.SelectedKey == null) return;
-
-        if (_viewModel.SelectedKey.IsTracked)
+        try
         {
-            await _viewModel.UntrackKeyCommand.ExecuteAsync(null);
-        }
-        else
-        {
-            await _viewModel.TrackKeyCommand.ExecuteAsync(null);
-        }
+            if (_viewModel.SelectedKey == null) return;
 
-        UpdateTrackButton();
+            if (_viewModel.SelectedKey.IsTracked)
+            {
+                await _viewModel.UntrackKeyCommand.ExecuteAsync(null);
+            }
+            else
+            {
+                await _viewModel.TrackKeyCommand.ExecuteAsync(null);
+            }
+
+            UpdateTrackButton();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SshKeyManagerDialog.TrackButton_Click");
+        }
     }
 
     protected override void OnClosed(EventArgs e)

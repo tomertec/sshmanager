@@ -83,7 +83,10 @@ public sealed class WebTerminalBridge : IDisposable
     private volatile bool _isReady;
     private int _columns;
     private int _rows;
-    private double _fontSize = DefaultFontSize;
+    // Must be int (not double) because Interlocked CAS operations require a 32- or 64-bit
+    // integer type. Terminal font sizes are always whole-number pt values, so the int
+    // constraint is lossless and enables lock-free zoom operations via Interlocked.
+    private int _fontSize = (int)DefaultFontSize;
 
     // PERFORMANCE OPTIMIZATION: Write batching
     // Problem: Each PostWebMessageAsJson call has ~1-2ms overhead due to cross-process marshaling.
@@ -118,6 +121,11 @@ public sealed class WebTerminalBridge : IDisposable
     /// </summary>
     public const double FontSizeStep = 1;
 
+    // Integer counterparts used for Interlocked operations on the backing field.
+    private const int FontSizeMinInt = (int)MinFontSize;
+    private const int FontSizeMaxInt = (int)MaxFontSize;
+    private const int FontSizeDefaultInt = (int)DefaultFontSize;
+
     /// <summary>
     /// Gets the WebView2 control associated with this bridge.
     /// </summary>
@@ -141,7 +149,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// <summary>
     /// Gets the current font size.
     /// </summary>
-    public double FontSize => _fontSize;
+    public double FontSize => Volatile.Read(ref _fontSize);
 
     /// <summary>
     /// Gets the current batching options.
@@ -694,15 +702,18 @@ public sealed class WebTerminalBridge : IDisposable
             return false;
         }
 
-        var newSize = Math.Min(_fontSize + FontSizeStep, MaxFontSize);
-        if (Math.Abs(newSize - _fontSize) < 0.01)
+        // CAS loop: atomically increment while staying within bounds.
+        int current, updated;
+        do
         {
-            return false;
+            current = Volatile.Read(ref _fontSize);
+            if (current >= FontSizeMaxInt) return false;
+            updated = current + 1;
         }
+        while (Interlocked.CompareExchange(ref _fontSize, updated, current) != current);
 
-        _fontSize = newSize;
-        SetFont(null, _fontSize);
-        _logger.LogDebug("Zoomed in to font size {FontSize}", _fontSize);
+        SetFont(null, updated);
+        _logger.LogDebug("Zoomed in to font size {FontSize}", updated);
         return true;
     }
 
@@ -717,15 +728,18 @@ public sealed class WebTerminalBridge : IDisposable
             return false;
         }
 
-        var newSize = Math.Max(_fontSize - FontSizeStep, MinFontSize);
-        if (Math.Abs(newSize - _fontSize) < 0.01)
+        // CAS loop: atomically decrement while staying within bounds.
+        int current, updated;
+        do
         {
-            return false;
+            current = Volatile.Read(ref _fontSize);
+            if (current <= FontSizeMinInt) return false;
+            updated = current - 1;
         }
+        while (Interlocked.CompareExchange(ref _fontSize, updated, current) != current);
 
-        _fontSize = newSize;
-        SetFont(null, _fontSize);
-        _logger.LogDebug("Zoomed out to font size {FontSize}", _fontSize);
+        SetFont(null, updated);
+        _logger.LogDebug("Zoomed out to font size {FontSize}", updated);
         return true;
     }
 
@@ -739,9 +753,9 @@ public sealed class WebTerminalBridge : IDisposable
             return;
         }
 
-        _fontSize = DefaultFontSize;
-        SetFont(null, _fontSize);
-        _logger.LogDebug("Reset zoom to default font size {FontSize}", _fontSize);
+        Interlocked.Exchange(ref _fontSize, FontSizeDefaultInt);
+        SetFont(null, FontSizeDefaultInt);
+        _logger.LogDebug("Reset zoom to default font size {FontSize}", FontSizeDefaultInt);
     }
 
     private void OnWebMessageReceived(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)

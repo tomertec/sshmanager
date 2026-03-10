@@ -43,7 +43,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
     private bool _isEnabled;
     private int _maxPerHost = 3;
     private TimeSpan _idleTimeout = TimeSpan.FromSeconds(300);
-    private bool _disposed;
+    private int _disposed;
     private Task? _initTask;
 
     public ConnectionPool(
@@ -92,7 +92,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         if (_initTask is { IsCompleted: false })
         {
             try { await _initTask.ConfigureAwait(false); }
-            catch { /* Already logged in LoadSettingsWithExceptionHandlingAsync */ }
+            catch (Exception ex) { _logger.LogDebug(ex, "Error awaiting init task in {Component}", nameof(ConnectionPool)); }
         }
 
         if (!_isEnabled)
@@ -219,7 +219,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         var drainedCount = 0;
         foreach (var kvp in _pools)
         {
-            drainedCount += kvp.Value.Drain();
+            drainedCount += kvp.Value.Drain(_logger);
         }
 
         _pools.Clear();
@@ -271,7 +271,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
     /// </summary>
     private void CleanupIdleConnections(object? state)
     {
-        if (_disposed) return;
+        if (Volatile.Read(ref _disposed) != 0) return;
 
         var now = DateTime.UtcNow;
         var cleanedCount = 0;
@@ -294,8 +294,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
     {
         // For synchronous Dispose, we can't await async operations
         // We use synchronous disposal but this may block if SSH connections are slow to disconnect
-        if (_disposed) return;
-        _disposed = true;
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
 
         _logger.LogDebug("Disposing ConnectionPool (synchronous)");
 
@@ -303,7 +302,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         if (_initTask is { IsCompleted: false })
         {
             try { Task.Run(() => _initTask).GetAwaiter().GetResult(); }
-            catch { /* Already logged in LoadSettingsWithExceptionHandlingAsync */ }
+            catch (Exception ex) { _logger.LogDebug(ex, "Error during disposal of {Component}", nameof(ConnectionPool)); }
         }
 
         _cleanupTimer.Dispose();
@@ -311,7 +310,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         var totalClosed = 0;
         foreach (var entry in _pools.Values)
         {
-            totalClosed += entry.Drain();
+            totalClosed += entry.Drain(_logger);
         }
 
         _pools.Clear();
@@ -324,8 +323,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
     /// </summary>
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
-        _disposed = true;
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
 
         _logger.LogDebug("Disposing ConnectionPool (asynchronous)");
 
@@ -333,7 +331,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         if (_initTask is not null)
         {
             try { await _initTask.ConfigureAwait(false); }
-            catch { /* Already logged in LoadSettingsWithExceptionHandlingAsync */ }
+            catch (Exception ex) { _logger.LogDebug(ex, "Error during disposal of {Component}", nameof(ConnectionPool)); }
         }
 
         // Dispose the timer synchronously (doesn't have async dispose)
@@ -475,8 +473,9 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         /// <summary>
         /// Drains all connections from this entry synchronously.
         /// </summary>
+        /// <param name="logger">Optional logger for diagnostics.</param>
         /// <returns>Number of connections drained.</returns>
-        public int Drain()
+        public int Drain(ILogger? logger = null)
         {
             lock (_entryLock)
             {
@@ -487,9 +486,9 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
                     {
                         item.Client.Dispose();
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Ignore disposal errors during drain
+                        logger?.LogDebug(ex, "Error during disposal of {Component}", nameof(ConnectionPool));
                     }
                 }
                 _clients.Clear();
@@ -535,9 +534,9 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
                             DisposeTimeout.TotalSeconds);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore disposal errors during drain
+                    logger?.LogDebug(ex, "Error during disposal of {Component}", nameof(ConnectionPool));
                 }
             }
 
@@ -561,7 +560,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
     private sealed class PooledConnection : IPooledConnection
     {
         private readonly ConnectionPool _pool;
-        private bool _disposed;
+        private int _disposed;
 
         public PooledConnection(ConnectionPoolKey key, SshClient client, ConnectionPool pool, bool isPooled)
         {
@@ -574,11 +573,11 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         public SshClient Client { get; }
         public ConnectionPoolKey Key { get; }
         public bool IsPooled { get; }
-        public bool IsConnected => !_disposed && Client.IsConnected;
+        public bool IsConnected => Volatile.Read(ref _disposed) == 0 && Client.IsConnected;
 
         public ShellStream CreateShellStream(string terminalName, uint columns, uint rows, uint width, uint height, int bufferSize)
         {
-            if (_disposed)
+            if (Volatile.Read(ref _disposed) != 0)
             {
                 throw new ObjectDisposedException(nameof(PooledConnection));
             }
@@ -588,8 +587,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
 
         public ValueTask DisposeAsync()
         {
-            if (_disposed) return ValueTask.CompletedTask;
-            _disposed = true;
+            if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return ValueTask.CompletedTask;
 
             _pool.Release(this);
             return ValueTask.CompletedTask;

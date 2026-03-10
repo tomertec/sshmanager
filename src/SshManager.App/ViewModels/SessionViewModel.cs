@@ -72,26 +72,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     {
         _connectingHosts.TryRemove(hostId, out _);
         UpdateConnectionProgressState();
-        TryCleanupHostConnectionLock(hostId);
-    }
-
-    /// <summary>
-    /// Attempts to remove and dispose the per-host semaphore if no one is waiting on it.
-    /// </summary>
-    private void TryCleanupHostConnectionLock(Guid hostId)
-    {
-        if (_hostConnectionLocks.TryRemove(hostId, out var semaphore))
-        {
-            if (semaphore.CurrentCount < 1)
-            {
-                // Someone is still holding or waiting on the semaphore; put it back.
-                _hostConnectionLocks.TryAdd(hostId, semaphore);
-            }
-            else
-            {
-                semaphore.Dispose();
-            }
-        }
+        // Note: semaphores are intentionally kept in _hostConnectionLocks for the lifetime of
+        // the ViewModel. Removing them here would introduce a race: another thread could
+        // acquire the semaphore between the CurrentCount check and the TryRemove call.
+        // SemaphoreSlim is lightweight (~80 bytes), so one per unique host is negligible.
     }
 
     private void UpdateConnectionProgressState()

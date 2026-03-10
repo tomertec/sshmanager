@@ -1,4 +1,6 @@
 using System.Windows;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.ViewModels;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
@@ -11,15 +13,18 @@ public partial class PortForwardingListDialog : FluentWindow
     private readonly PortForwardingManagerViewModel _viewModel;
     private readonly IPortForwardingProfileRepository _repository;
     private readonly IReadOnlyList<HostEntry> _availableHosts;
+    private readonly ILogger<PortForwardingListDialog> _logger;
 
     public PortForwardingListDialog(
         PortForwardingManagerViewModel viewModel,
         IPortForwardingProfileRepository repository,
-        IReadOnlyList<HostEntry> availableHosts)
+        IReadOnlyList<HostEntry> availableHosts,
+        ILogger<PortForwardingListDialog>? logger = null)
     {
         _viewModel = viewModel;
         _repository = repository;
         _availableHosts = availableHosts;
+        _logger = logger ?? NullLogger<PortForwardingListDialog>.Instance;
 
         DataContext = viewModel;
 
@@ -30,58 +35,86 @@ public partial class PortForwardingListDialog : FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        await _viewModel.LoadProfilesAsync();
+        try
+        {
+            await _viewModel.LoadProfilesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in PortForwardingListDialog.OnLoaded");
+        }
     }
 
     private async void AddProfile_Click(object sender, RoutedEventArgs e)
     {
-        var dialogViewModel = new PortForwardingProfileDialogViewModel(_repository);
-        var dialog = new PortForwardingProfileDialog(dialogViewModel)
+        try
         {
-            Owner = this
-        };
+            var dialogViewModel = new PortForwardingProfileDialogViewModel(_repository);
+            var dialog = new PortForwardingProfileDialog(dialogViewModel)
+            {
+                Owner = this
+            };
 
-        dialog.LoadAvailableHosts(_availableHosts);
+            dialog.LoadAvailableHosts(_availableHosts);
 
-        if (dialog.ShowDialog() == true)
+            if (dialog.ShowDialog() == true)
+            {
+                await _viewModel.LoadProfilesAsync();
+            }
+        }
+        catch (Exception ex)
         {
-            await _viewModel.LoadProfilesAsync();
+            _logger.LogError(ex, "Error in PortForwardingListDialog.AddProfile_Click");
         }
     }
 
     private async void EditProfile_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: PortForwardingProfile profile })
-            return;
-
-        var dialogViewModel = new PortForwardingProfileDialogViewModel(_repository, profile);
-        var dialog = new PortForwardingProfileDialog(dialogViewModel)
+        try
         {
-            Owner = this
-        };
+            if (sender is not FrameworkElement { DataContext: PortForwardingProfile profile })
+                return;
 
-        dialog.LoadAvailableHosts(_availableHosts);
+            var dialogViewModel = new PortForwardingProfileDialogViewModel(_repository, profile);
+            var dialog = new PortForwardingProfileDialog(dialogViewModel)
+            {
+                Owner = this
+            };
 
-        if (dialog.ShowDialog() == true)
+            dialog.LoadAvailableHosts(_availableHosts);
+
+            if (dialog.ShowDialog() == true)
+            {
+                await _viewModel.LoadProfilesAsync();
+            }
+        }
+        catch (Exception ex)
         {
-            await _viewModel.LoadProfilesAsync();
+            _logger.LogError(ex, "Error in PortForwardingListDialog.EditProfile_Click");
         }
     }
 
     private async void DeleteProfile_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: PortForwardingProfile profile })
-            return;
-
-        var result = System.Windows.MessageBox.Show(
-            $"Are you sure you want to delete the profile '{profile.DisplayName}'?\n\nThis action cannot be undone.",
-            "Delete Port Forwarding Profile",
-            System.Windows.MessageBoxButton.YesNo,
-            System.Windows.MessageBoxImage.Warning);
-
-        if (result == System.Windows.MessageBoxResult.Yes)
+        try
         {
-            await _viewModel.DeleteProfileCommand.ExecuteAsync(profile);
+            if (sender is not FrameworkElement { DataContext: PortForwardingProfile profile })
+                return;
+
+            var result = System.Windows.MessageBox.Show(
+                $"Are you sure you want to delete the profile '{profile.DisplayName}'?\n\nThis action cannot be undone.",
+                "Delete Port Forwarding Profile",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+
+            if (result == System.Windows.MessageBoxResult.Yes)
+            {
+                await _viewModel.DeleteProfileCommand.ExecuteAsync(profile);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in PortForwardingListDialog.DeleteProfile_Click");
         }
     }
 

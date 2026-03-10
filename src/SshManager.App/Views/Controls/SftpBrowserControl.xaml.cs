@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.ViewModels;
 
 namespace SshManager.App.Views.Controls;
@@ -9,8 +11,15 @@ namespace SshManager.App.Views.Controls;
 /// </summary>
 public partial class SftpBrowserControl : UserControl
 {
-    public SftpBrowserControl()
+    private readonly ILogger<SftpBrowserControl> _logger;
+
+    public SftpBrowserControl() : this(null)
     {
+    }
+
+    public SftpBrowserControl(ILogger<SftpBrowserControl>? logger = null)
+    {
+        _logger = logger ?? NullLogger<SftpBrowserControl>.Instance;
         InitializeComponent();
     }
 
@@ -60,27 +69,41 @@ public partial class SftpBrowserControl : UserControl
 
     private async void LocalBrowser_EditRequested(object? sender, FileEditRequestedEventArgs e)
     {
-        // Open local file in text editor
-        if (DataContext is SftpBrowserViewModel vm)
+        try
         {
-            var ownerWindow = Window.GetWindow(this);
-            if (ownerWindow != null)
+            // Open local file in text editor
+            if (DataContext is SftpBrowserViewModel vm)
             {
-                await vm.EditLocalFileAsync(e.Item, ownerWindow);
+                var ownerWindow = Window.GetWindow(this);
+                if (ownerWindow != null)
+                {
+                    await vm.EditLocalFileAsync(e.Item, ownerWindow);
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SftpBrowserControl.LocalBrowser_EditRequested");
         }
     }
 
     private async void RemoteBrowser_EditRequested(object? sender, FileEditRequestedEventArgs e)
     {
-        // Open remote file in text editor
-        if (DataContext is SftpBrowserViewModel vm)
+        try
         {
-            var ownerWindow = Window.GetWindow(this);
-            if (ownerWindow != null)
+            // Open remote file in text editor
+            if (DataContext is SftpBrowserViewModel vm)
             {
-                await vm.EditRemoteFileAsync(e.Item, ownerWindow);
+                var ownerWindow = Window.GetWindow(this);
+                if (ownerWindow != null)
+                {
+                    await vm.EditRemoteFileAsync(e.Item, ownerWindow);
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SftpBrowserControl.RemoteBrowser_EditRequested");
         }
     }
 

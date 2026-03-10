@@ -270,7 +270,11 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
         _logger.LogDebug("Disposing serial terminal bridge (sync)");
 
         _cts.Cancel();
-        try { _readTask?.Wait(TimeSpan.FromSeconds(2)); } catch { }
+        // Wrap in Task.Run so that if Dispose() is called on the UI thread the wait
+        // does not deadlock against async continuations that require the UI dispatcher.
+        // This mirrors the pattern used in SshTerminalBridge.Dispose().
+        try { Task.Run(() => _readTask).Wait(TimeSpan.FromSeconds(2)); }
+        catch (Exception ex) { _logger.LogDebug(ex, "Error during disposal of {Component}", nameof(SerialTerminalBridge)); }
         _cts.Dispose();
     }
 }

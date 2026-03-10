@@ -1,4 +1,6 @@
 using System.Windows;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.Services;
 using SshManager.App.ViewModels;
 using Wpf.Ui.Controls;
@@ -8,6 +10,7 @@ namespace SshManager.App.Views.Dialogs;
 public partial class BackupRestoreDialog : FluentWindow
 {
     private readonly BackupRestoreViewModel _viewModel;
+    private readonly ILogger<BackupRestoreDialog> _logger;
 
     /// <summary>
     /// Event raised when a restore operation completes successfully.
@@ -19,9 +22,10 @@ public partial class BackupRestoreDialog : FluentWindow
     /// Initializes a new instance of the BackupRestoreDialog with dependency injection.
     /// </summary>
     /// <param name="viewModel">The backup/restore view model.</param>
-    public BackupRestoreDialog(BackupRestoreViewModel viewModel)
+    public BackupRestoreDialog(BackupRestoreViewModel viewModel, ILogger<BackupRestoreDialog>? logger = null)
     {
         _viewModel = viewModel;
+        _logger = logger ?? NullLogger<BackupRestoreDialog>.Instance;
         DataContext = _viewModel;
 
         InitializeComponent();
@@ -33,7 +37,14 @@ public partial class BackupRestoreDialog : FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        await _viewModel.LoadAsync();
+        try
+        {
+            await _viewModel.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in BackupRestoreDialog.OnLoaded");
+        }
     }
 
     private void OnRequestClose()

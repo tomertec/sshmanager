@@ -1,4 +1,6 @@
 using System.Windows;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.Services;
 using SshManager.App.ViewModels;
 using SshManager.Data.Repositories;
@@ -9,14 +11,16 @@ namespace SshManager.App.Views.Dialogs;
 public partial class CloudSyncSetupDialog : FluentWindow
 {
     private readonly CloudSyncSetupViewModel _viewModel;
+    private readonly ILogger<CloudSyncSetupDialog> _logger;
 
     /// <summary>
     /// Initializes a new instance of the CloudSyncSetupDialog with dependency injection.
     /// </summary>
     /// <param name="viewModel">The cloud sync setup view model.</param>
-    public CloudSyncSetupDialog(CloudSyncSetupViewModel viewModel)
+    public CloudSyncSetupDialog(CloudSyncSetupViewModel viewModel, ILogger<CloudSyncSetupDialog>? logger = null)
     {
         _viewModel = viewModel;
+        _logger = logger ?? NullLogger<CloudSyncSetupDialog>.Instance;
         DataContext = _viewModel;
 
         InitializeComponent();
@@ -29,7 +33,14 @@ public partial class CloudSyncSetupDialog : FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        await _viewModel.LoadAsync();
+        try
+        {
+            await _viewModel.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in CloudSyncSetupDialog.OnLoaded");
+        }
     }
 
     private void OnRequestClose()

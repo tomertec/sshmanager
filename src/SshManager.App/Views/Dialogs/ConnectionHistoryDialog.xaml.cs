@@ -1,4 +1,6 @@
 using System.Windows;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.ViewModels;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
@@ -9,6 +11,7 @@ namespace SshManager.App.Views.Dialogs;
 public partial class ConnectionHistoryDialog : FluentWindow
 {
     private readonly ConnectionHistoryViewModel _viewModel;
+    private readonly ILogger<ConnectionHistoryDialog> _logger;
 
     public event Func<HostEntry, Task>? OnConnectRequested;
 
@@ -16,9 +19,10 @@ public partial class ConnectionHistoryDialog : FluentWindow
     /// Initializes a new instance of the ConnectionHistoryDialog with dependency injection.
     /// </summary>
     /// <param name="viewModel">The connection history view model.</param>
-    public ConnectionHistoryDialog(ConnectionHistoryViewModel viewModel)
+    public ConnectionHistoryDialog(ConnectionHistoryViewModel viewModel, ILogger<ConnectionHistoryDialog>? logger = null)
     {
         _viewModel = viewModel;
+        _logger = logger ?? NullLogger<ConnectionHistoryDialog>.Instance;
         DataContext = _viewModel;
 
         InitializeComponent();
@@ -30,7 +34,14 @@ public partial class ConnectionHistoryDialog : FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        await _viewModel.LoadAsync();
+        try
+        {
+            await _viewModel.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in ConnectionHistoryDialog.OnLoaded");
+        }
     }
 
     private void OnRequestClose()

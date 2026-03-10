@@ -346,11 +346,13 @@ public sealed class SshTerminalBridge : IAsyncDisposable, IDisposable
 
         // Wait for background tasks to complete before disposing CTS,
         // otherwise they may access the disposed CancellationToken.
-        try { _readTask?.Wait(TimeSpan.FromSeconds(2)); }
-        catch { /* Task may have faulted or been cancelled */ }
+        // Task.Run ensures no synchronization context is captured, preventing
+        // potential deadlocks if the async path dispatches back to the UI thread.
+        try { Task.Run(() => _readTask).Wait(TimeSpan.FromSeconds(2)); }
+        catch (Exception ex) { _logger.LogDebug(ex, "Error during disposal of {Component}", nameof(SshTerminalBridge)); }
 
-        try { _healthCheckTask?.Wait(TimeSpan.FromSeconds(1)); }
-        catch { /* Task may have faulted or been cancelled */ }
+        try { Task.Run(() => _healthCheckTask).Wait(TimeSpan.FromSeconds(1)); }
+        catch (Exception ex) { _logger.LogDebug(ex, "Error during disposal of {Component}", nameof(SshTerminalBridge)); }
 
         _shellStream = null;
         _cts.Dispose();

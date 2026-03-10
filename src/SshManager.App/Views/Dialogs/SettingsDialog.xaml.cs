@@ -15,6 +15,7 @@ public partial class SettingsDialog : FluentWindow
     private readonly SettingsViewModel _viewModel;
     private readonly MainWindowViewModel _mainViewModel;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<SettingsDialog> _logger;
 
     /// <summary>
     /// Initializes a new instance of the SettingsDialog with dependency injection.
@@ -30,6 +31,7 @@ public partial class SettingsDialog : FluentWindow
         _viewModel = viewModel;
         _mainViewModel = mainViewModel;
         _serviceProvider = serviceProvider;
+        _logger = serviceProvider.GetRequiredService<ILogger<SettingsDialog>>();
         DataContext = _viewModel;
 
         InitializeComponent();
@@ -47,7 +49,14 @@ public partial class SettingsDialog : FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        await _viewModel.LoadAsync();
+        try
+        {
+            await _viewModel.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SettingsDialog.OnLoaded");
+        }
     }
 
     private void OnRequestClose()
@@ -65,22 +74,50 @@ public partial class SettingsDialog : FluentWindow
 
     private async void ImportButton_Click(object sender, RoutedEventArgs e)
     {
-        await _mainViewModel.ImportHostsAsync();
+        try
+        {
+            await _mainViewModel.ImportHostsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SettingsDialog.ImportButton_Click");
+        }
     }
 
     private async void ExportButton_Click(object sender, RoutedEventArgs e)
     {
-        await _mainViewModel.ExportHostsAsync();
+        try
+        {
+            await _mainViewModel.ExportHostsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SettingsDialog.ExportButton_Click");
+        }
     }
 
     private async void ImportSshConfigButton_Click(object sender, RoutedEventArgs e)
     {
-        await _mainViewModel.ImportFromSshConfigAsync();
+        try
+        {
+            await _mainViewModel.ImportFromSshConfigAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SettingsDialog.ImportSshConfigButton_Click");
+        }
     }
 
     private async void ExportSshConfigButton_Click(object sender, RoutedEventArgs e)
     {
-        await _mainViewModel.ExportToSshConfigAsync();
+        try
+        {
+            await _mainViewModel.ExportToSshConfigAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SettingsDialog.ExportSshConfigButton_Click");
+        }
     }
 
     private void ManageSshKeysButton_Click(object sender, RoutedEventArgs e)

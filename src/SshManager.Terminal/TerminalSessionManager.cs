@@ -12,6 +12,14 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
     private readonly ILogger<TerminalSessionManager> _logger;
     private readonly ILoggerFactory _loggerFactory;
 
+    /// <summary>
+    /// Guards all reads and writes to <see cref="Sessions"/> that originate from
+    /// non-UI threads. Mutations that run inside a <c>Dispatcher.InvokeAsync</c>
+    /// callback already execute serially on the UI thread, so they implicitly
+    /// have exclusive access while still holding this lock via the outer scope.
+    /// </summary>
+    private readonly object _sessionsLock = new();
+
     public ObservableCollection<TerminalSession> Sessions { get; } = [];
 
     private TerminalSession? _currentSession;
@@ -64,7 +72,16 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
         }
     }
 
-    public int BroadcastSelectedCount => Sessions.Count(s => s.IsSelectedForBroadcast);
+    public int BroadcastSelectedCount
+    {
+        get
+        {
+            lock (_sessionsLock)
+            {
+                return Sessions.Count(s => s.IsSelectedForBroadcast);
+            }
+        }
+    }
 
     public TerminalSessionManager(ILogger<TerminalSessionManager>? logger = null, ILoggerFactory? loggerFactory = null)
     {
@@ -78,7 +95,11 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
         var session = new TerminalSession(sessionLogger) { Title = title };
         session.SessionClosed += OnSessionClosed;
 
-        Sessions.Add(session);
+        lock (_sessionsLock)
+        {
+            Sessions.Add(session);
+        }
+
         CurrentSession = session;
 
         _logger.LogInformation("Created terminal session {SessionId} with title '{Title}'", session.Id, title);
@@ -88,7 +109,12 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
 
     public async Task CloseSessionAsync(Guid sessionId)
     {
-        var session = Sessions.FirstOrDefault(s => s.Id == sessionId);
+        TerminalSession? session;
+        lock (_sessionsLock)
+        {
+            session = Sessions.FirstOrDefault(s => s.Id == sessionId);
+        }
+
         if (session != null)
         {
             _logger.LogInformation("Closing session {SessionId}", sessionId);
@@ -102,13 +128,19 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
 
     public async Task CloseAllSessionsAsync()
     {
-        _logger.LogInformation("Closing all {SessionCount} terminal sessions", Sessions.Count);
-        // Create a copy to avoid modifying collection while iterating
-        var sessionsToClose = Sessions.ToList();
+        List<TerminalSession> sessionsToClose;
+        lock (_sessionsLock)
+        {
+            _logger.LogInformation("Closing all {SessionCount} terminal sessions", Sessions.Count);
+            // Snapshot under lock to avoid modifying collection while iterating
+            sessionsToClose = Sessions.ToList();
+        }
+
         foreach (var session in sessionsToClose)
         {
             await session.CloseAsync();
         }
+
         _logger.LogDebug("All terminal sessions closed");
     }
 
@@ -118,26 +150,43 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
 
         session.SessionClosed -= OnSessionClosed;
 
-        // ObservableCollection must be modified on the UI thread
+        // ObservableCollection must be modified on the UI thread.
+        // The lock inside the dispatch callback serializes with other _sessionsLock holders.
         System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            Sessions.Remove(session);
+            TerminalSession? next = null;
 
-            _logger.LogDebug("Session {SessionId} removed from active sessions", session.Id);
-
-            // Select next session if current was closed
-            if (CurrentSession == session)
+            lock (_sessionsLock)
             {
-                CurrentSession = Sessions.FirstOrDefault();
+                Sessions.Remove(session);
+
+                _logger.LogDebug("Session {SessionId} removed from active sessions", session.Id);
+
+                // Determine next session while holding the lock so the collection is stable.
+                if (CurrentSession == session)
+                {
+                    next = Sessions.FirstOrDefault();
+                }
             }
 
+            // Apply CurrentSession update outside the lock — it fires CurrentSessionChanged
+            // which may invoke subscriber callbacks that also acquire _sessionsLock.
+            if (CurrentSession == session)
+            {
+                CurrentSession = next;
+            }
+
+            // Raise SessionClosed outside the lock to prevent subscriber deadlocks.
             SessionClosed?.Invoke(this, session);
         });
     }
 
     public IEnumerable<TerminalSession> GetBroadcastSessions()
     {
-        return Sessions.Where(s => s.IsSelectedForBroadcast && s.IsConnected);
+        lock (_sessionsLock)
+        {
+            return Sessions.Where(s => s.IsSelectedForBroadcast && s.IsConnected).ToList();
+        }
     }
 
     public void ToggleBroadcastSelection(TerminalSession session)
@@ -149,19 +198,33 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
 
     public void SelectAllForBroadcast()
     {
-        foreach (var session in Sessions.Where(s => s.IsConnected))
+        List<TerminalSession> snapshot;
+        lock (_sessionsLock)
+        {
+            snapshot = Sessions.Where(s => s.IsConnected).ToList();
+        }
+
+        foreach (var session in snapshot)
         {
             session.IsSelectedForBroadcast = true;
         }
+
         _logger.LogDebug("All connected sessions selected for broadcast");
     }
 
     public void DeselectAllForBroadcast()
     {
-        foreach (var session in Sessions)
+        List<TerminalSession> snapshot;
+        lock (_sessionsLock)
+        {
+            snapshot = Sessions.ToList();
+        }
+
+        foreach (var session in snapshot)
         {
             session.IsSelectedForBroadcast = false;
         }
+
         _logger.LogDebug("All sessions deselected from broadcast");
     }
 }

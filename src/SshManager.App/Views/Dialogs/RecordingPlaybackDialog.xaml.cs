@@ -1,4 +1,6 @@
 using System.Windows;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.ViewModels;
 using Wpf.Ui.Controls;
 
@@ -9,8 +11,11 @@ namespace SshManager.App.Views.Dialogs;
 /// </summary>
 public partial class RecordingPlaybackDialog : FluentWindow
 {
-    public RecordingPlaybackDialog(RecordingPlaybackViewModel viewModel)
+    private readonly ILogger<RecordingPlaybackDialog> _logger;
+
+    public RecordingPlaybackDialog(RecordingPlaybackViewModel viewModel, ILogger<RecordingPlaybackDialog>? logger = null)
     {
+        _logger = logger ?? NullLogger<RecordingPlaybackDialog>.Instance;
         InitializeComponent();
         DataContext = viewModel;
 
@@ -23,17 +28,31 @@ public partial class RecordingPlaybackDialog : FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (DataContext is RecordingPlaybackViewModel viewModel)
+        try
         {
-            await viewModel.InitializeAsync();
+            if (DataContext is RecordingPlaybackViewModel viewModel)
+            {
+                await viewModel.InitializeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in RecordingPlaybackDialog.OnLoaded");
         }
     }
 
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (DataContext is RecordingPlaybackViewModel viewModel)
+        try
         {
-            await viewModel.CleanupAsync();
+            if (DataContext is RecordingPlaybackViewModel viewModel)
+            {
+                await viewModel.CleanupAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in RecordingPlaybackDialog.OnClosing");
         }
     }
 }

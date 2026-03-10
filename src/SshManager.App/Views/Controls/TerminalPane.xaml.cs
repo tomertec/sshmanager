@@ -338,32 +338,39 @@ public partial class TerminalPane : UserControl, ITerminalPaneTarget
 
     private async void RecordButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_paneNode?.Session == null || _serviceProvider == null)
-            return;
-
-        var recordingService = _serviceProvider.GetRequiredService<ISessionRecordingService>();
-        var session = _paneNode.Session;
-
-        if (session.IsRecording)
+        try
         {
-            // Stop recording
-            await recordingService.StopRecordingAsync(session.Id);
-            session.SessionRecorder = null;
-            UpdateRecordButtonState(false);
+            if (_paneNode?.Session == null || _serviceProvider == null)
+                return;
+
+            var recordingService = _serviceProvider.GetRequiredService<ISessionRecordingService>();
+            var session = _paneNode.Session;
+
+            if (session.IsRecording)
+            {
+                // Stop recording
+                await recordingService.StopRecordingAsync(session.Id);
+                session.SessionRecorder = null;
+                UpdateRecordButtonState(false);
+            }
+            else
+            {
+                // Start recording - use default terminal dimensions
+                var cols = 80;
+                var rows = 24;
+                var recorder = await recordingService.StartRecordingAsync(
+                    session.Id,
+                    session.Host,
+                    cols,
+                    rows,
+                    $"{session.Host?.DisplayName ?? "Session"} - {DateTime.Now:yyyy-MM-dd HH:mm}");
+                session.SessionRecorder = recorder;
+                UpdateRecordButtonState(true);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            // Start recording - use default terminal dimensions
-            var cols = 80;
-            var rows = 24;
-            var recorder = await recordingService.StartRecordingAsync(
-                session.Id,
-                session.Host,
-                cols,
-                rows,
-                $"{session.Host?.DisplayName ?? "Session"} - {DateTime.Now:yyyy-MM-dd HH:mm}");
-            session.SessionRecorder = recorder;
-            UpdateRecordButtonState(true);
+            _logger.LogError(ex, "Error in RecordButton_Click");
         }
     }
 

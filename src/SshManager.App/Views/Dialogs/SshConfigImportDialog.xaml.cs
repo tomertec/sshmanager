@@ -1,4 +1,6 @@
 using System.Windows;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.Services;
 using SshManager.App.ViewModels;
 using SshManager.Core.Models;
@@ -9,14 +11,17 @@ namespace SshManager.App.Views.Dialogs;
 public partial class SshConfigImportDialog : FluentWindow
 {
     private readonly SshConfigImportViewModel _viewModel;
+    private readonly ILogger<SshConfigImportDialog> _logger;
 
     /// <summary>
     /// Initializes a new instance of the SshConfigImportDialog with dependency injection.
     /// </summary>
     /// <param name="viewModel">The SSH config import view model.</param>
-    public SshConfigImportDialog(SshConfigImportViewModel viewModel)
+    /// <param name="logger">The logger instance.</param>
+    public SshConfigImportDialog(SshConfigImportViewModel viewModel, ILogger<SshConfigImportDialog>? logger = null)
     {
         _viewModel = viewModel;
+        _logger = logger ?? NullLogger<SshConfigImportDialog>.Instance;
         DataContext = _viewModel;
 
         InitializeComponent();
@@ -27,10 +32,17 @@ public partial class SshConfigImportDialog : FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        // Auto-parse if default config exists
-        if (System.IO.File.Exists(_viewModel.ConfigFilePath))
+        try
         {
-            await _viewModel.ParseConfigCommand.ExecuteAsync(null);
+            // Auto-parse if default config exists
+            if (System.IO.File.Exists(_viewModel.ConfigFilePath))
+            {
+                await _viewModel.ParseConfigCommand.ExecuteAsync(null);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SshConfigImportDialog.OnLoaded");
         }
     }
 

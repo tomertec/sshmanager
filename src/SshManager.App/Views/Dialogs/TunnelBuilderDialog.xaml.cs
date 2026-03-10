@@ -1,5 +1,7 @@
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.ViewModels;
 using Wpf.Ui;
 using Wpf.Ui.Controls;
@@ -13,16 +15,18 @@ public partial class TunnelBuilderDialog : FluentWindow
 {
     private readonly TunnelBuilderViewModel _viewModel;
     private readonly ISnackbarService _snackbarService;
+    private readonly ILogger<TunnelBuilderDialog> _logger;
 
     /// <summary>
     /// Initializes a new instance of the TunnelBuilderDialog with dependency injection.
     /// </summary>
     /// <param name="viewModel">The view model for the tunnel builder.</param>
     /// <param name="snackbarService">The snackbar service for showing notifications.</param>
-    public TunnelBuilderDialog(TunnelBuilderViewModel viewModel, ISnackbarService snackbarService)
+    public TunnelBuilderDialog(TunnelBuilderViewModel viewModel, ISnackbarService snackbarService, ILogger<TunnelBuilderDialog>? logger = null)
     {
         _viewModel = viewModel;
         _snackbarService = snackbarService;
+        _logger = logger ?? NullLogger<TunnelBuilderDialog>.Instance;
         DataContext = viewModel;
 
         InitializeComponent();
@@ -49,7 +53,8 @@ public partial class TunnelBuilderDialog : FluentWindow
     {
         var viewModel = serviceProvider.GetRequiredService<TunnelBuilderViewModel>();
         var snackbarService = serviceProvider.GetRequiredService<ISnackbarService>();
-        var dialog = new TunnelBuilderDialog(viewModel, snackbarService);
+        var logger = serviceProvider.GetRequiredService<ILogger<TunnelBuilderDialog>>();
+        var dialog = new TunnelBuilderDialog(viewModel, snackbarService, logger);
 
         await dialog.InitializeDialogAsync(profileId);
 
@@ -75,10 +80,17 @@ public partial class TunnelBuilderDialog : FluentWindow
     /// </summary>
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        // If Initialize was not called via CreateAsync, initialize now
-        if (_viewModel.AvailableHosts.Count == 0)
+        try
         {
-            await _viewModel.InitializeAsync();
+            // If Initialize was not called via CreateAsync, initialize now
+            if (_viewModel.AvailableHosts.Count == 0)
+            {
+                await _viewModel.InitializeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in TunnelBuilderDialog.OnLoaded");
         }
     }
 

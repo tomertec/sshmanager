@@ -14,7 +14,7 @@ namespace SshManager.Terminal;
 public sealed class TerminalSession : IAsyncDisposable, IDisposable
 {
     private readonly ILogger<TerminalSession> _logger;
-    private bool _disposed;
+    private int _disposed;
     private volatile bool _isActive = true;
     private volatile string _status = "Connecting...";
     private volatile string _lastOutputPreview = string.Empty;
@@ -206,8 +206,7 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
     /// </summary>
     public async ValueTask CloseAsync()
     {
-        if (_disposed) return;
-        _disposed = true;
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
 
         IsActive = false;
         Status = "Disconnected";

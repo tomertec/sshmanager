@@ -629,6 +629,8 @@ public sealed partial class AgentKeyService : IAgentKeyService
 
     /// <summary>
     /// Creates a temporary file with secure permissions for storing a private key.
+    /// The file is created with restrictive ACLs atomically — inherited permissions are
+    /// never applied, eliminating the window between file creation and ACL hardening.
     /// </summary>
     private async Task<string> CreateSecureTempKeyFileAsync(string keyContent, CancellationToken ct)
     {
@@ -637,41 +639,36 @@ public sealed partial class AgentKeyService : IAgentKeyService
 
         var tempFile = Path.Combine(tempDir, $"key_{Guid.NewGuid():N}");
 
-        // Write the key content
-        await File.WriteAllTextAsync(tempFile, keyContent, ct);
+        // Build a FileSecurity that disables inheritance and grants FullControl
+        // only to the current user. Passing this to FileSystemAclExtensions.Create
+        // ensures the file is never accessible with inherited (default) permissions.
+        var currentUser = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException("Cannot determine current user SID for securing temp key file.");
 
-        // Set restrictive permissions (Windows ACL - only current user)
-        try
+        var security = new FileSecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(
+            currentUser,
+            FileSystemRights.FullControl,
+            AccessControlType.Allow));
+
+        // Create the file atomically with the restricted ACL — no inheritance window.
+        var fileStream = FileSystemAclExtensions.Create(
+            new FileInfo(tempFile),
+            FileMode.CreateNew,
+            FileSystemRights.Write,
+            FileShare.None,
+            bufferSize: 4096,
+            FileOptions.None,
+            security);
+
+        await using (fileStream)
         {
-            var fileInfo = new FileInfo(tempFile);
-            var security = fileInfo.GetAccessControl();
-
-            // Disable inheritance
-            security.SetAccessRuleProtection(true, false);
-
-            // Remove all existing rules
-            foreach (FileSystemAccessRule rule in security.GetAccessRules(true, true, typeof(NTAccount)))
-            {
-                security.RemoveAccessRule(rule);
-            }
-
-            // Add rule for current user only
-            var currentUser = WindowsIdentity.GetCurrent().Name;
-            var accessRule = new FileSystemAccessRule(
-                currentUser,
-                FileSystemRights.FullControl,
-                AccessControlType.Allow);
-
-            security.AddAccessRule(accessRule);
-            fileInfo.SetAccessControl(security);
-
-            _logger.LogDebug("Created secure temp key file: {Path}", tempFile);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to set secure permissions on temp key file");
+            using var writer = new StreamWriter(fileStream, System.Text.Encoding.UTF8, leaveOpen: false);
+            await writer.WriteAsync(keyContent.AsMemory(), ct);
         }
 
+        _logger.LogDebug("Created secure temp key file: {Path}", tempFile);
         return tempFile;
     }
 

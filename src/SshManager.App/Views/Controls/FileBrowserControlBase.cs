@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.Behaviors;
 using SshManager.App.ViewModels;
 using SshManager.App.Views.Dialogs;
@@ -16,6 +18,20 @@ namespace SshManager.App.Views.Controls;
 /// </summary>
 public abstract class FileBrowserControlBase : UserControl
 {
+    /// <summary>
+    /// Logger for use by this class and derived classes.
+    /// </summary>
+    protected readonly ILogger Logger;
+
+    /// <summary>
+    /// Initializes a new instance with an optional logger.
+    /// </summary>
+    /// <param name="logger">The logger instance, or null to use a NullLogger.</param>
+    protected FileBrowserControlBase(ILogger? logger = null)
+    {
+        Logger = logger ?? NullLogger.Instance;
+    }
+
     private Point _dragStartPoint;
     private bool _isDragging;
     private FileDragAdorner? _dragAdorner;
@@ -416,30 +432,37 @@ public abstract class FileBrowserControlBase : UserControl
     /// </summary>
     protected async void HandleRenameRequest()
     {
-        if (FileListView.SelectedItem is not FileItemViewModel item || item.IsParentDirectory)
-            return;
-
-        if (GetViewModel() is not { } vm)
-            return;
-
-        var siblingNames = vm.Items
-            .Where(i => !i.IsParentDirectory && i != item)
-            .Select(i => i.Name)
-            .ToList();
-
-        var renameVm = new RenameDialogViewModel(item.Name, item.IsDirectory, siblingNames);
-        var dialog = new RenameDialog(renameVm)
+        try
         {
-            Owner = Window.GetWindow(this)
-        };
+            if (FileListView.SelectedItem is not FileItemViewModel item || item.IsParentDirectory)
+                return;
 
-        if (dialog.ShowDialog() == true)
-        {
-            var newName = dialog.GetNewName();
-            if (!string.Equals(newName, item.Name, StringComparison.Ordinal))
+            if (GetViewModel() is not { } vm)
+                return;
+
+            var siblingNames = vm.Items
+                .Where(i => !i.IsParentDirectory && i != item)
+                .Select(i => i.Name)
+                .ToList();
+
+            var renameVm = new RenameDialogViewModel(item.Name, item.IsDirectory, siblingNames);
+            var dialog = new RenameDialog(renameVm)
             {
-                await vm.RenameAsync(item, newName);
+                Owner = Window.GetWindow(this)
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                var newName = dialog.GetNewName();
+                if (!string.Equals(newName, item.Name, StringComparison.Ordinal))
+                {
+                    await vm.RenameAsync(item, newName);
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error in FileBrowserControlBase.HandleRenameRequest");
         }
     }
 

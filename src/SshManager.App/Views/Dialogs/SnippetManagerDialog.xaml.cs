@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.ViewModels;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
@@ -10,6 +12,7 @@ public partial class SnippetManagerDialog : Window
 {
     private readonly SnippetManagerViewModel _viewModel;
     private readonly ISettingsRepository _settingsRepo;
+    private readonly ILogger<SnippetManagerDialog> _logger;
     private AppSettings? _settings;
 
     public event Action<CommandSnippet>? OnExecuteSnippet;
@@ -19,10 +22,11 @@ public partial class SnippetManagerDialog : Window
     /// </summary>
     /// <param name="viewModel">The snippet manager view model.</param>
     /// <param name="settingsRepo">The settings repository.</param>
-    public SnippetManagerDialog(SnippetManagerViewModel viewModel, ISettingsRepository settingsRepo)
+    public SnippetManagerDialog(SnippetManagerViewModel viewModel, ISettingsRepository settingsRepo, ILogger<SnippetManagerDialog>? logger = null)
     {
         _viewModel = viewModel;
         _settingsRepo = settingsRepo;
+        _logger = logger ?? NullLogger<SnippetManagerDialog>.Instance;
         DataContext = _viewModel;
 
         InitializeComponent();
@@ -37,25 +41,39 @@ public partial class SnippetManagerDialog : Window
 
     private async void OnOpacitySliderValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        // Set window opacity - makes entire window see-through
-        Opacity = e.NewValue;
-
-        // Save the opacity setting
-        if (_settings != null)
+        try
         {
-            _settings.SnippetManagerOpacity = e.NewValue;
-            await _settingsRepo.UpdateAsync(_settings);
+            // Set window opacity - makes entire window see-through
+            Opacity = e.NewValue;
+
+            // Save the opacity setting
+            if (_settings != null)
+            {
+                _settings.SnippetManagerOpacity = e.NewValue;
+                await _settingsRepo.UpdateAsync(_settings);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SnippetManagerDialog.OnOpacitySliderValueChanged");
         }
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        // Load opacity setting
-        _settings = await _settingsRepo.GetAsync();
-        OpacitySlider.Value = _settings.SnippetManagerOpacity;
-        Opacity = _settings.SnippetManagerOpacity;
+        try
+        {
+            // Load opacity setting
+            _settings = await _settingsRepo.GetAsync();
+            OpacitySlider.Value = _settings.SnippetManagerOpacity;
+            Opacity = _settings.SnippetManagerOpacity;
 
-        await _viewModel.LoadAsync();
+            await _viewModel.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in SnippetManagerDialog.OnLoaded");
+        }
     }
 
     private void OnRequestClose()
