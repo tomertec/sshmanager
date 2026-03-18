@@ -192,14 +192,14 @@ public partial class SftpFileOperationsViewModel : ObservableObject
     {
         var allLocalItems = GetSelectedLocalItemsCallback?.Invoke() ?? [];
         var items = allLocalItems
-            .Where(i => !i.IsParentDirectory && !i.IsDirectory)
+            .Where(i => !i.IsParentDirectory)
             .ToList();
 
         if (items.Count == 0)
         {
             // Try single selection
             var item = GetSelectedLocalItemCallback?.Invoke();
-            if (item != null && !item.IsParentDirectory && !item.IsDirectory)
+            if (item != null && !item.IsParentDirectory)
             {
                 items.Add(item);
             }
@@ -207,11 +207,7 @@ public partial class SftpFileOperationsViewModel : ObservableObject
 
         if (items.Count == 0)
         {
-            var hasDirectories = allLocalItems.Any(i => i.IsDirectory && !i.IsParentDirectory);
-            var message = hasDirectories
-                ? "Directory upload is not yet supported. Please select individual files."
-                : "No files selected for upload";
-            SetErrorMessageAction?.Invoke(message);
+            SetErrorMessageAction?.Invoke("No files selected for upload");
             return;
         }
 

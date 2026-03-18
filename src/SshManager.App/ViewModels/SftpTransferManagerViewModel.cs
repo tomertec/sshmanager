@@ -92,7 +92,7 @@ public partial class SftpTransferManagerViewModel : ObservableObject, IDisposabl
     {
         var transfers = new List<(string LocalPath, string RemotePath)>();
 
-        // Build list of transfers with remote paths
+        // Build list of transfers with remote paths, expanding directories recursively
         foreach (var localPath in localPaths)
         {
             var fileName = Path.GetFileName(localPath);
@@ -100,11 +100,62 @@ public partial class SftpTransferManagerViewModel : ObservableObject, IDisposabl
                 ? "/" + fileName
                 : remoteBasePath + "/" + fileName;
 
-            transfers.Add((localPath, remotePath));
+            if (Directory.Exists(localPath))
+            {
+                // Recursively collect all files in the local directory
+                await CollectLocalDirectoryFilesAsync(localPath, remotePath, transfers);
+            }
+            else
+            {
+                transfers.Add((localPath, remotePath));
+            }
         }
 
         // Process each transfer with conflict resolution
         await ProcessTransfersAsync(transfers, isUpload: true, conflictResolver);
+    }
+
+    /// <summary>
+    /// Recursively collects all files from a local directory into the transfers list,
+    /// preserving directory structure in remote paths. Creates remote directories as needed.
+    /// </summary>
+    private async Task CollectLocalDirectoryFilesAsync(
+        string localDir,
+        string remoteDir,
+        List<(string LocalPath, string RemotePath)> transfers)
+    {
+        // Create the remote directory
+        try
+        {
+            await _session.CreateDirectoryAsync(remoteDir);
+        }
+        catch (Exception ex)
+        {
+            // Directory may already exist — continue
+            _logger.LogDebug(ex, "Remote directory may already exist: {Path}", remoteDir);
+        }
+
+        try
+        {
+            foreach (var entry in Directory.EnumerateFileSystemEntries(localDir))
+            {
+                var name = Path.GetFileName(entry);
+                var remoteItemPath = remoteDir + "/" + name;
+
+                if (Directory.Exists(entry))
+                {
+                    await CollectLocalDirectoryFilesAsync(entry, remoteItemPath, transfers);
+                }
+                else
+                {
+                    transfers.Add((entry, remoteItemPath));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enumerate local directory: {Path}", localDir);
+        }
     }
 
     /// <summary>

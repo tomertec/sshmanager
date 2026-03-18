@@ -187,10 +187,10 @@ public abstract class FileBrowserControlBase : UserControl
             Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
 
-        // Get selected file items (not directories)
+        // Get selected file items (files and directories, excluding parent "..")
         var selectedItems = FileListView.SelectedItems
             .Cast<FileItemViewModel>()
-            .Where(i => !i.IsParentDirectory && !i.IsDirectory)
+            .Where(i => !i.IsParentDirectory)
             .ToList();
 
         if (selectedItems.Count == 0)
@@ -489,7 +489,7 @@ public abstract class FileBrowserControlBase : UserControl
     {
         var selectedItems = FileListView.SelectedItems
             .Cast<FileItemViewModel>()
-            .Where(i => !i.IsParentDirectory && !i.IsDirectory)
+            .Where(i => !i.IsParentDirectory)
             .ToList();
 
         if (selectedItems.Count > 0)

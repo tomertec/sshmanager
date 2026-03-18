@@ -57,17 +57,16 @@ public partial class RemoteFileBrowserControl : FileBrowserControlBase
         {
             FilesDroppedFromLocal?.Invoke(this, new FilesDroppedEventArgs(localPaths));
         }
-        // Handle drop from Windows Explorer
+        // Handle drop from Windows Explorer (files and directories)
         else if (e.Data.GetDataPresent(DataFormats.FileDrop))
         {
             var files = e.Data.GetData(DataFormats.FileDrop) as string[];
             if (files != null && files.Length > 0)
             {
-                // Filter to only files (not directories)
-                var fileOnly = files.Where(f => System.IO.File.Exists(f)).ToArray();
-                if (fileOnly.Length > 0)
+                var validPaths = files.Where(f => System.IO.File.Exists(f) || System.IO.Directory.Exists(f)).ToArray();
+                if (validPaths.Length > 0)
                 {
-                    FilesDroppedFromLocal?.Invoke(this, new FilesDroppedEventArgs(fileOnly));
+                    FilesDroppedFromLocal?.Invoke(this, new FilesDroppedEventArgs(validPaths));
                 }
             }
         }
