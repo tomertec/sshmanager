@@ -19,6 +19,7 @@ public sealed class PortForwardingProfileRepository : IPortForwardingProfileRepo
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.PortForwardingProfiles
+            .AsNoTracking()
             .Include(p => p.Host)
             .OrderBy(p => p.DisplayName)
             .ToListAsync(ct);
@@ -28,6 +29,7 @@ public sealed class PortForwardingProfileRepository : IPortForwardingProfileRepo
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.PortForwardingProfiles
+            .AsNoTracking()
             .Include(p => p.Host)
             .Where(p => p.HostId == hostId)
             .OrderBy(p => p.DisplayName)
@@ -38,6 +40,7 @@ public sealed class PortForwardingProfileRepository : IPortForwardingProfileRepo
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.PortForwardingProfiles
+            .AsNoTracking()
             .Where(p => p.HostId == null)
             .OrderBy(p => p.DisplayName)
             .ToListAsync(ct);
@@ -47,6 +50,7 @@ public sealed class PortForwardingProfileRepository : IPortForwardingProfileRepo
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.PortForwardingProfiles
+            .AsNoTracking()
             .Include(p => p.Host)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
@@ -98,6 +102,7 @@ public sealed class PortForwardingProfileRepository : IPortForwardingProfileRepo
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
         var query = db.PortForwardingProfiles
+            .AsNoTracking()
             .Where(p => p.LocalPort == localPort && p.IsEnabled);
 
         if (excludeId.HasValue)

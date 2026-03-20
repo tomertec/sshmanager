@@ -24,13 +24,14 @@ public sealed class SavedSessionRepository : ISavedSessionRepository
     public async Task<List<SavedSession>> GetAllAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.SavedSessions.ToListAsync(ct);
+        return await db.SavedSessions.AsNoTracking().ToListAsync(ct);
     }
 
     public async Task<List<SavedSession>> GetRecoverableSessionsAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.SavedSessions
+            .AsNoTracking()
             .Where(s => !s.WasGracefulShutdown)
             .ToListAsync(ct);
     }

@@ -11,8 +11,8 @@ public interface IHostCacheService
     /// Gets all host entries, using cache if available and not expired.
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>List of host entries.</returns>
-    Task<List<HostEntry>> GetAllHostsAsync(CancellationToken ct = default);
+    /// <returns>Read-only list of host entries.</returns>
+    Task<IReadOnlyList<HostEntry>> GetAllHostsAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Gets host counts grouped by group ID, using cache if available.

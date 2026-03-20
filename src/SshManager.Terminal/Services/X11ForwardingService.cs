@@ -37,6 +37,18 @@ public sealed class X11ForwardingService : IX11ForwardingService
     private readonly ILogger<X11ForwardingService> _logger;
 
     /// <summary>
+    /// Allowed X server executable names (without extension, case-insensitive).
+    /// Only these names are permitted as launch targets to prevent arbitrary process execution.
+    /// </summary>
+    private static readonly HashSet<string> AllowedXServerExecutables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "vcxsrv",
+        "xming",
+        "xwin",
+        "xlaunch"
+    };
+
+    /// <summary>
     /// Known X server process names (case-insensitive).
     /// </summary>
     private static readonly string[] KnownXServerProcesses =
@@ -144,6 +156,18 @@ public sealed class X11ForwardingService : IX11ForwardingService
             return false;
         }
 
+        // Validate that the executable is a known X server to prevent arbitrary process execution.
+        var executableName = Path.GetFileNameWithoutExtension(path);
+        if (!AllowedXServerExecutables.Contains(executableName))
+        {
+            _logger.LogError(
+                "X server executable '{ExecutableName}' is not in the allowed list. " +
+                "Allowed executables: {AllowedList}",
+                executableName,
+                string.Join(", ", AllowedXServerExecutables));
+            return false;
+        }
+
         if (displayNumber < 0 || displayNumber > 63)
         {
             _logger.LogError("Invalid display number {DisplayNumber}. Must be between 0 and 63", displayNumber);
@@ -154,17 +178,22 @@ public sealed class X11ForwardingService : IX11ForwardingService
 
         try
         {
-            var arguments = GetXServerArguments(path, displayNumber);
-            _logger.LogDebug("X server arguments: {Arguments}", arguments);
+            var argumentList = GetXServerArgumentList(path, displayNumber);
+            _logger.LogDebug("X server arguments: {Arguments}", string.Join(" ", argumentList));
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = path,
-                Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = false,
                 WindowStyle = ProcessWindowStyle.Normal
             };
+
+            // Add each argument individually via ArgumentList to prevent shell injection.
+            foreach (var arg in argumentList)
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
 
             var process = Process.Start(startInfo);
             if (process == null)
@@ -307,32 +336,42 @@ public sealed class X11ForwardingService : IX11ForwardingService
     }
 
     /// <summary>
-    /// Gets the appropriate command-line arguments for an X server.
+    /// Gets the appropriate command-line arguments for an X server as a discrete argument list.
+    /// Each element is a separate argument and must be passed via
+    /// <see cref="ProcessStartInfo.ArgumentList"/> to avoid shell injection.
     /// </summary>
     /// <param name="serverPath">Path to the X server executable.</param>
     /// <param name="displayNumber">Display number to use.</param>
-    /// <returns>Command-line arguments for the X server.</returns>
-    private string GetXServerArguments(string serverPath, int displayNumber)
+    /// <returns>Ordered list of individual arguments for the X server.</returns>
+    private IReadOnlyList<string> GetXServerArgumentList(string serverPath, int displayNumber)
     {
         var fileName = Path.GetFileNameWithoutExtension(serverPath);
+        var args = new List<string>();
 
-        // Check if we have default arguments for this server type
-        if (DefaultServerArguments.TryGetValue(fileName, out var args))
+        // VcXsrv, Xming, and XWin accept the display specifier as the first argument.
+        if (fileName.Equals("vcxsrv", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("xming", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Equals("xwin", StringComparison.OrdinalIgnoreCase))
         {
-            // VcXsrv and Xming support the :{display} syntax
-            if (fileName.Equals("vcxsrv", StringComparison.OrdinalIgnoreCase) ||
-                fileName.Equals("xming", StringComparison.OrdinalIgnoreCase) ||
-                fileName.Equals("xwin", StringComparison.OrdinalIgnoreCase))
-            {
-                // Add display number to arguments
-                return $":{displayNumber} {args}".Trim();
-            }
-
-            return args;
+            args.Add($":{displayNumber}");
         }
 
-        // Unknown X server - use minimal arguments
-        _logger.LogDebug("Unknown X server type '{FileName}', using minimal arguments", fileName);
-        return $":{displayNumber}";
+        // Append the known per-server flags as individual tokens.
+        if (DefaultServerArguments.TryGetValue(fileName, out var defaultArgs) &&
+            !string.IsNullOrWhiteSpace(defaultArgs))
+        {
+            foreach (var token in defaultArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                args.Add(token);
+            }
+        }
+        else if (args.Count == 0)
+        {
+            // Unknown X server type — fall back to the bare display specifier only.
+            _logger.LogDebug("Unknown X server type '{FileName}', using minimal arguments", fileName);
+            args.Add($":{displayNumber}");
+        }
+
+        return args;
     }
 }

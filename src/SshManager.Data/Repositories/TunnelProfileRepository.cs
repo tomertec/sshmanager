@@ -20,6 +20,7 @@ public sealed class TunnelProfileRepository : ITunnelProfileRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.TunnelProfiles
+            .AsNoTracking()
             .Include(p => p.Nodes)
             .Include(p => p.Edges)
                 .ThenInclude(e => e.SourceNode)
@@ -33,6 +34,7 @@ public sealed class TunnelProfileRepository : ITunnelProfileRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.TunnelProfiles
+            .AsNoTracking()
             .Include(p => p.Nodes)
             .Include(p => p.Edges)
                 .ThenInclude(e => e.SourceNode)

@@ -18,7 +18,7 @@ public sealed class SettingsRepository : ISettingsRepository
     public async Task<AppSettings> GetAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        var settings = await db.Settings.FirstOrDefaultAsync(ct);
+        var settings = await db.Settings.AsNoTracking().FirstOrDefaultAsync(ct);
 
         if (settings == null)
         {

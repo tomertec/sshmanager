@@ -36,7 +36,7 @@ public sealed class HostCacheService : IHostCacheService, IDisposable
     public bool IsCacheValid => _cachedHosts != null && DateTimeOffset.UtcNow < _cacheExpiry;
 
     /// <inheritdoc />
-    public async Task<List<HostEntry>> GetAllHostsAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<HostEntry>> GetAllHostsAsync(CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -47,7 +47,7 @@ public sealed class HostCacheService : IHostCacheService, IDisposable
             if (_cachedHosts != null && DateTimeOffset.UtcNow < _cacheExpiry)
             {
                 _logger.LogDebug("Returning {Count} hosts from cache", _cachedHosts.Count);
-                return _cachedHosts.ToList();
+                return _cachedHosts.AsReadOnly();
             }
 
             // Fetch fresh data
@@ -59,7 +59,7 @@ public sealed class HostCacheService : IHostCacheService, IDisposable
             _logger.LogDebug("Cached {Count} hosts with expiry at {Expiry}",
                 _cachedHosts.Count, _cacheExpiry);
 
-            return _cachedHosts.ToList();
+            return _cachedHosts.AsReadOnly();
         }
         finally
         {

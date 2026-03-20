@@ -19,6 +19,7 @@ public sealed class ManagedKeyRepository : IManagedKeyRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.ManagedSshKeys
+            .AsNoTracking()
             .OrderBy(k => k.DisplayName)
             .ToListAsync(ct);
     }
@@ -26,13 +27,16 @@ public sealed class ManagedKeyRepository : IManagedKeyRepository
     public async Task<ManagedSshKey?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.ManagedSshKeys.FindAsync([id], ct);
+        return await db.ManagedSshKeys
+            .AsNoTracking()
+            .FirstOrDefaultAsync(k => k.Id == id, ct);
     }
 
     public async Task<ManagedSshKey?> GetByPathAsync(string privateKeyPath, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.ManagedSshKeys
+            .AsNoTracking()
             .FirstOrDefaultAsync(k => k.PrivateKeyPath == privateKeyPath, ct);
     }
 
@@ -82,6 +86,7 @@ public sealed class ManagedKeyRepository : IManagedKeyRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.ManagedSshKeys
+            .AsNoTracking()
             .AnyAsync(k => k.PrivateKeyPath == privateKeyPath, ct);
     }
 }

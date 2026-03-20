@@ -139,15 +139,21 @@ public partial class MainWindow : FluentWindow
 
     private void Groups_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        _ = RefreshGroupFilterAsync();
+        _ = RefreshGroupFilterAsync().ContinueWith(
+            t => _logger.LogError(t.Exception, "Unhandled error in {Method}", nameof(RefreshGroupFilterAsync)),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
     private void Hosts_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        _ = RefreshGroupFilterAsync();
+        _ = RefreshGroupFilterAsync().ContinueWith(
+            t => _logger.LogError(t.Exception, "Unhandled error in {Method}", nameof(RefreshGroupFilterAsync)),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
-    private void RefreshGroupFilter() => _ = RefreshGroupFilterAsync();
+    private void RefreshGroupFilter() => _ = RefreshGroupFilterAsync().ContinueWith(
+        t => _logger.LogError(t.Exception, "Unhandled error in {Method}", nameof(RefreshGroupFilterAsync)),
+        TaskContinuationOptions.OnlyOnFaulted);
 
     private async Task RefreshGroupFilterAsync()
     {
@@ -442,7 +448,10 @@ public partial class MainWindow : FluentWindow
             var pane = _paneLayoutManager.FindPanesForSession(session).FirstOrDefault();
             if (pane != null)
             {
-                _ = _paneOrchestrator.ConnectPaneToSessionAsync(pane, session, PaneContainer.GetPaneControl);
+                _ = _paneOrchestrator.ConnectPaneToSessionAsync(pane, session, PaneContainer.GetPaneControl)
+                    .ContinueWith(
+                        t => _logger.LogError(t.Exception, "Unhandled error in {Method}", nameof(_paneOrchestrator.ConnectPaneToSessionAsync)),
+                        TaskContinuationOptions.OnlyOnFaulted);
             }
         });
     }

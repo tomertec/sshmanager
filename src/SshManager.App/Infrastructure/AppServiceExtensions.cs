@@ -58,6 +58,7 @@ public static class AppServiceExtensions
         services.AddSingleton<BroadcastInputViewModel>();
         services.AddSingleton<SftpLauncherViewModel>();
         services.AddSingleton<ImportExportViewModel>();
+        services.AddSingleton<QuickConnectOverlayViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<PortForwardingManagerViewModel>();
         services.AddTransient<ProxyJumpProfileDialogViewModel>();

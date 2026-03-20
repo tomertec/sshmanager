@@ -89,7 +89,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IHostStatusService hostStatusService,
         ITerminalResizeService terminalResizeService,
         PortForwardingManagerViewModel portForwardingManager,
-        IConnectionHistoryRepository connectionHistoryRepository,
+        QuickConnectOverlayViewModel quickConnectOverlay,
         ILogger<MainWindowViewModel>? logger = null)
     {
         HostManagement = hostManagement;
@@ -101,10 +101,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _hostStatusService = hostStatusService;
         _terminalResizeService = terminalResizeService;
         PortForwardingManager = portForwardingManager;
+        QuickConnectOverlay = quickConnectOverlay ?? throw new ArgumentNullException(nameof(quickConnectOverlay));
         _logger = logger ?? NullLogger<MainWindowViewModel>.Instance;
-
-        // Initialize QuickConnectOverlay
-        QuickConnectOverlay = new QuickConnectOverlayViewModel(connectionHistoryRepository);
 
         _logger.LogDebug("MainWindowViewModel initializing");
 

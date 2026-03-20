@@ -141,7 +141,7 @@ public sealed class SshSessionConnector : ISshSessionConnector
     }
 
     /// <inheritdoc />
-    public void WireBridgeEvents(SshTerminalBridge bridge, Action<byte[]> onDataReceived)
+    public void WireBridgeEvents(SshTerminalBridge bridge, Action<byte[], int> onDataReceived)
     {
         ArgumentNullException.ThrowIfNull(bridge);
         ArgumentNullException.ThrowIfNull(onDataReceived);
@@ -155,7 +155,7 @@ public sealed class SshSessionConnector : ISshSessionConnector
             }
 
             // Create typed event handlers we can unsubscribe later
-            Action<byte[]> dataHandler = onDataReceived;
+            Action<byte[], int> dataHandler = onDataReceived;
             EventHandler disconnectedHandler = OnBridgeDisconnected;
 
             // Subscribe to bridge events
@@ -279,6 +279,6 @@ public sealed class SshSessionConnector : ISshSessionConnector
     /// Holds references to event handlers for a specific bridge, allowing proper cleanup.
     /// </summary>
     private sealed record BridgeEventHandlers(
-        Action<byte[]> DataHandler,
+        Action<byte[], int> DataHandler,
         EventHandler DisconnectedHandler);
 }

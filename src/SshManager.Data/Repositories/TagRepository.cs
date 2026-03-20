@@ -20,6 +20,7 @@ public sealed class TagRepository : ITagRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Tags
+            .AsNoTracking()
             .OrderBy(t => t.Name)
             .ToListAsync(ct);
     }
@@ -28,6 +29,7 @@ public sealed class TagRepository : ITagRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Tags
+            .AsNoTracking()
             .Include(t => t.Hosts)
             .FirstOrDefaultAsync(t => t.Id == id, ct);
     }
@@ -39,6 +41,7 @@ public sealed class TagRepository : ITagRepository
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Tags
+            .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Name.ToLower() == name.ToLower(), ct);
     }
 
@@ -125,6 +128,7 @@ public sealed class TagRepository : ITagRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Tags
+            .AsNoTracking()
             .Where(t => t.Hosts.Any(h => h.Id == hostId))
             .OrderBy(t => t.Name)
             .ToListAsync(ct);

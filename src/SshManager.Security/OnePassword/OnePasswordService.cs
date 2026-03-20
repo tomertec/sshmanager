@@ -15,7 +15,7 @@ public sealed partial class OnePasswordService : IOnePasswordService
 {
     private static readonly TimeSpan StatusTimeout = TimeSpan.FromSeconds(3);
     private static readonly Regex OpValidationRegex = new(
-        @"^op://[^/]+/[^/]+(/[^/]+)?$",
+        @"^op://[\w\s.\-]+/[\w\s.\-]+(/[\w\s.\-]+)?$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly TimeSpan DataTimeout = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions JsonOptions = new()

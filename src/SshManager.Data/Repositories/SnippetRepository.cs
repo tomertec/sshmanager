@@ -19,6 +19,7 @@ public sealed class SnippetRepository : ISnippetRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Snippets
+            .AsNoTracking()
             .OrderBy(s => s.Category ?? "")
             .ThenBy(s => s.SortOrder)
             .ThenBy(s => s.Name)
@@ -29,6 +30,7 @@ public sealed class SnippetRepository : ISnippetRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Snippets
+            .AsNoTracking()
             .Where(s => s.Category == category)
             .OrderBy(s => s.SortOrder)
             .ThenBy(s => s.Name)
@@ -40,6 +42,7 @@ public sealed class SnippetRepository : ISnippetRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var term = searchTerm.ToLowerInvariant();
         return await db.Snippets
+            .AsNoTracking()
             .Where(s =>
                 s.Name.ToLower().Contains(term) ||
                 s.Command.ToLower().Contains(term) ||
@@ -55,6 +58,7 @@ public sealed class SnippetRepository : ISnippetRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Snippets
+            .AsNoTracking()
             .Where(s => s.Category != null)
             .Select(s => s.Category!)
             .Distinct()
@@ -65,7 +69,7 @@ public sealed class SnippetRepository : ISnippetRepository
     public async Task<CommandSnippet?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.Snippets.FindAsync([id], ct);
+        return await db.Snippets.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
     }
 
     public async Task AddAsync(CommandSnippet snippet, CancellationToken ct = default)

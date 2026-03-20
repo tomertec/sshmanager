@@ -1,10 +1,16 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Security.AccessControl;
+using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using SshManager.App.Services;
+using SshManager.App.Views.Dialogs;
 using SshManager.Core;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
@@ -13,9 +19,6 @@ using SshManager.Security.OnePassword;
 using SshManager.Terminal;
 using SshManager.Terminal.Models;
 using SshManager.Terminal.Services;
-using SshManager.App.Services;
-using System.Collections.Concurrent;
-using SshManager.App.Views.Dialogs;
 
 namespace SshManager.App.ViewModels;
 
@@ -227,7 +230,8 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                     _logger.LogInformation("Using external terminal for {DisplayName}", host.DisplayName);
 
                     // Get password for password auth (note: SSH prompts interactively, this is just for logging)
-                    string? password = await GetPasswordForHostAsync(host, settings);
+                    // Discard the temp key path — external terminal manages its own key file handling.
+                    var (password, _) = await GetPasswordForHostAsync(host, settings);
 
                     var launched = await _externalTerminalService.LaunchSshConnectionAsync(host, password);
 
@@ -247,7 +251,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
                 // Embedded terminal mode (default behavior)
                 // Get password - check cache first, then fall back to stored password
-                string? embeddedPassword = await GetPasswordForHostAsync(host, settings);
+                var (embeddedPassword, tempKeyPath) = await GetPasswordForHostAsync(host, settings);
                 bool usedCachedCredential = embeddedPassword != null && host.AuthType == AuthType.Password &&
                                              settings.EnableCredentialCaching &&
                                              _credentialCache.GetCachedCredential(host.Id) != null;
@@ -256,6 +260,10 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 var session = _sessionManager.CreateSession(host.DisplayName);
                 session.Host = host;
                 session.DecryptedPassword = embeddedPassword?.ToSecureString();
+
+                // Transfer ownership of any temp key file to the session so it is
+                // securely deleted when the session closes, even on exception.
+                session.TempKeyPath = tempKeyPath;
 
                 // Notify that Sessions changed now that Host is set (for active session indicators)
                 OnPropertyChanged(nameof(Sessions));
@@ -320,12 +328,16 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                 var settings = await _settingsRepo.GetAsync();
 
                 // Get password - check cache first, then fall back to stored password
-                string? password = await GetPasswordForHostAsync(host, settings);
+                var (password, tempKeyPath) = await GetPasswordForHostAsync(host, settings);
 
                 // Create session
                 var session = _sessionManager.CreateSession(host.DisplayName);
                 session.Host = host;
                 session.DecryptedPassword = password?.ToSecureString();
+
+                // Transfer ownership of any temp key file to the session so it is
+                // securely deleted when the session closes, even on exception.
+                session.TempKeyPath = tempKeyPath;
 
                 // Notify that Sessions changed now that Host is set (for active session indicators)
                 OnPropertyChanged(nameof(Sessions));
@@ -495,8 +507,12 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// </summary>
     /// <param name="host">The host entry to retrieve the password for.</param>
     /// <param name="settings">The application settings.</param>
-    /// <returns>The decrypted password, or null if no password is available or decryption fails.</returns>
-    private async Task<string?> GetPasswordForHostAsync(HostEntry host, AppSettings settings)
+    /// <returns>
+    /// A tuple of (password, tempKeyPath). For 1Password SSH key hosts, <c>tempKeyPath</c> is the path
+    /// to a restricted temp file containing the private key; the caller is responsible for assigning it
+    /// to <see cref="TerminalSession.TempKeyPath"/> so it is securely deleted on session close.
+    /// </returns>
+    private async Task<(string? password, string? tempKeyPath)> GetPasswordForHostAsync(HostEntry host, AppSettings settings)
     {
         if (host.AuthType == AuthType.OnePassword)
         {
@@ -507,7 +523,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
         if (host.AuthType != AuthType.Password)
         {
-            return null;
+            return (null, null);
         }
 
         string? password = null;
@@ -520,7 +536,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             {
                 password = cachedCredential.GetValue();
                 _logger.LogDebug("Using cached password for host {DisplayName}", host.DisplayName);
-                return password;
+                return (password, null);
             }
         }
 
@@ -544,24 +560,27 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             }
         }
 
-        return password;
+        return (password, null);
     }
 
     /// <summary>
     /// Resolves credentials from 1Password for hosts using the OnePassword auth type.
     /// Fetches the password via the op:// secret reference. For SSH keys, the key is fetched
-    /// and written to a temp file, and the host's PrivateKeyPath is updated for the auth factory.
+    /// and written to a restricted temp file, and the host's PrivateKeyPath is updated for the
+    /// auth factory. The caller receives the temp path and must assign it to
+    /// <see cref="TerminalSession.TempKeyPath"/> for secure cleanup on session close.
     /// </summary>
-    private async Task<string?> GetOnePasswordCredentialAsync(HostEntry host, AppSettings settings)
+    /// <returns>A tuple of (password, tempKeyPath).</returns>
+    private async Task<(string? password, string? tempKeyPath)> GetOnePasswordCredentialAsync(HostEntry host, AppSettings settings)
     {
-        // Try cache first
+        // Try cache first (password-only; cached credentials never include a raw key file path)
         if (settings.EnableCredentialCaching)
         {
             var cachedCredential = _credentialCache.GetCachedCredential(host.Id);
             if (cachedCredential != null)
             {
                 _logger.LogDebug("Using cached 1Password credential for host {DisplayName}", host.DisplayName);
-                return cachedCredential.GetValue();
+                return (cachedCredential.GetValue(), null);
             }
         }
 
@@ -574,26 +593,27 @@ public partial class SessionViewModel : ObservableObject, IDisposable
 
                 if (!string.IsNullOrEmpty(keyContent))
                 {
-                    // Write key to a secure temp file for the auth factory to use
-                    var tempKeyPath = Path.Combine(Path.GetTempPath(), $"sshm_op_{Guid.NewGuid():N}");
-                    await File.WriteAllTextAsync(tempKeyPath, keyContent);
+                    // Write the key to a restricted temp file. The file is created with
+                    // FileSystemAclExtensions.Create so the ACL is applied atomically —
+                    // inherited (world-readable) permissions are never visible on the file.
+                    var tempKeyPath = await CreateSecureTempKeyFileAsync(keyContent);
                     host.PrivateKeyPath = tempKeyPath;
 
                     _logger.LogInformation("SSH key fetched from 1Password for host {DisplayName}", host.DisplayName);
 
-                    // If there's also a password reference, fetch it (might be the key passphrase)
+                    // If there is also a password reference, fetch it (typically the key passphrase)
                     if (!string.IsNullOrWhiteSpace(host.OnePasswordReference))
                     {
-                        var password = await _onePasswordService.ReadSecretAsync(host.OnePasswordReference);
+                        var passphrase = await _onePasswordService.ReadSecretAsync(host.OnePasswordReference);
 
-                        if (!string.IsNullOrEmpty(password) && settings.EnableCredentialCaching)
+                        if (!string.IsNullOrEmpty(passphrase) && settings.EnableCredentialCaching)
                         {
-                            CacheCredentialForHost(host.Id, password, CredentialType.Password);
+                            CacheCredentialForHost(host.Id, passphrase, CredentialType.Password);
                         }
-                        return password;
+                        return (passphrase, tempKeyPath);
                     }
 
-                    return null;
+                    return (null, tempKeyPath);
                 }
                 else
                 {
@@ -622,7 +642,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                         CacheCredentialForHost(host.Id, password, CredentialType.Password);
                     }
 
-                    return password;
+                    return (password, null);
                 }
                 else
                 {
@@ -644,6 +664,53 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             : $"No 1Password references configured for host {host.DisplayName}. Edit the host and set an op:// password or SSH key reference.";
         _logger.LogWarning(message);
         throw new InvalidOperationException(message);
+    }
+
+    /// <summary>
+    /// Creates a temporary private key file with restrictive Windows ACLs.
+    /// Uses <see cref="FileSystemAclExtensions.Create"/> to set the ACL atomically at creation
+    /// time, ensuring inherited (world-readable) permissions are never applied to the file.
+    /// The file is placed under <c>%TEMP%\SshManager\TempKeys\</c> using the <c>sshm_op_</c>
+    /// prefix so it can be swept by the startup cleanup sweep on crash recovery.
+    /// </summary>
+    private async Task<string> CreateSecureTempKeyFileAsync(string keyContent)
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "SshManager", "TempKeys");
+        Directory.CreateDirectory(tempDir);
+
+        var tempFile = Path.Combine(tempDir, $"sshm_op_{Guid.NewGuid():N}");
+
+        // Build a FileSecurity that disables inheritance and grants FullControl only to the
+        // current user. Passing this to FileSystemAclExtensions.Create ensures the file is
+        // never accessible with inherited (default) permissions.
+        var currentUser = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException("Cannot determine current user SID for securing 1Password temp key file.");
+
+        var security = new FileSecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(
+            currentUser,
+            FileSystemRights.FullControl,
+            AccessControlType.Allow));
+
+        // Create the file atomically with the restricted ACL — no inheritance window.
+        var fileStream = FileSystemAclExtensions.Create(
+            new FileInfo(tempFile),
+            FileMode.CreateNew,
+            FileSystemRights.Write,
+            FileShare.None,
+            bufferSize: 4096,
+            FileOptions.None,
+            security);
+
+        await using (fileStream)
+        {
+            using var writer = new StreamWriter(fileStream, System.Text.Encoding.UTF8, leaveOpen: false);
+            await writer.WriteAsync(keyContent);
+        }
+
+        _logger.LogDebug("Created secure temp key file for 1Password credential: {Path}", tempFile);
+        return tempFile;
     }
 
     /// <summary>

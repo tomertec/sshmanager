@@ -38,7 +38,7 @@ public interface ISerialSessionConnector
     /// </summary>
     /// <param name="bridge">The serial terminal bridge to wire.</param>
     /// <param name="onDataReceived">Callback invoked when data is received from the serial port.</param>
-    void WireBridgeEvents(SerialTerminalBridge bridge, Action<byte[]> onDataReceived);
+    void WireBridgeEvents(SerialTerminalBridge bridge, Action<byte[], int> onDataReceived);
 
     /// <summary>
     /// Removes event handlers from the serial bridge.

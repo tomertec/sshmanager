@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -20,9 +21,11 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
 
     /// <summary>
     /// Event raised when data is received from the serial port.
-    /// The byte array contains the raw terminal data.
+    /// Parameters are the buffer and the number of valid bytes starting at index 0.
+    /// The buffer is rented from <see cref="System.Buffers.ArrayPool{T}"/> and must not
+    /// be retained by the handler after the callback returns.
     /// </summary>
-    public event Action<byte[]>? DataReceived;
+    public event Action<byte[], int>? DataReceived;
 
     /// <summary>
     /// Event raised when the serial port connection is disconnected.
@@ -126,16 +129,20 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
                 {
                     Interlocked.Add(ref _totalBytesReceived, bytesRead);
 
-                    var data = new byte[bytesRead];
+                    var data = ArrayPool<byte>.Shared.Rent(bytesRead);
                     Array.Copy(buffer, data, bytesRead);
 
                     try
                     {
-                        DataReceived?.Invoke(data);
+                        DataReceived?.Invoke(data, bytesRead);
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error in DataReceived handler");
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(data);
                     }
                 }
                 else if (bytesRead == 0)
@@ -183,7 +190,7 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
             {
                 try
                 {
-                    DataReceived?.Invoke(data);
+                    DataReceived?.Invoke(data, data.Length);
                 }
                 catch (Exception ex)
                 {

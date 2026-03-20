@@ -158,12 +158,12 @@ public sealed class KerberosAuthService : IKerberosAuthService
             var psi = new ProcessStartInfo
             {
                 FileName = "klist.exe",
-                Arguments = "tgt",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
+            psi.ArgumentList.Add("tgt");
 
             using var process = new Process { StartInfo = psi };
             process.Start();

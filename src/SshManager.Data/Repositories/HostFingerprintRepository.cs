@@ -25,6 +25,7 @@ public sealed class HostFingerprintRepository : IHostFingerprintRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.HostFingerprints
+            .AsNoTracking()
             .FirstOrDefaultAsync(f => f.HostId == hostId, ct);
     }
 
@@ -32,6 +33,7 @@ public sealed class HostFingerprintRepository : IHostFingerprintRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.HostFingerprints
+            .AsNoTracking()
             .FirstOrDefaultAsync(f => f.HostId == hostId && f.Algorithm == algorithm, ct);
     }
 
@@ -39,6 +41,7 @@ public sealed class HostFingerprintRepository : IHostFingerprintRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.HostFingerprints
+            .AsNoTracking()
             .Where(f => f.HostId == hostId)
             .OrderBy(f => f.Algorithm)
             .ToListAsync(ct);
@@ -48,6 +51,7 @@ public sealed class HostFingerprintRepository : IHostFingerprintRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.HostFingerprints
+            .AsNoTracking()
             .Include(f => f.Host)
             .OrderBy(f => f.Host!.DisplayName)
             .ToListAsync(ct);

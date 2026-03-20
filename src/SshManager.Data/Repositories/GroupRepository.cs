@@ -19,6 +19,7 @@ public sealed class GroupRepository : IGroupRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Groups
+            .AsNoTracking()
             .Include(g => g.Hosts)
             .OrderBy(g => g.SortOrder)
             .ThenBy(g => g.Name)
@@ -29,6 +30,7 @@ public sealed class GroupRepository : IGroupRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Groups
+            .AsNoTracking()
             .Include(g => g.Hosts)
             .FirstOrDefaultAsync(g => g.Id == id, ct);
     }
@@ -50,7 +52,13 @@ public sealed class GroupRepository : IGroupRepository
     public async Task UpdateAsync(HostGroup group, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        db.Groups.Update(group);
+        var existing = await db.Groups.FindAsync([group.Id], ct);
+        if (existing == null)
+            return;
+
+        // Use SetValues to copy scalar properties only; prevents overwriting unrelated columns
+        // and avoids inserting/updating related navigation entities.
+        db.Entry(existing).CurrentValues.SetValues(group);
         await db.SaveChangesAsync(ct);
     }
 

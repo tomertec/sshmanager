@@ -23,7 +23,7 @@ public sealed class CommandHistoryRepository : ICommandHistoryRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        var query = db.CommandHistory.AsQueryable();
+        var query = db.CommandHistory.AsNoTracking().AsQueryable();
 
         // Filter by host if specified
         if (hostId.HasValue)
@@ -83,7 +83,7 @@ public sealed class CommandHistoryRepository : ICommandHistoryRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        var query = db.CommandHistory.AsQueryable();
+        var query = db.CommandHistory.AsNoTracking().AsQueryable();
 
         // Filter by host if specified
         if (hostId.HasValue)
@@ -122,7 +122,7 @@ public sealed class CommandHistoryRepository : ICommandHistoryRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        var query = db.CommandHistory.AsQueryable();
+        var query = db.CommandHistory.AsNoTracking().AsQueryable();
 
         // Filter by host if specified
         if (hostId.HasValue)

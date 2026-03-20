@@ -1,4 +1,6 @@
+using System.IO;
 using System.Security;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.Core.Models;
@@ -87,6 +89,13 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
     /// Stored as SecureString for enhanced security.
     /// </summary>
     public SecureString? DecryptedPassword { get; set; }
+
+    /// <summary>
+    /// Path to a temporary private key file written for this session (e.g. a key fetched from
+    /// 1Password). The file is securely overwritten and deleted when the session is closed.
+    /// Null if no temp key file was created for this session.
+    /// </summary>
+    public string? TempKeyPath { get; set; }
 
     /// <summary>
     /// When the session was created.
@@ -319,6 +328,23 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
             _logger.LogWarning(ex, "Error disposing decrypted password for session {SessionId}", Id);
         }
 
+        // Securely delete any temporary private key file created for this session
+        // (e.g. a key fetched from 1Password and written to a restricted temp file).
+        try
+        {
+            var keyPath = TempKeyPath;
+            TempKeyPath = null;
+            if (!string.IsNullOrEmpty(keyPath))
+            {
+                await SecureDeleteTempKeyFileAsync(keyPath);
+                _logger.LogDebug("Temporary key file deleted for session {SessionId}", Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error deleting temporary key file for session {SessionId}", Id);
+        }
+
         _logger.LogInformation("Terminal session {SessionId} closed", Id);
         SessionClosed?.Invoke(this, EventArgs.Empty);
     }
@@ -342,5 +368,27 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
             catch { /* Already logged inside CloseAsync */ }
         }).Wait(TimeSpan.FromSeconds(5));
         GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Overwrites a file with random bytes and then deletes it.
+    /// Best-effort — failures are intentionally swallowed so session close always completes.
+    /// </summary>
+    private static async Task SecureDeleteTempKeyFileAsync(string filePath)
+    {
+        if (!File.Exists(filePath))
+            return;
+
+        var fileInfo = new FileInfo(filePath);
+        var length = fileInfo.Length;
+
+        if (length > 0)
+        {
+            var randomData = new byte[length];
+            RandomNumberGenerator.Fill(randomData);
+            await File.WriteAllBytesAsync(filePath, randomData).ConfigureAwait(false);
+        }
+
+        File.Delete(filePath);
     }
 }

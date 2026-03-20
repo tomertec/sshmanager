@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.App.Views.Dialogs;
 using SshManager.Core.Models;
 using SshManager.Data.Repositories;
@@ -11,6 +13,7 @@ namespace SshManager.App.ViewModels;
 public partial class SnippetManagerViewModel : ObservableObject
 {
     private readonly ISnippetRepository _snippetRepo;
+    private readonly ILogger<SnippetManagerViewModel> _logger;
     private CancellationTokenSource? _searchCts;
 
     [ObservableProperty]
@@ -34,9 +37,10 @@ public partial class SnippetManagerViewModel : ObservableObject
     public event Action? RequestClose;
     public event Action<CommandSnippet>? OnExecuteSnippet;
 
-    public SnippetManagerViewModel(ISnippetRepository snippetRepo)
+    public SnippetManagerViewModel(ISnippetRepository snippetRepo, ILogger<SnippetManagerViewModel>? logger = null)
     {
         _snippetRepo = snippetRepo;
+        _logger = logger ?? NullLogger<SnippetManagerViewModel>.Instance;
     }
 
     public async Task LoadAsync()
@@ -61,8 +65,8 @@ public partial class SnippetManagerViewModel : ObservableObject
         _searchCts?.Cancel();
         _searchCts?.Dispose();
         _searchCts = new CancellationTokenSource();
-        _ = SearchAsync(_searchCts.Token).ContinueWith(t =>
-            System.Diagnostics.Debug.WriteLine($"Search error: {t.Exception}"),
+        _ = SearchAsync(_searchCts.Token).ContinueWith(
+            t => _logger.LogError(t.Exception, "Unhandled error in {Method}", nameof(SearchAsync)),
             TaskContinuationOptions.OnlyOnFaulted);
     }
 
@@ -71,8 +75,8 @@ public partial class SnippetManagerViewModel : ObservableObject
         _searchCts?.Cancel();
         _searchCts?.Dispose();
         _searchCts = new CancellationTokenSource();
-        _ = FilterAsync(_searchCts.Token).ContinueWith(t =>
-            System.Diagnostics.Debug.WriteLine($"Filter error: {t.Exception}"),
+        _ = FilterAsync(_searchCts.Token).ContinueWith(
+            t => _logger.LogError(t.Exception, "Unhandled error in {Method}", nameof(FilterAsync)),
             TaskContinuationOptions.OnlyOnFaulted);
     }
 

@@ -20,6 +20,7 @@ public sealed class HostEnvironmentVariableRepository : IHostEnvironmentVariable
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.HostEnvironmentVariables
+            .AsNoTracking()
             .Where(v => v.HostEntryId == hostId)
             .OrderBy(v => v.SortOrder)
             .ThenBy(v => v.Name)

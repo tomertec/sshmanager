@@ -73,7 +73,7 @@ public sealed class SerialSessionConnector : ISerialSessionConnector
     }
 
     /// <inheritdoc />
-    public void WireBridgeEvents(SerialTerminalBridge bridge, Action<byte[]> onDataReceived)
+    public void WireBridgeEvents(SerialTerminalBridge bridge, Action<byte[], int> onDataReceived)
     {
         ArgumentNullException.ThrowIfNull(bridge);
         ArgumentNullException.ThrowIfNull(onDataReceived);
@@ -87,7 +87,7 @@ public sealed class SerialSessionConnector : ISerialSessionConnector
             }
 
             // Create typed event handlers we can unsubscribe later
-            Action<byte[]> dataHandler = onDataReceived;
+            Action<byte[], int> dataHandler = onDataReceived;
             Action disconnectedHandler = () => OnBridgeDisconnected(bridge);
 
             // Subscribe to bridge events
@@ -188,6 +188,6 @@ public sealed class SerialSessionConnector : ISerialSessionConnector
     /// Holds references to event handlers for a specific bridge, allowing proper cleanup.
     /// </summary>
     private sealed record BridgeEventHandlers(
-        Action<byte[]> DataHandler,
+        Action<byte[], int> DataHandler,
         Action DisconnectedHandler);
 }

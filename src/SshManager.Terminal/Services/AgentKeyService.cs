@@ -707,9 +707,15 @@ public sealed partial class AgentKeyService : IAgentKeyService
 
     /// <summary>
     /// Runs a process and captures its output.
+    /// A hard 30-second timeout is always applied in addition to any caller-provided
+    /// <paramref name="ct"/> to prevent external processes (ssh-add, ssh-keygen, pageant)
+    /// from hanging indefinitely.
     /// </summary>
     private static async Task<ProcessOutput> RunProcessAsync(ProcessStartInfo startInfo, CancellationToken ct)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+
         using var process = new Process { StartInfo = startInfo };
 
         var output = new StringBuilder();
@@ -731,7 +737,18 @@ public sealed partial class AgentKeyService : IAgentKeyService
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        await process.WaitForExitAsync(ct);
+        try
+        {
+            await process.WaitForExitAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // Timeout fired — kill the process to prevent it from running indefinitely.
+            try { process.Kill(entireProcessTree: true); }
+            catch { /* ignore errors killing the process */ }
+
+            throw new TimeoutException($"Process '{startInfo.FileName}' did not exit within 30 seconds.");
+        }
 
         return new ProcessOutput(
             process.ExitCode,

@@ -86,8 +86,8 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
                             "Validation of encrypted key failed. The key may not have been encrypted correctly.");
                     }
 
-                    // Save the encrypted key
-                    File.WriteAllText(privateKeyPath, encryptedContent);
+                    // Save the encrypted key atomically to prevent corruption on crash
+                    AtomicWriteAllText(privateKeyPath, encryptedContent);
 
                     _logger.LogInformation("Successfully encrypted key at {Path}", privateKeyPath);
 
@@ -171,8 +171,8 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
                             "Validation of re-encrypted key failed. The key may not have been encrypted correctly.");
                     }
 
-                    // Save the re-encrypted key
-                    File.WriteAllText(privateKeyPath, encryptedContent);
+                    // Save the re-encrypted key atomically to prevent corruption on crash
+                    AtomicWriteAllText(privateKeyPath, encryptedContent);
 
                     _logger.LogInformation("Successfully changed passphrase for key at {Path}", privateKeyPath);
 
@@ -254,8 +254,8 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
                             "Validation of decrypted key failed. The key may not have been decrypted correctly.");
                     }
 
-                    // Save the decrypted key
-                    File.WriteAllText(privateKeyPath, decryptedContent);
+                    // Save the decrypted key atomically to prevent corruption on crash
+                    AtomicWriteAllText(privateKeyPath, decryptedContent);
 
                     _logger.LogInformation("Successfully decrypted key at {Path}", privateKeyPath);
 
@@ -613,6 +613,37 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
         {
             // Don't fail the main operation if cleanup fails
             _logger.LogWarning(ex, "Failed to cleanup old backups for {Path}", privateKeyPath);
+        }
+    }
+
+    /// <summary>
+    /// Writes <paramref name="content"/> to <paramref name="path"/> atomically by writing to a
+    /// sibling <c>.tmp</c> file first and then using <see cref="File.Move(string, string, bool)"/>
+    /// with <c>overwrite: true</c>. This prevents a corrupt key file if the process crashes
+    /// mid-write, matching the same pattern used by <c>CloudSyncService</c>.
+    /// </summary>
+    private static void AtomicWriteAllText(string path, string content)
+    {
+        var tempPath = path + ".tmp";
+        try
+        {
+            File.WriteAllText(tempPath, content);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch
+        {
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch
+            {
+                // Best-effort temp file cleanup — swallow so original exception propagates.
+            }
+            throw;
         }
     }
 

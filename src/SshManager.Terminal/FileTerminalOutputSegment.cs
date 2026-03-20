@@ -131,6 +131,47 @@ public sealed class FileTerminalOutputSegment : ITerminalOutputSegment
         }
     }
 
+    /// <summary>
+    /// Synchronously ensures the segment is loaded using blocking I/O.
+    /// This avoids calling .GetAwaiter().GetResult() on an async method, which risks
+    /// deadlock when a synchronization context is present (e.g. UI thread).
+    /// </summary>
+    private void LoadSync()
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(FileTerminalOutputSegment));
+        }
+
+        // Fast path: already loaded
+        if (_lines != null) return;
+
+        _loadLock.Wait();
+        try
+        {
+            // Double-check after acquiring lock
+            if (_lines != null) return;
+
+            var lines = new List<string>(_lineCount);
+
+            using var fileStream = new FileStream(_filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, false);
+            using var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress);
+            using var reader = new StreamReader(gzipStream, Encoding.UTF8);
+
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                lines.Add(line);
+            }
+
+            _lines = lines;
+        }
+        finally
+        {
+            _loadLock.Release();
+        }
+    }
+
     /// <inheritdoc />
     public string GetLine(int relativeIndex)
     {
@@ -139,11 +180,10 @@ public sealed class FileTerminalOutputSegment : ITerminalOutputSegment
             throw new ObjectDisposedException(nameof(FileTerminalOutputSegment));
         }
 
-        // Ensure loaded
+        // Ensure loaded via synchronous path to avoid deadlocks on the UI thread.
         if (_lines == null)
         {
-            // Synchronous load - blocks the calling thread
-            LoadAsync().GetAwaiter().GetResult();
+            LoadSync();
         }
 
         if (relativeIndex >= 0 && relativeIndex < _lines!.Count)
@@ -161,11 +201,10 @@ public sealed class FileTerminalOutputSegment : ITerminalOutputSegment
             throw new ObjectDisposedException(nameof(FileTerminalOutputSegment));
         }
 
-        // Ensure loaded
+        // Ensure loaded via synchronous path to avoid deadlocks on the UI thread.
         if (_lines == null)
         {
-            // Synchronous load - blocks the calling thread
-            LoadAsync().GetAwaiter().GetResult();
+            LoadSync();
         }
 
         var result = new List<string>();

@@ -27,7 +27,7 @@ public partial class StartupWindow : FluentWindow
     {
         if (!Dispatcher.CheckAccess())
         {
-            Dispatcher.Invoke(() => UpdateStatus(status));
+            Dispatcher.InvokeAsync(() => UpdateStatus(status));
             return;
         }
 

@@ -19,13 +19,14 @@ public sealed class HostRepository : IHostRepository
     public async Task<bool> AnyAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.Hosts.AnyAsync(ct);
+        return await db.Hosts.AsNoTracking().AnyAsync(ct);
     }
 
     public async Task<List<HostEntry>> GetAllAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Hosts
+            .AsNoTracking()
             .Include(h => h.Group)
             .Include(h => h.Tags)
             .OrderBy(h => h.Group != null ? h.Group.SortOrder : int.MaxValue)
@@ -38,6 +39,7 @@ public sealed class HostRepository : IHostRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Hosts
+            .AsNoTracking()
             .Where(h => h.GroupId == groupId)
             .OrderBy(h => h.SortOrder)
             .ThenBy(h => h.DisplayName)
@@ -52,6 +54,7 @@ public sealed class HostRepository : IHostRepository
         var tagIdsList = tagIds?.ToList();
 
         var query = db.Hosts
+            .AsNoTracking()
             .Include(h => h.Group)
             .Include(h => h.Tags)
             .AsQueryable();
@@ -93,6 +96,7 @@ public sealed class HostRepository : IHostRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Hosts
+            .AsNoTracking()
             .Include(h => h.Group)
             .Include(h => h.Tags)
             .FirstOrDefaultAsync(h => h.Id == id, ct);
@@ -139,10 +143,13 @@ public sealed class HostRepository : IHostRepository
 
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
-        // Clear navigation property to prevent EF from trying to insert existing groups
-        host.Group = null;
+        var existing = await db.Hosts.FindAsync([host.Id], ct);
+        if (existing == null)
+            return;
 
-        db.Hosts.Update(host);
+        // Use SetValues to copy scalar properties only; prevents overwriting unrelated columns
+        // and avoids inserting/updating related navigation entities.
+        db.Entry(existing).CurrentValues.SetValues(host);
         await db.SaveChangesAsync(ct);
     }
 

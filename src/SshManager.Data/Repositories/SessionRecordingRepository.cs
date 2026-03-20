@@ -16,6 +16,7 @@ public sealed class SessionRecordingRepository : ISessionRecordingRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.SessionRecordings
+            .AsNoTracking()
             .Include(x => x.Host)
             .OrderByDescending(x => x.StartedAt)
             .ToListAsync(ct);
@@ -25,6 +26,7 @@ public sealed class SessionRecordingRepository : ISessionRecordingRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.SessionRecordings
+            .AsNoTracking()
             .Include(x => x.Host)
             .Where(x => x.HostId == hostId)
             .OrderByDescending(x => x.StartedAt)
@@ -35,6 +37,7 @@ public sealed class SessionRecordingRepository : ISessionRecordingRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.SessionRecordings
+            .AsNoTracking()
             .Include(x => x.Host)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
     }
@@ -86,6 +89,7 @@ public sealed class SessionRecordingRepository : ISessionRecordingRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.SessionRecordings
+            .AsNoTracking()
             .Where(x => x.StartedAt < cutoff)
             .OrderBy(x => x.StartedAt)
             .ToListAsync(ct);
@@ -94,6 +98,6 @@ public sealed class SessionRecordingRepository : ISessionRecordingRepository
     public async Task<long> GetTotalStorageSizeAsync(CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        return await db.SessionRecordings.SumAsync(x => (long?)x.FileSizeBytes, ct) ?? 0L;
+        return await db.SessionRecordings.AsNoTracking().SumAsync(x => (long?)x.FileSizeBytes, ct) ?? 0L;
     }
 }

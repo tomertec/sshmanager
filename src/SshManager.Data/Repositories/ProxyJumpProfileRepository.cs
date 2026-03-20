@@ -19,6 +19,7 @@ public sealed class ProxyJumpProfileRepository : IProxyJumpProfileRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.ProxyJumpProfiles
+            .AsNoTracking()
             .Include(p => p.JumpHops.OrderBy(h => h.SortOrder))
                 .ThenInclude(h => h.JumpHost)
             .OrderBy(p => p.DisplayName)
@@ -29,6 +30,7 @@ public sealed class ProxyJumpProfileRepository : IProxyJumpProfileRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.ProxyJumpProfiles
+            .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 
@@ -36,6 +38,7 @@ public sealed class ProxyJumpProfileRepository : IProxyJumpProfileRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.ProxyJumpProfiles
+            .AsNoTracking()
             .Include(p => p.JumpHops.OrderBy(h => h.SortOrder))
                 .ThenInclude(h => h.JumpHost)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
@@ -129,6 +132,7 @@ public sealed class ProxyJumpProfileRepository : IProxyJumpProfileRepository
         var term = query.ToLowerInvariant();
 
         return await db.ProxyJumpProfiles
+            .AsNoTracking()
             .Include(p => p.JumpHops.OrderBy(h => h.SortOrder))
                 .ThenInclude(h => h.JumpHost)
             .Where(p =>

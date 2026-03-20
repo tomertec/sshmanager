@@ -79,7 +79,7 @@ public partial class TerminalPaneContainer : UserControl
 
     private void OnLayoutChanged(object? sender, EventArgs e)
     {
-        Dispatcher.Invoke(RebuildLayout);
+        Dispatcher.InvokeAsync(RebuildLayout);
     }
 
     private Grid? _tabbedPanesGrid;

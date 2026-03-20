@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -47,6 +48,11 @@ public class DatabaseInitializationHostedService : IHostedService
             await db.Database.EnsureCreatedAsync(cancellationToken);
             _logger.LogDebug("Database initialized at {DbPath}", DbPaths.GetDbPath());
 
+            // Apply WAL mode and busy_timeout pragmas once after the database file exists.
+            // WAL mode persists across connections once set, so we only need to do this once.
+            // Doing this here (rather than during DI registration) ensures the DB file exists first.
+            await ApplyWalPragmasAsync(cancellationToken);
+
             // Apply schema migrations for new columns
             // Note: DbMigrator uses Serilog.ILogger directly
             var serilogLogger = Log.ForContext<DatabaseInitializationHostedService>();
@@ -70,6 +76,27 @@ public class DatabaseInitializationHostedService : IHostedService
     public Task StopAsync(CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Applies WAL journal mode and busy_timeout pragmas via a dedicated connection.
+    /// WAL mode reduces write contention for the factory's concurrent connections.
+    /// </summary>
+    private async Task ApplyWalPragmasAsync(CancellationToken cancellationToken)
+    {
+        var dbPath = DbPaths.GetDbPath();
+        await using var pragmaConnection = new SqliteConnection($"Data Source={dbPath}");
+        await pragmaConnection.OpenAsync(cancellationToken);
+
+        await using var walCmd = pragmaConnection.CreateCommand();
+        walCmd.CommandText = "PRAGMA journal_mode=WAL;";
+        await walCmd.ExecuteNonQueryAsync(cancellationToken);
+
+        await using var busyCmd = pragmaConnection.CreateCommand();
+        busyCmd.CommandText = "PRAGMA busy_timeout=5000;";
+        await busyCmd.ExecuteNonQueryAsync(cancellationToken);
+
+        _logger.LogDebug("Applied WAL journal mode and busy_timeout pragmas");
     }
 
     /// <summary>

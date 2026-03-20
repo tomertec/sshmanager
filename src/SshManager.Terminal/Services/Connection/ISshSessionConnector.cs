@@ -67,7 +67,7 @@ public interface ISshSessionConnector
     /// Call this after establishing a connection to start receiving data.
     /// The bridge's DataReceived event will invoke the provided callback.
     /// </remarks>
-    void WireBridgeEvents(SshTerminalBridge bridge, Action<byte[]> onDataReceived);
+    void WireBridgeEvents(SshTerminalBridge bridge, Action<byte[], int> onDataReceived);
 
     /// <summary>
     /// Removes event handlers from an SSH terminal bridge.

@@ -21,7 +21,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     private readonly ILogger<WebTerminalControl> _logger;
     private readonly ILoggerFactory? _loggerFactory;
     private WebTerminalBridge? _bridge;
-    private bool _disposed;
+    private int _disposed;
     private bool _isInitialized;
     private const int FitDebounceMs = 100;
     private readonly DispatcherTimer _fitDebounceTimer;
@@ -121,7 +121,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// </summary>
     public async Task InitializeAsync()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             throw new ObjectDisposedException(nameof(WebTerminalControl));
         }
@@ -165,6 +165,11 @@ public partial class WebTerminalControl : UserControl, IDisposable
             // This allows these keys to pass through to xterm.js instead of being
             // handled by WebView2 as browser shortcuts
             WebViewControl.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
+
+            // Disable JavaScript alert/confirm/prompt dialogs. The terminal page has no
+            // legitimate use for them and leaving them enabled would allow injected
+            // terminal content to pop up dialogs in the host application.
+            WebViewControl.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = false;
 
             // Track focus state via WebView2's GotFocus/LostFocus events
             // This is more reliable than WPF's Keyboard.FocusedElement for WebView2
@@ -214,7 +219,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// <param name="data">The text data to write to the terminal.</param>
     public void WriteData(string data)
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             _logger.LogWarning("WriteData called on disposed control");
             return;
@@ -229,7 +234,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// <param name="theme">Dictionary containing xterm.js theme properties.</param>
     public void SetTheme(Dictionary<string, string> theme)
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             _logger.LogWarning("SetTheme called on disposed control");
             return;
@@ -248,7 +253,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// </summary>
     public void SetFont(string? fontFamily, double fontSize)
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             _logger.LogWarning("SetFont called on disposed control");
             return;
@@ -262,7 +267,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// </summary>
     public void RequestFit()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return;
         }
@@ -277,7 +282,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// </summary>
     public void RefreshVisual()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return;
         }
@@ -294,7 +299,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// </summary>
     public new void Focus()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return;
         }
@@ -314,7 +319,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// </summary>
     public void Clear()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return;
         }
@@ -328,7 +333,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// <returns>True if zoom was applied, false if already at max.</returns>
     public bool ZoomIn()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return false;
         }
@@ -342,7 +347,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// <returns>True if zoom was applied, false if already at min.</returns>
     public bool ZoomOut()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return false;
         }
@@ -355,7 +360,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// </summary>
     public void ResetZoom()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return;
         }
@@ -374,7 +379,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
     /// <param name="lines">Number of lines to retain in scrollback buffer.</param>
     public void SetScrollback(int lines)
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             _logger.LogWarning("SetScrollback called on disposed control");
             return;
@@ -544,7 +549,7 @@ public partial class WebTerminalControl : UserControl, IDisposable
 
     private void ScheduleFit()
     {
-        if (_disposed)
+        if (Volatile.Read(ref _disposed) != 0)
         {
             return;
         }
@@ -623,12 +628,11 @@ public partial class WebTerminalControl : UserControl, IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
         {
             return;
         }
 
-        _disposed = true;
         _logger.LogDebug("Disposing WebTerminalControl");
         _fitDebounceTimer.Stop();
         _fitDebounceTimer.Tick -= FitDebounceTimer_Tick;

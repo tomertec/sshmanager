@@ -92,7 +92,7 @@ public interface ITerminalSessionLifecycle
         TerminalSession session,
         WebTerminalControl terminal,
         ITerminalConnectionHandler connectionHandler,
-        Action<byte[]> onSshDataReceived);
+        Action<byte[], int> onSshDataReceived);
 
     /// <summary>
     /// Sets the current session without performing full attachment.

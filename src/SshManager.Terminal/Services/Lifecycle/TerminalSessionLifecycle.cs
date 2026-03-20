@@ -33,7 +33,7 @@ public sealed class TerminalSessionLifecycle : ITerminalSessionLifecycle
     private SshTerminalBridge? _sshBridge;
     private SerialTerminalBridge? _serialBridge;
     private bool _ownsBridge;
-    private Action<byte[]>? _sshDataReceivedCallback;
+    private Action<byte[], int>? _sshDataReceivedCallback;
     private Action? _disconnectedCallback;
 
     /// <summary>
@@ -91,7 +91,7 @@ public sealed class TerminalSessionLifecycle : ITerminalSessionLifecycle
         TerminalSession session,
         WebTerminalControl terminal,
         ITerminalConnectionHandler connectionHandler,
-        Action<byte[]>? onSshDataReceived)
+        Action<byte[], int>? onSshDataReceived)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(terminal);
@@ -349,11 +349,11 @@ public sealed class TerminalSessionLifecycle : ITerminalSessionLifecycle
     /// <summary>
     /// Handles SSH data received from the bridge.
     /// </summary>
-    private void OnSshDataReceived(byte[] data)
+    private void OnSshDataReceived(byte[] data, int length)
     {
         try
         {
-            _sshDataReceivedCallback?.Invoke(data);
+            _sshDataReceivedCallback?.Invoke(data, length);
         }
         catch (Exception ex)
         {

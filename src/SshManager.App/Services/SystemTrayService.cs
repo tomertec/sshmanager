@@ -93,7 +93,7 @@ public class SystemTrayService : ISystemTrayService
     {
         if (_contextMenu == null) return;
 
-        Application.Current.Dispatcher.Invoke(() =>
+        Application.Current.Dispatcher.InvokeAsync(() =>
         {
             _contextMenu.Items.Clear();
 

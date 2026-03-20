@@ -19,6 +19,10 @@ public sealed class TerminalOutputBuffer : IDisposable
     private int _maxLinesInMemory;
     private bool _disposed;
 
+    // Incrementally maintained total — avoids O(n) Sum() on every TotalLineCount read.
+    // Must only be updated while holding _lock.
+    private int _totalLineCount;
+
     // Bounded channel for archive operations to prevent unbounded task growth
     private readonly Channel<ArchiveRequest> _archiveChannel;
     private readonly Task _archiveWorker;
@@ -100,7 +104,7 @@ public sealed class TerminalOutputBuffer : IDisposable
             lock (_lock)
             {
                 ThrowIfDisposed();
-                return _segments.Sum(s => s.LineCount);
+                return _totalLineCount;
             }
         }
     }
@@ -188,6 +192,8 @@ public sealed class TerminalOutputBuffer : IDisposable
         // Batch segment rotation and trimming after processing
         if (linesAdded > 0)
         {
+            _totalLineCount += linesAdded;
+
             // Check if we need to rotate the current segment
             if (_currentSegment?.LineCount >= SegmentSize)
             {
@@ -330,7 +336,7 @@ public sealed class TerminalOutputBuffer : IDisposable
             var result = new List<string>();
             if (startIndex < 0 || count <= 0) return result;
 
-            var totalLines = TotalLineCount;
+            var totalLines = _totalLineCount;
             var end = Math.Min(startIndex + count, totalLines);
 
             // Iterate through segments to collect the requested lines
@@ -412,6 +418,7 @@ public sealed class TerminalOutputBuffer : IDisposable
             }
             _segments.Clear();
             _currentLine.Clear();
+            _totalLineCount = 0;
 
             // Create new initial segment
             _currentSegment = new MemoryTerminalOutputSegment(0);
@@ -427,7 +434,7 @@ public sealed class TerminalOutputBuffer : IDisposable
         if (_currentSegment == null) return;
 
         // Calculate the starting index for the new segment
-        var newStartIndex = _segments.Sum(s => s.LineCount);
+        var newStartIndex = _totalLineCount;
 
         // Create new current segment
         _currentSegment = new MemoryTerminalOutputSegment(newStartIndex);
@@ -542,8 +549,7 @@ public sealed class TerminalOutputBuffer : IDisposable
     /// </summary>
     private void TrimExcess()
     {
-        var totalLines = _segments.Sum(s => s.LineCount);
-        var excess = totalLines - _maxLines;
+        var excess = _totalLineCount - _maxLines;
 
         if (excess <= 0) return;
 
@@ -559,6 +565,7 @@ public sealed class TerminalOutputBuffer : IDisposable
                 _segments.RemoveAt(0);
                 firstSegment.Dispose();
                 excess -= linesRemoved;
+                _totalLineCount -= linesRemoved;
 
                 // Update start indices for remaining segments
                 UpdateSegmentStartIndices();
@@ -574,6 +581,7 @@ public sealed class TerminalOutputBuffer : IDisposable
         if (excess > 0 && _segments.Count > 0 && _segments[0] is MemoryTerminalOutputSegment memSegment)
         {
             memSegment.TrimFromFront(excess);
+            _totalLineCount -= excess;
             UpdateSegmentStartIndices();
         }
     }
@@ -640,6 +648,7 @@ public sealed class TerminalOutputBuffer : IDisposable
             _segments.Clear();
             _currentSegment = null;
             _currentLine.Clear();
+            _totalLineCount = 0;
         }
     }
 }

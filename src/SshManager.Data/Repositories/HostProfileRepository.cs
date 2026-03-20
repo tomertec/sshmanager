@@ -19,6 +19,7 @@ public sealed class HostProfileRepository : IHostProfileRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.HostProfiles
+            .AsNoTracking()
             .Include(p => p.ProxyJumpProfile)
             .OrderBy(p => p.DisplayName)
             .ToListAsync(ct);
@@ -28,6 +29,7 @@ public sealed class HostProfileRepository : IHostProfileRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.HostProfiles
+            .AsNoTracking()
             .Include(p => p.ProxyJumpProfile)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }

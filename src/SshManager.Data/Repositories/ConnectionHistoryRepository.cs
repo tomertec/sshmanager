@@ -19,6 +19,7 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.ConnectionHistory
+            .AsNoTracking()
             .Include(h => h.Host)
             .OrderByDescending(h => h.ConnectedAt)
             .Take(count)
@@ -29,6 +30,7 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.ConnectionHistory
+            .AsNoTracking()
             .Include(h => h.Host)
             .Where(h => h.HostId == hostId)
             .OrderByDescending(h => h.ConnectedAt)
@@ -41,6 +43,7 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
 
         // Get the most recent successful connection per host (in SQL)
         var recentIds = await db.ConnectionHistory
+            .AsNoTracking()
             .Where(h => h.WasSuccessful && h.Host != null)
             .GroupBy(h => h.HostId)
             .Select(g => new { HostId = g.Key, LastConnected = g.Max(h => h.ConnectedAt) })
@@ -51,6 +54,7 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
 
         // Fetch the hosts with their groups
         return await db.ConnectionHistory
+            .AsNoTracking()
             .Include(h => h.Host)
                 .ThenInclude(h => h!.Group)
             .Where(h => recentIds.Contains(h.HostId))
@@ -91,6 +95,7 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.ConnectionHistory
+            .AsNoTracking()
             .Where(h => h.ConnectedAt < cutoff)
             .CountAsync(ct);
     }
@@ -101,6 +106,7 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
 
         // Aggregate in SQL
         var stats = await db.ConnectionHistory
+            .AsNoTracking()
             .Where(h => h.HostId == hostId)
             .GroupBy(h => 1)
             .Select(g => new
@@ -129,6 +135,7 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
 
         // Aggregate in SQL
         var stats = await db.ConnectionHistory
+            .AsNoTracking()
             .GroupBy(h => h.HostId)
             .Select(g => new
             {

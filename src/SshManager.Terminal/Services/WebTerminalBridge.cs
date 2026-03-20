@@ -201,6 +201,10 @@ public sealed class WebTerminalBridge : IDisposable
     private readonly System.Text.StringBuilder _outputPreviewBuffer = new();
     private const int MaxPreviewLength = 200;
 
+    // Throttle preview updates: skip regex + notification if last update was < 500ms ago.
+    private DateTime _lastPreviewUpdate = DateTime.MinValue;
+    private const int PreviewThrottleMs = 500;
+
     public WebTerminalBridge(ILogger<WebTerminalBridge>? logger = null)
     {
         _logger = logger ?? NullLogger<WebTerminalBridge>.Instance;
@@ -335,6 +339,8 @@ public sealed class WebTerminalBridge : IDisposable
     /// <summary>
     /// Updates the output preview buffer with new terminal data.
     /// Strips ANSI escape sequences for clean text preview.
+    /// Throttled to fire at most once per <see cref="PreviewThrottleMs"/> milliseconds
+    /// to avoid running the regex on every individual write chunk.
     /// </summary>
     private void UpdateOutputPreview(string data)
     {
@@ -343,11 +349,20 @@ public sealed class WebTerminalBridge : IDisposable
             return;
         }
 
+        var now = DateTime.UtcNow;
+        if ((now - _lastPreviewUpdate).TotalMilliseconds < PreviewThrottleMs)
+        {
+            return;
+        }
+
+        _lastPreviewUpdate = now;
+
         // Only strip ANSI from the tail of the data since the preview buffer is only
         // MaxPreviewLength (200) chars. Processing more than ~500 chars is wasteful.
         var tail = data.Length > 500 ? data[^500..] : data;
         var cleanData = StripAnsiEscapeSequences(tail);
 
+        string preview;
         lock (_previewBufferLock)
         {
             _outputPreviewBuffer.Append(cleanData);
@@ -359,9 +374,11 @@ public sealed class WebTerminalBridge : IDisposable
                 _outputPreviewBuffer.Remove(0, excess);
             }
 
-            // Notify subscribers of the update
-            DataWritten?.Invoke(_outputPreviewBuffer.ToString());
+            preview = _outputPreviewBuffer.ToString();
         }
+
+        // Invoke outside the lock to avoid holding the lock during arbitrary subscriber code.
+        DataWritten?.Invoke(preview);
     }
 
     /// <summary>
@@ -511,8 +528,8 @@ public sealed class WebTerminalBridge : IDisposable
     /// <summary>
     /// Sets the terminal theme colors.
     /// </summary>
-    /// <param name="theme">An object containing xterm.js theme properties.</param>
-    public void SetTheme(object theme)
+    /// <param name="theme">A dictionary of xterm.js theme property names to color values.</param>
+    public void SetTheme(Dictionary<string, string> theme)
     {
         if (Volatile.Read(ref _disposed) != 0 || _webView == null || !_isReady)
         {
@@ -874,7 +891,7 @@ public sealed class WebTerminalBridge : IDisposable
     /// <summary>
     /// Message structure for communication with the JavaScript terminal.
     /// </summary>
-    private class TerminalMessage
+    internal class TerminalMessage
     {
         [JsonPropertyName("type")]
         public string Type { get; set; } = string.Empty;
@@ -893,7 +910,7 @@ public sealed class WebTerminalBridge : IDisposable
 
         [JsonPropertyName("theme")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public object? Theme { get; set; }
+        public Dictionary<string, string>? Theme { get; set; }
 
         [JsonPropertyName("fontFamily")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -908,3 +925,4 @@ public sealed class WebTerminalBridge : IDisposable
         public int? Scrollback { get; set; }
     }
 }
+

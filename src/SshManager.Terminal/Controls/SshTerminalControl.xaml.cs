@@ -250,7 +250,7 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in OnConnectorDisconnected: {ex}");
+                _logger.LogError(ex, "Error in OnConnectorDisconnected");
             }
         });
     }
@@ -259,15 +259,15 @@ public partial class SshTerminalControl : UserControl, IKeyboardHandlerContext, 
 
     #region Data Handling
 
-    private void OnSshDataReceived(byte[] data) => HandleDataReceived(data);
-    private void OnSerialDataReceived(byte[] data) => HandleDataReceived(data);
+    private void OnSshDataReceived(byte[] data, int length) => HandleDataReceived(data, length);
+    private void OnSerialDataReceived(byte[] data, int length) => HandleDataReceived(data, length);
 
-    private void HandleDataReceived(byte[] data)
+    private void HandleDataReceived(byte[] data, int length)
     {
-        if (data.Length == 0) return;
-        _sessionLifecycle.CurrentSession?.SessionRecorder?.RecordOutput(data);
+        if (length == 0) return;
+        _sessionLifecycle.CurrentSession?.SessionRecorder?.RecordOutput(data, 0, length);
 
-        var text = _decoderHelper.Decode(data, 0, data.Length);
+        var text = _decoderHelper.Decode(data, 0, length);
         if (!string.IsNullOrEmpty(text))
         {
             _outputBuffer.AppendOutput(text);
