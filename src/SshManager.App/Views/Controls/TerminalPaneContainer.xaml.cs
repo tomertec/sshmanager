@@ -79,7 +79,15 @@ public partial class TerminalPaneContainer : UserControl
 
     private void OnLayoutChanged(object? sender, EventArgs e)
     {
-        Dispatcher.InvokeAsync(RebuildLayout);
+        // RebuildLayout must run synchronously when called from the UI thread
+        // so that _paneControls is populated before callers (e.g., ConnectPaneToSessionAsync)
+        // attempt to look up pane controls via GetPaneControl().
+        // Using InvokeAsync here would defer RebuildLayout, causing GetPaneControl to return null
+        // and silently preventing new connections.
+        if (Dispatcher.CheckAccess())
+            RebuildLayout();
+        else
+            Dispatcher.InvokeAsync(RebuildLayout);
     }
 
     private Grid? _tabbedPanesGrid;
