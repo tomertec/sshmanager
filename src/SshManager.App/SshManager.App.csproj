@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Resources\app-icon.ico</ApplicationIcon>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <!-- Inherited from SshManager.Terminal: SSH.NET vs SshNet.Agent version conflict -->
     <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
