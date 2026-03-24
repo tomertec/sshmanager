@@ -234,6 +234,34 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
 
     public bool IsDeleteDirectory => DialogState.IsDeleteDirectory;
 
+    public bool IsMoveDialogVisible
+    {
+        get => DialogState.IsMoveDialogVisible;
+        set
+        {
+            if (DialogState.IsMoveDialogVisible != value)
+            {
+                DialogState.IsMoveDialogVisible = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string MoveDestinationPath
+    {
+        get => DialogState.MoveDestinationPath;
+        set
+        {
+            if (DialogState.MoveDestinationPath != value)
+            {
+                DialogState.MoveDestinationPath = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public string MoveItemName => DialogState.MoveItemName;
+
     // Facade properties for transfers (for XAML binding compatibility)
     public ObservableCollection<TransferItemViewModel> Transfers => TransferManager.Transfers;
 
@@ -418,8 +446,8 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
         _getMirrorNavigationCallback = getMirrorNavigation;
         _saveMirrorNavigationCallback = saveMirrorNavigation;
 
-        // Load initial value
-        IsMirrorNavigationEnabled = getMirrorNavigation();
+        // Mirror navigation always starts disabled — user must opt-in per session
+        IsMirrorNavigationEnabled = false;
 
         // Set up favorites support for remote browser
         RemoteBrowser.SetFavoritesSupport(Hostname, getFavorites, saveFavorites);
@@ -482,6 +510,24 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
 
     [RelayCommand]
     private void CancelDelete() => DialogState.CancelDelete();
+
+    [RelayCommand]
+    private async Task ExecuteMoveAsync() => await DialogState.ExecuteMoveAsync();
+
+    [RelayCommand]
+    private void CancelMove() => DialogState.CancelMove();
+
+    /// <summary>
+    /// Shows the move dialog for a remote item.
+    /// </summary>
+    public void ShowMoveDialog(FileItemViewModel item)
+    {
+        DialogState.ShowMoveDialog(
+            item.Name,
+            item.FullPath,
+            RemoteBrowser.CurrentPath,
+            item.IsDirectory);
+    }
 
     // Facade commands for file operations
     [RelayCommand]
@@ -595,9 +641,10 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     /// </summary>
     private void CompleteOverwriteDialog(ConflictResolution? resolution)
     {
+        var applyToAll = OverwriteApplyToAll;
         DialogState.HideOverwriteDialog();
 
-        if (OverwriteApplyToAll && resolution.HasValue)
+        if (applyToAll && resolution.HasValue)
         {
             TransferManager.SetApplyToAllResolution(resolution.Value);
         }
@@ -901,6 +948,15 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
                 break;
             case nameof(DialogState.IsDeleteDirectory):
                 OnPropertyChanged(nameof(IsDeleteDirectory));
+                break;
+            case nameof(DialogState.IsMoveDialogVisible):
+                OnPropertyChanged(nameof(IsMoveDialogVisible));
+                break;
+            case nameof(DialogState.MoveDestinationPath):
+                OnPropertyChanged(nameof(MoveDestinationPath));
+                break;
+            case nameof(DialogState.MoveItemName):
+                OnPropertyChanged(nameof(MoveItemName));
                 break;
         }
     }

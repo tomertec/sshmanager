@@ -76,6 +76,16 @@ public abstract class FileBrowserControlBase : UserControl
     public event EventHandler<FilesTransferRequestedEventArgs>? DownloadRequested;
 
     /// <summary>
+    /// Event raised when move is requested for the selected item.
+    /// </summary>
+    public event EventHandler<FileItemViewModel>? MoveRequested;
+
+    /// <summary>
+    /// Event raised when new folder creation is requested from context menu.
+    /// </summary>
+    public event EventHandler? NewFolderRequested;
+
+    /// <summary>
     /// Gets the data key used for drag operations (e.g., "LocalFilePaths" or "RemoteFilePaths").
     /// </summary>
     protected abstract string DragDataKey { get; }
@@ -480,6 +490,25 @@ public abstract class FileBrowserControlBase : UserControl
     protected void ContextMenu_Delete_Click(object sender, RoutedEventArgs e)
     {
         DeleteRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Requests move for the selected item.
+    /// </summary>
+    protected void ContextMenu_MoveTo_Click(object sender, RoutedEventArgs e)
+    {
+        if (FileListView.SelectedItem is FileItemViewModel item && !item.IsParentDirectory)
+        {
+            MoveRequested?.Invoke(this, item);
+        }
+    }
+
+    /// <summary>
+    /// Requests new folder creation.
+    /// </summary>
+    protected void ContextMenu_NewFolder_Click(object sender, RoutedEventArgs e)
+    {
+        NewFolderRequested?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>

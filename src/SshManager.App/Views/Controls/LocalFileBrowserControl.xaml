@@ -362,6 +362,9 @@
                                          Icon="{ui:SymbolIcon FolderOpen24}"
                                          Click="ContextMenu_Open_Click"
                                          InputGestureText="Enter" />
+                            <ui:MenuItem Header="New Folder"
+                                         Icon="{ui:SymbolIcon FolderAdd24}"
+                                         Click="ContextMenu_NewFolder_Click" />
                             <ui:MenuItem Header="Edit"
                                          Icon="{ui:SymbolIcon Edit24}"
                                          Click="ContextMenu_Edit_Click"

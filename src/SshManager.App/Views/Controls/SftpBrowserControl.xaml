@@ -455,7 +455,8 @@
                                               FilesDroppedFromRemote="LocalBrowser_FilesDroppedFromRemote"
                                               DeleteRequested="LocalBrowser_DeleteRequested"
                                               EditRequested="LocalBrowser_EditRequested"
-                                              UploadRequested="LocalBrowser_UploadRequested" />
+                                              UploadRequested="LocalBrowser_UploadRequested"
+                                              NewFolderRequested="LocalBrowser_NewFolderRequested" />
 
             <!-- Collapse Local Panel Button -->
             <ui:Button Grid.Column="1"
@@ -552,7 +553,9 @@
                                                FilesDroppedFromLocal="RemoteBrowser_FilesDroppedFromLocal"
                                                DeleteRequested="RemoteBrowser_DeleteRequested"
                                                EditRequested="RemoteBrowser_EditRequested"
-                                               DownloadRequested="RemoteBrowser_DownloadRequested" />
+                                               DownloadRequested="RemoteBrowser_DownloadRequested"
+                                               MoveRequested="RemoteBrowser_MoveRequested"
+                                               NewFolderRequested="RemoteBrowser_NewFolderRequested" />
         </Grid>
 
         <!-- Transfer Progress Panel -->
@@ -909,6 +912,59 @@
                                    Appearance="Danger"
                                    Icon="{ui:SymbolIcon Delete24}"
                                    Command="{Binding ConfirmDeleteCommand}"
+                                   Padding="16,8" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- Move Dialog Overlay -->
+        <Border Grid.RowSpan="3"
+                Background="#80000000"
+                Visibility="{Binding IsMoveDialogVisible, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Border Background="{ui:ThemeResource ApplicationBackgroundBrush}"
+                    CornerRadius="8"
+                    Padding="24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MinWidth="400">
+                <StackPanel>
+                    <TextBlock Text="Move Item"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,12" />
+
+                    <!-- Item being moved -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <ui:SymbolIcon Symbol="ArrowForward24"
+                                       FontSize="14"
+                                       Foreground="{ui:ThemeResource AccentTextFillColorPrimaryBrush}"
+                                       Margin="0,0,8,0" />
+                        <TextBlock Text="{Binding MoveItemName}"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+
+                    <TextBlock Text="Destination Folder"
+                               FontSize="12"
+                               Opacity="0.7"
+                               Margin="0,0,0,4" />
+
+                    <ui:TextBox x:Name="MoveDestinationTextBox"
+                                PlaceholderText="Enter destination path (e.g. /home/user/folder)"
+                                Text="{Binding MoveDestinationPath, UpdateSourceTrigger=PropertyChanged}"
+                                Margin="0,0,0,16" />
+
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right">
+                        <ui:Button Content="Cancel"
+                                   Command="{Binding CancelMoveCommand}"
+                                   Padding="16,8"
+                                   Margin="0,0,8,0" />
+                        <ui:Button Content="Move"
+                                   Appearance="Primary"
+                                   Icon="{ui:SymbolIcon ArrowForward24}"
+                                   Command="{Binding ExecuteMoveCommand}"
                                    Padding="16,8" />
                     </StackPanel>
                 </StackPanel>

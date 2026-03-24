@@ -124,4 +124,28 @@ public partial class SftpBrowserControl : UserControl
             vm.DownloadFiles(e.FilePaths);
         }
     }
+
+    private void RemoteBrowser_MoveRequested(object? sender, FileItemViewModel item)
+    {
+        if (DataContext is SftpBrowserViewModel vm)
+        {
+            vm.ShowMoveDialog(item);
+        }
+    }
+
+    private void LocalBrowser_NewFolderRequested(object? sender, EventArgs e)
+    {
+        if (DataContext is SftpBrowserViewModel vm)
+        {
+            vm.ShowNewLocalFolderCommand.Execute(null);
+        }
+    }
+
+    private void RemoteBrowser_NewFolderRequested(object? sender, EventArgs e)
+    {
+        if (DataContext is SftpBrowserViewModel vm)
+        {
+            vm.ShowNewRemoteFolderCommand.Execute(null);
+        }
+    }
 }

@@ -144,6 +144,34 @@ public partial class SftpDialogStateViewModel : ObservableObject
     /// </summary>
     private Func<Task>? _pendingDeleteAction;
 
+    /// <summary>
+    /// Whether the move dialog is visible.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isMoveDialogVisible;
+
+    /// <summary>
+    /// The destination path for the move operation.
+    /// </summary>
+    [ObservableProperty]
+    private string _moveDestinationPath = "";
+
+    /// <summary>
+    /// The name of the item being moved (display only).
+    /// </summary>
+    [ObservableProperty]
+    private string _moveItemName = "";
+
+    /// <summary>
+    /// The full source path of the item being moved.
+    /// </summary>
+    private string _moveSourcePath = "";
+
+    /// <summary>
+    /// Whether the item being moved is a directory.
+    /// </summary>
+    private bool _moveIsDirectory;
+
     public string OverwriteSizeDisplay => OverwriteTotalSize > 0
         ? $"Existing: {FormatFileSize(OverwriteExistingSize)} of {FormatFileSize(OverwriteTotalSize)}"
         : $"Existing: {FormatFileSize(OverwriteExistingSize)}";
@@ -459,6 +487,92 @@ public partial class SftpDialogStateViewModel : ObservableObject
     {
         IsDeleteDialogVisible = false;
         _pendingDeleteAction = null;
+    }
+
+    /// <summary>
+    /// Shows the move dialog for a remote item.
+    /// </summary>
+    /// <param name="itemName">Display name of the item.</param>
+    /// <param name="sourcePath">Full remote path of the item.</param>
+    /// <param name="currentDirectory">Current remote directory (used as default destination).</param>
+    /// <param name="isDirectory">Whether the item is a directory.</param>
+    public void ShowMoveDialog(string itemName, string sourcePath, string currentDirectory, bool isDirectory)
+    {
+        MoveItemName = itemName;
+        _moveSourcePath = sourcePath;
+        _moveIsDirectory = isDirectory;
+        MoveDestinationPath = currentDirectory;
+        IsMoveDialogVisible = true;
+    }
+
+    /// <summary>
+    /// Executes the move operation.
+    /// </summary>
+    [RelayCommand]
+    public async Task ExecuteMoveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(MoveDestinationPath))
+        {
+            SetErrorMessageAction?.Invoke("Please enter a destination path.");
+            return;
+        }
+
+        var destinationDir = MoveDestinationPath.Trim();
+
+        // Validate: reject null bytes and ".." traversal
+        if (destinationDir.Contains('\0') || destinationDir.Contains(".."))
+        {
+            SetErrorMessageAction?.Invoke("Destination path contains invalid characters.");
+            return;
+        }
+
+        // Build the full destination path: destination directory + item name
+        var itemName = _moveSourcePath.Contains('/')
+            ? _moveSourcePath[(_moveSourcePath.LastIndexOf('/') + 1)..]
+            : _moveSourcePath;
+
+        var destPath = destinationDir.EndsWith('/')
+            ? destinationDir + itemName
+            : destinationDir + "/" + itemName;
+
+        // Don't move to the same location
+        if (string.Equals(destPath, _moveSourcePath, StringComparison.Ordinal))
+        {
+            IsMoveDialogVisible = false;
+            MoveDestinationPath = "";
+            return;
+        }
+
+        SetErrorMessageAction?.Invoke(null);
+
+        try
+        {
+            await _session.RenameAsync(_moveSourcePath, destPath);
+            _logger.LogInformation("Moved remote item from {OldPath} to {NewPath}", _moveSourcePath, destPath);
+
+            IsMoveDialogVisible = false;
+            MoveDestinationPath = "";
+
+            if (RefreshRemoteBrowserCallback != null)
+            {
+                await RefreshRemoteBrowserCallback();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to move {Path} to {Destination}", _moveSourcePath, destPath);
+            SetErrorMessageAction?.Invoke($"Failed to move: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Cancels the move operation.
+    /// </summary>
+    [RelayCommand]
+    public void CancelMove()
+    {
+        IsMoveDialogVisible = false;
+        MoveDestinationPath = "";
     }
 
     private static bool TryParsePermissions(string? input, out int permissions)
