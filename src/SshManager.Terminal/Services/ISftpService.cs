@@ -275,4 +275,14 @@ public interface ISftpSession : IAsyncDisposable
     /// <param name="content">The content to write.</param>
     /// <param name="ct">Cancellation token.</param>
     Task WriteAllBytesAsync(string remotePath, byte[] content, CancellationToken ct = default);
+
+    /// <summary>
+    /// Computes a hash of a remote file using streaming (no full in-memory load).
+    /// Suitable for large files that exceed the ReadAllBytesAsync size limit.
+    /// </summary>
+    /// <param name="remotePath">The remote file path.</param>
+    /// <param name="hashAlgorithm">The hash algorithm instance (e.g., MD5, SHA256).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The computed hash as a lowercase hex string.</returns>
+    Task<string> ComputeFileHashAsync(string remotePath, System.Security.Cryptography.HashAlgorithm hashAlgorithm, CancellationToken ct = default);
 }

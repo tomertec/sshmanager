@@ -289,21 +289,15 @@ public partial class FilePropertiesDialogViewModel : ObservableObject
 
         try
         {
-            // Download file content to calculate checksums
-            var content = await _session.ReadAllBytesAsync(_item.FullPath);
-
-            // Calculate MD5
+            // Use streaming hash to avoid loading entire file into memory
             using (var md5 = MD5.Create())
             {
-                var hash = md5.ComputeHash(content);
-                Md5Checksum = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                Md5Checksum = await _session.ComputeFileHashAsync(_item.FullPath, md5);
             }
 
-            // Calculate SHA256
             using (var sha256 = SHA256.Create())
             {
-                var hash = sha256.ComputeHash(content);
-                Sha256Checksum = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                Sha256Checksum = await _session.ComputeFileHashAsync(_item.FullPath, sha256);
             }
         }
         catch (Exception ex)

@@ -57,7 +57,7 @@ This document explains the high-level architecture of SshManager, including how 
 
 | Component | Technology | Why We Chose It |
 |-----------|-----------|-----------------|
-| Framework | .NET 8 + WPF | Native Windows UI, mature ecosystem |
+| Framework | .NET 9 + WPF | Native Windows UI, mature ecosystem |
 | UI Controls | WPF-UI 4.1.0 | Modern Fluent Design for WPF |
 | MVVM | CommunityToolkit.Mvvm | Source generators, less boilerplate |
 | Database | SQLite + EF Core | Embedded, zero-config, portable |
@@ -74,7 +74,7 @@ sshmanager/
 │   │   └── Models/
 │   │       ├── HostEntry.cs            # SSH host configuration
 │   │       ├── HostGroup.cs            # Host grouping
-│   │       ├── AuthType.cs             # Authentication enum (SshAgent, PrivateKeyFile, Password, Kerberos)
+│   │       ├── AuthType.cs             # Authentication enum (SshAgent, PrivateKeyFile, Password, Kerberos, OnePassword)
 │   │       ├── ConnectionType.cs       # Connection type enum (Ssh, Serial)
 │   │       ├── AppSettings.cs          # Application settings model (~100+ properties)
 │   │       ├── ConnectionHistory.cs    # Connection history entries
@@ -123,7 +123,8 @@ sshmanager/
 │   │   ├── IKeyEncryptionService.cs    # Key passphrase management interface
 │   │   ├── KeyEncryptionService.cs     # Encrypt/decrypt/change key passphrases
 │   │   ├── IPpkConverter.cs            # PPK conversion interface
-│   │   └── PpkConverter.cs             # Bidirectional PPK ↔ OpenSSH conversion
+│   │   ├── PpkConverter.cs             # Bidirectional PPK ↔ OpenSSH conversion
+│   │   ├── OnePassword/               # 1Password CLI integration (IOnePasswordService, models)
 │   │
 │   ├── SshManager.Terminal/             # Terminal layer
 │   │   ├── Controls/
@@ -260,6 +261,7 @@ sshmanager/
 - SSH key management and generation
 - Key encryption/passphrase management
 - PPK ↔ OpenSSH key format conversion
+- 1Password CLI integration (OnePassword/ folder)
 - Security-related interfaces
 
 **What doesn't go here:**
@@ -347,7 +349,8 @@ SshConnectionService.ConnectAsync()
         ├── Password Auth: ISecretProtector.Unprotect()
         ├── PrivateKey Auth: Load key file
         ├── SshAgent Auth: Use Pageant/OpenSSH agent
-        └── Kerberos Auth: IKerberosAuthService.CreateAuth()
+        ├── Kerberos Auth: IKerberosAuthService.CreateAuth()
+        └── OnePassword Auth: IOnePasswordService.ReadAsync() → resolve op:// ref
         │
         ▼
 SSH.NET SshClient.Connect()
@@ -640,6 +643,7 @@ Core has no dependencies on other projects.
 | AvalonEdit | 6.3.0 | App | Text editor for remote files |
 | FuzzySharp | 2.0.2 | App | Fuzzy search for quick connect |
 | Konscious.Security.Cryptography.Argon2 | 1.3.1 | Security | PPK v3 key derivation |
+| 1Password CLI | External | Security | Credential fetching from 1Password vaults |
 
 ## Extension Points
 
@@ -656,6 +660,8 @@ Core has no dependencies on other projects.
 2. **Handle in connection service** `SshManager.Terminal/Services/SshConnectionService.cs`
 3. **Update host edit UI** to configure new auth type
 4. **Add security handling** if credentials need encryption
+
+**Note:** OnePassword was the most recent auth type added. Because `SshManager.Terminal` does not depend on `SshManager.Security`, 1Password credentials are resolved in the App layer (`SessionViewModel`) before being passed to the Terminal layer via `TerminalConnectionInfo`.
 
 ### Adding a New Terminal Feature
 
@@ -749,6 +755,26 @@ Automatic expiration after timeout
         ▼
 Cleared on: Windows lock, app exit, manual clear
 ```
+
+### 1Password Credential Flow
+
+```
+op:// reference stored in HostEntry
+        │
+        ▼
+SessionViewModel resolves at connection time
+        │
+        ▼
+op read "op://vault/item/field"
+        │
+        ▼
+Password or SSH key returned
+        │
+        ▼
+Passed to TerminalConnectionInfo
+```
+
+Credentials from 1Password are resolved in the App layer because `SshManager.Terminal` does not depend on `SshManager.Security`. For SSH keys, the key content is written to a secure temp file (with restrictive ACLs) and the path is passed via `TerminalConnectionInfo.PrivateKeyPath`. Temp key files are securely deleted (overwrite + delete) when the session closes.
 
 ### Host Key Verification
 

@@ -7,14 +7,14 @@ This guide walks you through setting up SshManager and connecting to your first 
 Before you begin, make sure you have:
 
 - **Windows 10 or 11** (64-bit)
-- **.NET 8.0 SDK** - [Download from Microsoft](https://dotnet.microsoft.com/download/dotnet/8.0)
+- **.NET 9.0 SDK** - [Download from Microsoft](https://dotnet.microsoft.com/download/dotnet/9.0)
 - **An SSH server to connect to** - This could be a Linux server, router, or any device running SSH
 
 To verify .NET is installed, open a terminal and run:
 ```bash
 dotnet --version
 ```
-You should see `8.0.x` or higher.
+You should see `9.0.x` or higher.
 
 ## Step 1: Build and Run
 
@@ -54,6 +54,7 @@ Let's add a real SSH host to connect to.
    - **SSH Agent (Default)**: Uses keys from `~/.ssh/` or Windows OpenSSH agent
    - **Private Key File**: Browse to select a specific key file (e.g., `id_rsa`)
    - **Password**: Enter and save an encrypted password
+   - **1Password**: Fetch credentials from a 1Password vault item at connection time
 
 4. **Click Save**
 
@@ -67,6 +68,7 @@ Your new host appears in the host list.
 | **Private Key File** | You have a key file in a custom location | You specify the path to the private key (with optional passphrase) |
 | **Password** | The server uses password authentication | Password is encrypted with Windows DPAPI and stored locally |
 | **Kerberos** | Your organization uses Active Directory | Uses Windows domain credentials for authentication |
+| **1Password** | You use 1Password for credential management | Fetches passwords or SSH keys from 1Password vaults at connection time via biometric unlock |
 
 **Tip**: SSH Agent is the most secure option as it doesn't store credentials in the app. If you're using Windows OpenSSH Agent or Pageant, your keys are automatically detected.
 
@@ -261,6 +263,7 @@ Now that you're connected, explore more features:
 - **[Session Recording](./README.md#recording-a-terminal-session)**: Record and playback terminal sessions
 - **[Backup & Sync](./README.md#importexport)**: Backup your hosts or sync across devices
 - **[Serial Ports](./README.md#serial-port-quick-connect)**: Connect to COM ports for embedded devices
+- **[1Password Integration](../README.md#1password-integration)**: Use 1Password for secure credential management
 
 ## Quick Reference Card
 

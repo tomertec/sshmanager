@@ -1,6 +1,6 @@
 # SshManager
 
-A modern Windows desktop application for managing SSH and serial port connections with an embedded terminal, built with WPF and .NET 8.
+A modern Windows desktop application for managing SSH and serial port connections with an embedded terminal, built with WPF and .NET 9.
 
 ## What This Does
 
@@ -11,7 +11,7 @@ SshManager provides a graphical interface for storing and managing SSH host conf
 ### Prerequisites
 
 - Windows 10/11 (64-bit)
-- .NET 8.0 SDK or later
+- .NET 9.0 SDK or later
 - WebView2 Runtime (usually pre-installed on Windows 10/11)
 
 ### Installation
@@ -70,6 +70,9 @@ dotnet run --project src/SshManager.App/SshManager.App.csproj
 - **Kerberos/GSSAPI**: Windows domain authentication with GSSAPI support
   - Credential delegation for accessing additional resources
   - Seamless integration with Active Directory environments
+- **1Password**: Fetch credentials from 1Password vaults at connection time via `op://` secret references
+  - Uses 1Password CLI with biometric unlock (Windows Hello)
+  - Supports both passwords and SSH keys
 - **Keyboard Interactive**: Support for 2FA and other interactive prompts
 
 ### Security
@@ -78,6 +81,7 @@ dotnet run --project src/SshManager.App/SshManager.App.csproj
 - **Host Key Verification**: Verify and store SSH host fingerprints
 - **Credential Caching**: Optional secure in-memory credential caching with configurable timeout
 - **Session Lock Clearing**: Automatically clear cached credentials when Windows session locks
+- **1Password Integration**: Fetch credentials at connection time via 1Password CLI with biometric authentication
 
 ### Advanced Features
 
@@ -90,6 +94,9 @@ dotnet run --project src/SshManager.App/SshManager.App.csproj
 - **SFTP Browser**: Graphical file browser for remote systems
   - Dual-pane local/remote file view
   - Drag-and-drop file transfers
+  - Folder upload and download with recursive directory handling
+  - Move files and create new folders
+  - Remote file editing with syntax highlighting
   - File property viewer
 - **Remote File Editor**: Edit remote files with syntax highlighting (AvalonEdit)
 - **Command Snippets**: Save and reuse frequently used commands with categories
@@ -145,7 +152,8 @@ sshmanager/
 │   │   ├── SecureCredentialCache.cs   # Secure memory credential caching
 │   │   ├── SshKeyManagerService.cs    # SSH key generation and management
 │   │   ├── KeyEncryptionService.cs    # Key passphrase management
-│   │   └── PpkConverter.cs            # PPK ↔ OpenSSH key conversion
+│   │   ├── PpkConverter.cs            # PPK ↔ OpenSSH key conversion
+│   │   ├── OnePassword/                # 1Password CLI integration
 │   │
 │   ├── SshManager.Terminal/       # SSH, Serial, and terminal components
 │   │   ├── Controls/              # WebTerminalControl, SshTerminalControl
@@ -202,7 +210,7 @@ SshManager supports two connection types defined in `ConnectionType` enum:
 
 ### Authentication Types (SSH)
 
-SshManager supports four authentication methods defined in `AuthType` enum:
+SshManager supports five authentication methods defined in `AuthType` enum:
 
 | Type | Description |
 |------|-------------|
@@ -210,12 +218,14 @@ SshManager supports four authentication methods defined in `AuthType` enum:
 | **PrivateKeyFile** | Specify a custom private key file path with optional passphrase |
 | **Password** | Store encrypted password in the database (DPAPI-encrypted) |
 | **Kerberos** | Windows domain authentication using GSSAPI/Kerberos with optional credential delegation |
+| **OnePassword** | Fetch passwords or SSH keys from 1Password vaults at connection time via op:// references |
 
 **SSH Agent Fallback Chain:**
 1. Pageant (PuTTY's SSH agent) via Windows named pipes
 2. OpenSSH Agent (Windows 10+) via `\\.\pipe\openssh-ssh-agent`
-3. Load keys from `~/.ssh/` directory (id_rsa, id_ed25519, id_ecdsa, id_dsa)
-4. Keyboard-interactive authentication as final fallback
+3. 1Password SSH Agent (replaces OpenSSH Agent on same pipe when enabled)
+4. Load keys from `~/.ssh/` directory (id_rsa, id_ed25519, id_ecdsa, id_dsa)
+5. Keyboard-interactive authentication as final fallback
 
 ### Serial Port Configuration
 
@@ -413,6 +423,7 @@ Access settings via the gear icon in the toolbar. Key settings include:
 | **Keep-Alive Interval** | Global SSH keep-alive interval (0-3600 seconds) |
 | **Auto-Reconnect** | Attempt to reconnect on connection drop |
 | **Autocompletion Mode** | Terminal autocompletion behavior (Off, Manual, Automatic) |
+| **1Password** | Use 1Password for credential storage (requires desktop app with CLI integration) |
 
 ### Database Location
 
@@ -540,7 +551,7 @@ https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 
 | Component | Technology |
 |-----------|------------|
-| Framework | .NET 8, WPF |
+| Framework | .NET 9, WPF |
 | UI Library | WPF-UI (Fluent Design) |
 | MVVM | CommunityToolkit.Mvvm |
 | Database | SQLite via EF Core |
@@ -548,6 +559,7 @@ https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 | Serial | System.IO.Ports + RJCP.SerialPortStream |
 | Terminal | xterm.js via WebView2 |
 | Logging | Serilog |
+| Credentials | Windows DPAPI + 1Password CLI |
 
 ## License
 

@@ -575,6 +575,21 @@ public partial class SftpDialogStateViewModel : ObservableObject
         MoveDestinationPath = "";
     }
 
+    /// <summary>
+    /// Dismisses all open dialogs and clears pending actions.
+    /// Called when the SFTP session disconnects to prevent stale closures.
+    /// </summary>
+    public void DismissAll()
+    {
+        IsNewFolderDialogVisible = false;
+        IsOverwriteDialogVisible = false;
+        IsPermissionsDialogVisible = false;
+        IsDeleteDialogVisible = false;
+        IsMoveDialogVisible = false;
+        _pendingDeleteAction = null;
+        _permissionTargets.Clear();
+    }
+
     private static bool TryParsePermissions(string? input, out int permissions)
     {
         permissions = 0;

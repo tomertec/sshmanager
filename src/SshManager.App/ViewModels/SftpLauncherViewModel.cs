@@ -184,11 +184,11 @@ public partial class SftpLauncherViewModel : ObservableObject, IDisposable
             sftpBrowserVm.SetSettingsCallbacks(
                 () => settings.SftpMirrorNavigation,
                 value => { settings.SftpMirrorNavigation = value; _ = _settingsRepo.UpdateAsync(settings).ContinueWith(t =>
-                    System.Diagnostics.Debug.WriteLine($"Settings save error: {t.Exception}"),
+                    _logger.LogError(t.Exception, "Failed to save mirror navigation setting"),
                     TaskContinuationOptions.OnlyOnFaulted); },
                 () => settings.SftpFavorites ?? "",
                 value => { settings.SftpFavorites = value; _ = _settingsRepo.UpdateAsync(settings).ContinueWith(t =>
-                    System.Diagnostics.Debug.WriteLine($"Settings save error: {t.Exception}"),
+                    _logger.LogError(t.Exception, "Failed to save SFTP favorites setting"),
                     TaskContinuationOptions.OnlyOnFaulted); });
 
             var windowVm = new SftpBrowserWindowViewModel(sftpBrowserVm, displayName);

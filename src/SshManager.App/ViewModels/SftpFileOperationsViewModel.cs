@@ -102,41 +102,48 @@ public partial class SftpFileOperationsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Deletes the selected local item after confirmation.
+    /// Deletes the selected local items after confirmation.
+    /// Supports multi-select: deletes all selected non-parent items.
     /// </summary>
     [RelayCommand]
     public Task DeleteLocalAsync()
     {
-        var item = GetSelectedLocalItemCallback?.Invoke();
-        if (item == null || item.IsParentDirectory) return Task.CompletedTask;
+        var items = GetDeletableItems(GetSelectedLocalItemsCallback, GetSelectedLocalItemCallback);
+        if (items.Count == 0) return Task.CompletedTask;
 
-        if (ShowDeleteDialogCallback != null)
-        {
-            ShowDeleteDialogCallback(
-                item.Name,
-                false, // isRemote
-                1, // itemCount
-                item.IsDirectory,
-                () => PerformDeleteLocalAsync(item));
-        }
+        var hasDirectory = items.Any(i => i.IsDirectory);
+        var displayName = items.Count == 1 ? items[0].Name : $"{items.Count} items";
+
+        ShowDeleteDialogCallback?.Invoke(
+            displayName,
+            false, // isRemote
+            items.Count,
+            hasDirectory,
+            () => PerformDeleteLocalAsync(items));
 
         return Task.CompletedTask;
     }
 
-    private async Task PerformDeleteLocalAsync(FileItemViewModel item)
+    private async Task PerformDeleteLocalAsync(IReadOnlyList<FileItemViewModel> items)
     {
         try
         {
-            if (item.IsDirectory)
+            await Task.Run(() =>
             {
-                Directory.Delete(item.FullPath, recursive: true);
-            }
-            else
-            {
-                File.Delete(item.FullPath);
-            }
+                foreach (var item in items)
+                {
+                    if (item.IsDirectory)
+                    {
+                        Directory.Delete(item.FullPath, recursive: true);
+                    }
+                    else
+                    {
+                        File.Delete(item.FullPath);
+                    }
+                }
+            });
 
-            _logger.LogInformation("Deleted local item: {Path}", item.FullPath);
+            _logger.LogInformation("Deleted {Count} local item(s)", items.Count);
 
             if (RefreshLocalBrowserCallback != null)
             {
@@ -145,43 +152,71 @@ public partial class SftpFileOperationsViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete local item: {Path}", item.FullPath);
+            _logger.LogError(ex, "Failed to delete local items");
             SetErrorMessageAction?.Invoke($"Failed to delete: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Deletes the selected remote item after confirmation.
+    /// Deletes the selected remote items after confirmation.
+    /// Supports multi-select: deletes all selected non-parent items.
     /// </summary>
     [RelayCommand]
     public Task DeleteRemoteAsync()
     {
-        var item = GetSelectedRemoteItemCallback?.Invoke();
-        if (item == null || item.IsParentDirectory) return Task.CompletedTask;
+        var items = GetDeletableItems(GetSelectedRemoteItemsCallback, GetSelectedRemoteItemCallback);
+        if (items.Count == 0) return Task.CompletedTask;
 
-        if (ShowDeleteDialogCallback != null)
-        {
-            ShowDeleteDialogCallback(
-                item.Name,
-                true, // isRemote
-                1, // itemCount
-                item.IsDirectory,
-                () => PerformDeleteRemoteAsync(item));
-        }
+        var hasDirectory = items.Any(i => i.IsDirectory);
+        var displayName = items.Count == 1 ? items[0].Name : $"{items.Count} items";
+
+        ShowDeleteDialogCallback?.Invoke(
+            displayName,
+            true, // isRemote
+            items.Count,
+            hasDirectory,
+            () => PerformDeleteRemoteAsync(items));
 
         return Task.CompletedTask;
     }
 
-    private async Task PerformDeleteRemoteAsync(FileItemViewModel item)
+    private async Task PerformDeleteRemoteAsync(IReadOnlyList<FileItemViewModel> items)
     {
-        if (DeleteRemoteCallback != null)
+        foreach (var item in items)
         {
-            var success = await DeleteRemoteCallback(item, item.IsDirectory);
-            if (!success && GetRemoteErrorMessageCallback != null)
+            if (DeleteRemoteCallback != null)
             {
-                SetErrorMessageAction?.Invoke(GetRemoteErrorMessageCallback());
+                var success = await DeleteRemoteCallback(item, item.IsDirectory);
+                if (!success && GetRemoteErrorMessageCallback != null)
+                {
+                    SetErrorMessageAction?.Invoke(GetRemoteErrorMessageCallback());
+                    return; // Stop on first failure
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Gets deletable items from multi-select, falling back to single selection.
+    /// </summary>
+    private static List<FileItemViewModel> GetDeletableItems(
+        Func<IReadOnlyList<FileItemViewModel>>? getMultiCallback,
+        Func<FileItemViewModel?>? getSingleCallback)
+    {
+        var items = getMultiCallback?.Invoke()
+            ?.Where(i => !i.IsParentDirectory)
+            .ToList() ?? [];
+
+        if (items.Count == 0)
+        {
+            var single = getSingleCallback?.Invoke();
+            if (single != null && !single.IsParentDirectory)
+            {
+                items.Add(single);
+            }
+        }
+
+        return items;
     }
 
     /// <summary>

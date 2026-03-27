@@ -564,7 +564,7 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     public void UploadFiles(IReadOnlyList<string> localPaths)
     {
         _ = UploadFilesGuardedAsync(localPaths).ContinueWith(t =>
-            System.Diagnostics.Debug.WriteLine($"Upload error: {t.Exception}"),
+            _logger.LogError(t.Exception, "Upload operation failed"),
             TaskContinuationOptions.OnlyOnFaulted);
     }
 
@@ -594,7 +594,7 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     public void DownloadFiles(IReadOnlyList<string> remotePaths)
     {
         _ = DownloadFilesGuardedAsync(remotePaths).ContinueWith(t =>
-            System.Diagnostics.Debug.WriteLine($"Download error: {t.Exception}"),
+            _logger.LogError(t.Exception, "Download operation failed"),
             TaskContinuationOptions.OnlyOnFaulted);
     }
 
@@ -757,6 +757,9 @@ public partial class SftpBrowserViewModel : ObservableObject, IAsyncDisposable
     {
         IsConnected = false;
         ErrorMessage = "SFTP session disconnected";
+        DialogState.DismissAll();
+        _overwriteTcs?.TrySetResult(null);
+        _overwriteTcs = null;
         _logger.LogWarning("SFTP session disconnected for {Hostname}", Hostname);
         Disconnected?.Invoke(this, EventArgs.Empty);
     }

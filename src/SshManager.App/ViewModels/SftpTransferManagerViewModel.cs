@@ -459,13 +459,14 @@ public partial class SftpTransferManagerViewModel : ObservableObject, IDisposabl
 
     /// <summary>
     /// Executes an action on the UI thread if needed.
+    /// Uses InvokeAsync to prevent deadlocks when called from background threads.
     /// </summary>
     private static void RunOnUiThread(Action action)
     {
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher != null && !dispatcher.CheckAccess())
         {
-            dispatcher.Invoke(action);
+            dispatcher.InvokeAsync(action);
         }
         else
         {
