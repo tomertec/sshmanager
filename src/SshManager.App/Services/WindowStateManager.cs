@@ -1,4 +1,6 @@
 using System.Windows;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SshManager.Data.Repositories;
 
 namespace SshManager.App.Services;
@@ -9,13 +11,15 @@ namespace SshManager.App.Services;
 public class WindowStateManager : IWindowStateManager
 {
     private readonly ISettingsRepository _settingsRepo;
+    private readonly ILogger<WindowStateManager> _logger;
     private bool _minimizeToTray;
 
     public bool MinimizeToTray => _minimizeToTray;
 
-    public WindowStateManager(ISettingsRepository settingsRepo)
+    public WindowStateManager(ISettingsRepository settingsRepo, ILogger<WindowStateManager>? logger = null)
     {
         _settingsRepo = settingsRepo;
+        _logger = logger ?? NullLogger<WindowStateManager>.Instance;
     }
 
     public async Task RefreshSettingsAsync()
@@ -74,9 +78,9 @@ public class WindowStateManager : IWindowStateManager
                 await _settingsRepo.UpdateAsync(settings);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Ignore errors during shutdown - window position is not critical
+            _logger.LogWarning(ex, "Failed to save window state");
         }
     }
 
@@ -97,9 +101,9 @@ public class WindowStateManager : IWindowStateManager
                 await _settingsRepo.UpdateAsync(settings);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Ignore errors during shutdown - panel width is not critical
+            _logger.LogWarning(ex, "Failed to save left panel width");
         }
     }
 }

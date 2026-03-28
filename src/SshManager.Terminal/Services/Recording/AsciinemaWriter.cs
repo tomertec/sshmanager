@@ -51,7 +51,11 @@ public sealed class AsciinemaWriter : IAsyncDisposable
 
         // Setup periodic flush timer
         _flushTimer = new System.Timers.Timer(FlushIntervalMs);
-        _flushTimer.Elapsed += (_, _) => _ = FlushAsync();
+        _flushTimer.Elapsed += async (_, _) =>
+        {
+            try { await FlushAsync(); }
+            catch (ObjectDisposedException) { /* writer disposed between timer tick and flush */ }
+        };
         _flushTimer.AutoReset = true;
         _flushTimer.Start();
     }
@@ -115,7 +119,8 @@ public sealed class AsciinemaWriter : IAsyncDisposable
         // Trigger flush if buffer is large
         if (_buffer.Count >= FlushThreshold)
         {
-            _ = FlushAsync();
+            _ = FlushAsync().ContinueWith(static t => { /* threshold flush error handled in FlushAsync */ },
+                TaskContinuationOptions.OnlyOnFaulted);
         }
     }
 
@@ -137,7 +142,8 @@ public sealed class AsciinemaWriter : IAsyncDisposable
         // Trigger flush if buffer is large
         if (_buffer.Count >= FlushThreshold)
         {
-            _ = FlushAsync();
+            _ = FlushAsync().ContinueWith(static t => { /* threshold flush error handled in FlushAsync */ },
+                TaskContinuationOptions.OnlyOnFaulted);
         }
     }
 

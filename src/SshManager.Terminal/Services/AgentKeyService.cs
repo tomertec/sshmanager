@@ -260,7 +260,28 @@ public sealed partial class AgentKeyService : IAgentKeyService
             await process.StandardInput.FlushAsync();
             process.StandardInput.Close();
 
-            await process.WaitForExitAsync(ct);
+            // Apply a hard 30-second timeout (matching RunProcessAsync) in addition
+            // to any caller-provided cancellation, so a hung ssh-add never blocks
+            // indefinitely (e.g., if passphrase piping fails and ssh-add prompts).
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+
+            try
+            {
+                await process.WaitForExitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // Hard timeout fired — kill the process to prevent it from running indefinitely.
+                try { process.Kill(entireProcessTree: true); }
+                catch { /* ignore errors killing the process */ }
+
+                return new AgentKeyOperationResult(
+                    Success: false,
+                    AgentType: "OpenSSH Agent",
+                    Fingerprint: null,
+                    ErrorMessage: "ssh-add did not exit within 30 seconds.");
+            }
 
             var outputStr = output.ToString().Trim();
             var errorStr = error.ToString().Trim();

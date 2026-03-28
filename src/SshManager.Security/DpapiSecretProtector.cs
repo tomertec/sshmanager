@@ -30,13 +30,20 @@ public sealed class DpapiSecretProtector : ISecretProtector
         try
         {
             byte[] plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
-            byte[] protectedBytes = ProtectedData.Protect(
-                plaintextBytes,
-                Entropy,
-                DataProtectionScope.CurrentUser);
+            try
+            {
+                byte[] protectedBytes = ProtectedData.Protect(
+                    plaintextBytes,
+                    Entropy,
+                    DataProtectionScope.CurrentUser);
 
-            _logger.LogDebug("Successfully protected secret data");
-            return Convert.ToBase64String(protectedBytes);
+                _logger.LogDebug("Successfully protected secret data");
+                return Convert.ToBase64String(protectedBytes);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(plaintextBytes);
+            }
         }
         catch (CryptographicException ex)
         {
@@ -58,8 +65,15 @@ public sealed class DpapiSecretProtector : ISecretProtector
                 Entropy,
                 DataProtectionScope.CurrentUser);
 
-            _logger.LogDebug("Successfully unprotected secret data");
-            return Encoding.UTF8.GetString(plaintextBytes);
+            try
+            {
+                _logger.LogDebug("Successfully unprotected secret data");
+                return Encoding.UTF8.GetString(plaintextBytes);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(plaintextBytes);
+            }
         }
         catch (CryptographicException ex)
         {

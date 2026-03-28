@@ -88,6 +88,7 @@ public static class DbMigrator
 
         if (currentVersion < 1)
         {
+        await using var transaction1 = (await connection.BeginTransactionAsync()) as System.Data.Common.DbTransaction;
         // First, create missing tables
         await CreateMissingTablesAsync(db, connection, logger);
 
@@ -226,11 +227,13 @@ public static class DbMigrator
         }
 
         await UpdateSchemaVersionAsync(connection, 1);
+        if (transaction1 != null) await transaction1.CommitAsync();
         logger.Information("Schema version updated to 1");
         } // end if (currentVersion < 1)
 
         if (currentVersion < 2)
         {
+            await using var transaction2 = (await connection.BeginTransactionAsync()) as System.Data.Common.DbTransaction;
             // 1Password integration columns on Hosts table
             var hostsColumns2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             await using (var cmd = connection.CreateCommand())
@@ -258,6 +261,7 @@ public static class DbMigrator
             }
 
             await UpdateSchemaVersionAsync(connection, 2);
+            if (transaction2 != null) await transaction2.CommitAsync();
             logger.Information("Schema version updated to 2");
         }
     }

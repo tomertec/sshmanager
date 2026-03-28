@@ -29,7 +29,6 @@ project.fragment.lock.json
 artifacts/
 
 # Build
-publish/
 nul
 
 # Test results
@@ -82,4 +81,6 @@ CLAUDE.md
 AGENTS.md
 scripts/
 .claude/
-tests/
+
+# Versioned publish directories (e.g., publish-v1.0.4/)
+publish*/

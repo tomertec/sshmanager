@@ -167,9 +167,13 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <ScrollViewer Grid.Column="0"
-                                  HorizontalScrollBarVisibility="Auto"
-                                  VerticalScrollBarVisibility="Disabled">
+                    <ScrollViewer x:Name="BreadcrumbScrollViewer"
+                                  Grid.Column="0"
+                                  HorizontalScrollBarVisibility="Hidden"
+                                  VerticalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="BreadcrumbScrollViewer_PreviewMouseWheel"
+                                  Loaded="BreadcrumbScrollViewer_Loaded"
+                                  Unloaded="BreadcrumbScrollViewer_Unloaded">
                         <ItemsControl ItemsSource="{Binding Breadcrumbs}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>

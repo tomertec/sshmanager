@@ -443,7 +443,8 @@ public sealed class WebTerminalBridge : IDisposable
 
     private void SendWriteMessage(string data)
     {
-        if (Volatile.Read(ref _disposed) != 0 || _webView == null)
+        var webView = _webView; // capture once to avoid race with Dispose nulling the field
+        if (Volatile.Read(ref _disposed) != 0 || webView == null)
         {
             return;
         }
@@ -457,7 +458,7 @@ public sealed class WebTerminalBridge : IDisposable
             };
 
             var json = JsonSerializer.Serialize(message);
-            _webView.CoreWebView2.PostWebMessageAsJson(json);
+            webView.CoreWebView2.PostWebMessageAsJson(json);
         }
         catch (Exception ex)
         {

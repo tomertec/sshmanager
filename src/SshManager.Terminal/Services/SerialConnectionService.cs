@@ -215,31 +215,38 @@ public sealed class SerialConnectionService : ISerialConnectionService
             WriteBufferSize = info.WriteBufferSize
         };
 
-        await Task.Run(() => port.Open(), ct);
-
-        // Set DTR/RTS after opening
-        try { port.DtrEnable = info.DtrEnable; }
-        catch (Exception ex) { _logger.LogWarning(ex, "Failed to set DTR on {PortName}", info.PortName); }
-
         try
         {
-            var handshake = (System.IO.Ports.Handshake)(int)info.Handshake;
-            if (handshake != System.IO.Ports.Handshake.RequestToSend &&
-                handshake != System.IO.Ports.Handshake.RequestToSendXOnXOff)
-            {
-                port.RtsEnable = info.RtsEnable;
-            }
-        }
-        catch (Exception ex) { _logger.LogWarning(ex, "Failed to set RTS on {PortName}", info.PortName); }
+            await Task.Run(() => port.Open(), ct);
 
-        if (!port.IsOpen)
+            // Set DTR/RTS after opening
+            try { port.DtrEnable = info.DtrEnable; }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to set DTR on {PortName}", info.PortName); }
+
+            try
+            {
+                var handshake = (System.IO.Ports.Handshake)(int)info.Handshake;
+                if (handshake != System.IO.Ports.Handshake.RequestToSend &&
+                    handshake != System.IO.Ports.Handshake.RequestToSendXOnXOff)
+                {
+                    port.RtsEnable = info.RtsEnable;
+                }
+            }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to set RTS on {PortName}", info.PortName); }
+
+            if (!port.IsOpen)
+            {
+                throw new InvalidOperationException($"Failed to open serial port {info.PortName}");
+            }
+
+            _logger.LogInformation("Serial port {PortName} opened with System.IO.Ports at {BaudRate} baud", info.PortName, info.BaudRate);
+            return new SystemSerialConnection(port, _logger);
+        }
+        catch
         {
             port.Dispose();
-            throw new InvalidOperationException($"Failed to open serial port {info.PortName}");
+            throw;
         }
-
-        _logger.LogInformation("Serial port {PortName} opened with System.IO.Ports at {BaudRate} baud", info.PortName, info.BaudRate);
-        return new SystemSerialConnection(port, _logger);
     }
 
     /// <summary>

@@ -498,7 +498,10 @@ public partial class MainWindow : FluentWindow
 
         if (dialog.ShowDialog() == true && dialog.Result != null)
         {
-            _ = HandleSessionPickerResultAsync(dialog.Result, orientation, paneToSplit);
+            _ = HandleSessionPickerResultAsync(dialog.Result, orientation, paneToSplit)
+                .ContinueWith(
+                    t => _logger.LogError(t.Exception, "Unhandled error in {Method}", nameof(HandleSessionPickerResultAsync)),
+                    TaskContinuationOptions.OnlyOnFaulted);
         }
     }
 
@@ -746,7 +749,14 @@ public partial class MainWindow : FluentWindow
         var dialog = new ConnectionHistoryDialog(viewModel) { Owner = this };
         dialog.OnConnectRequested += async (host) =>
         {
-            await _viewModel.Session.ConnectCommand.ExecuteAsync(host);
+            try
+            {
+                await _viewModel.Session.ConnectCommand.ExecuteAsync(host);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error connecting from history dialog");
+            }
         };
         dialog.ShowDialog();
     }

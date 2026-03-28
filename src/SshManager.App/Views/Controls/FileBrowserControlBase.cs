@@ -1,6 +1,8 @@
+using System.Collections.Specialized;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -34,6 +36,7 @@ public abstract class FileBrowserControlBase : UserControl
 
     private Point _dragStartPoint;
     private bool _isDragging;
+    private bool _canDrag;
     private FileDragAdorner? _dragAdorner;
     private AdornerLayer? _adornerLayer;
     private UIElement? _adornedElement;
@@ -174,12 +177,39 @@ public abstract class FileBrowserControlBase : UserControl
     }
 
     /// <summary>
-    /// Records the drag start point.
+    /// Records the drag start point. Only allows drag when clicking on an already-selected
+    /// item without Ctrl/Shift modifiers, so multi-select (Ctrl+Click, Shift+Click) works.
     /// </summary>
     protected void FileListView_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _dragStartPoint = e.GetPosition(null);
         _isDragging = false;
+
+        // Don't start drag when modifier keys are held (user is multi-selecting)
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) ||
+            Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            _canDrag = false;
+            return;
+        }
+
+        // Only allow drag when clicking on an already-selected item
+        _canDrag = e.OriginalSource is DependencyObject source
+                   && FindAncestor<ListViewItem>(source) is { IsSelected: true };
+    }
+
+    /// <summary>
+    /// Walks the visual tree to find an ancestor of the specified type.
+    /// </summary>
+    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
+    {
+        while (current != null)
+        {
+            if (current is T match)
+                return match;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
     }
 
     /// <summary>
@@ -187,7 +217,7 @@ public abstract class FileBrowserControlBase : UserControl
     /// </summary>
     protected void FileListView_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (e.LeftButton != MouseButtonState.Pressed || _isDragging)
+        if (e.LeftButton != MouseButtonState.Pressed || _isDragging || !_canDrag)
             return;
 
         var position = e.GetPosition(null);
@@ -384,6 +414,69 @@ public abstract class FileBrowserControlBase : UserControl
     {
         FileListView.BorderBrush = null;
         FileListView.BorderThickness = new Thickness(0);
+    }
+
+    private ScrollViewer? _breadcrumbScrollViewer;
+    private INotifyCollectionChanged? _breadcrumbCollection;
+
+    /// <summary>
+    /// Initializes the breadcrumb ScrollViewer: subscribes to Breadcrumbs collection changes
+    /// to auto-scroll to the end (showing the current directory).
+    /// </summary>
+    protected void BreadcrumbScrollViewer_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ScrollViewer sv) return;
+        _breadcrumbScrollViewer = sv;
+
+        // Unsubscribe from previous collection if re-loaded
+        if (_breadcrumbCollection != null)
+        {
+            _breadcrumbCollection.CollectionChanged -= Breadcrumbs_CollectionChanged;
+            _breadcrumbCollection = null;
+        }
+
+        // Auto-scroll to end on initial load
+        sv.ScrollToRightEnd();
+
+        // Watch for breadcrumb changes to auto-scroll when navigating
+        if (GetViewModel()?.Breadcrumbs is { } breadcrumbs)
+        {
+            _breadcrumbCollection = breadcrumbs;
+            breadcrumbs.CollectionChanged += Breadcrumbs_CollectionChanged;
+        }
+    }
+
+    /// <summary>
+    /// Cleans up the breadcrumb collection subscription when the ScrollViewer is unloaded
+    /// to prevent memory leaks from the ViewModel holding a reference to this control.
+    /// </summary>
+    protected void BreadcrumbScrollViewer_Unloaded(object sender, RoutedEventArgs e)
+    {
+        if (_breadcrumbCollection != null)
+        {
+            _breadcrumbCollection.CollectionChanged -= Breadcrumbs_CollectionChanged;
+            _breadcrumbCollection = null;
+        }
+        _breadcrumbScrollViewer = null;
+    }
+
+    private void Breadcrumbs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        // Defer scroll to after layout updates with the new breadcrumb items
+        _breadcrumbScrollViewer?.Dispatcher.InvokeAsync(
+            () => _breadcrumbScrollViewer?.ScrollToRightEnd(),
+            System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Converts vertical mouse wheel to horizontal scroll on the breadcrumb bar.
+    /// </summary>
+    protected void BreadcrumbScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer sv) return;
+
+        sv.ScrollToHorizontalOffset(sv.HorizontalOffset - e.Delta);
+        e.Handled = true;
     }
 
     /// <summary>

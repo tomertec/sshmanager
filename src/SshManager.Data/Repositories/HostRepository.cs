@@ -40,6 +40,8 @@ public sealed class HostRepository : IHostRepository
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Hosts
             .AsNoTracking()
+            .Include(h => h.Group)
+            .Include(h => h.Tags)
             .Where(h => h.GroupId == groupId)
             .OrderBy(h => h.SortOrder)
             .ThenBy(h => h.DisplayName)
@@ -130,6 +132,10 @@ public sealed class HostRepository : IHostRepository
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Updates scalar properties of a host entry. Navigation properties (Tags, Group) are
+    /// NOT updated — use <see cref="SetHostTagsAsync"/> to modify tag relationships.
+    /// </summary>
     public async Task UpdateAsync(HostEntry host, CancellationToken ct = default)
     {
         var validationContext = new ValidationContext(host);

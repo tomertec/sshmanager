@@ -106,7 +106,7 @@ public sealed partial class OnePasswordService : IOnePasswordService
 
         if (exitCode != 0)
         {
-            _logger.LogWarning("Failed to read secret from 1Password: {Error}", stderr);
+            _logger.LogWarning("Failed to read secret from 1Password: {Error}", RedactOpReferences(stderr ?? ""));
             return null;
         }
 
@@ -139,7 +139,7 @@ public sealed partial class OnePasswordService : IOnePasswordService
 
         if (exitCode != 0)
         {
-            _logger.LogWarning("Failed to read SSH key from 1Password: {Error}", stderr);
+            _logger.LogWarning("Failed to read SSH key from 1Password: {Error}", RedactOpReferences(stderr ?? ""));
             return null;
         }
 
@@ -154,7 +154,7 @@ public sealed partial class OnePasswordService : IOnePasswordService
 
         if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
         {
-            _logger.LogWarning("Failed to list 1Password vaults: {Error}", stderr);
+            _logger.LogWarning("Failed to list 1Password vaults: {Error}", RedactOpReferences(stderr ?? ""));
             return Array.Empty<OnePasswordVault>();
         }
 
@@ -196,7 +196,7 @@ public sealed partial class OnePasswordService : IOnePasswordService
 
         if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
         {
-            _logger.LogWarning("Failed to list 1Password items: {Error}", stderr);
+            _logger.LogWarning("Failed to list 1Password items: {Error}", RedactOpReferences(stderr ?? ""));
             return Array.Empty<OnePasswordItem>();
         }
 
@@ -256,7 +256,7 @@ public sealed partial class OnePasswordService : IOnePasswordService
 
         if (exitCode != 0 || string.IsNullOrWhiteSpace(stdout))
         {
-            _logger.LogWarning("Failed to get 1Password item {ItemId}: {Error}", itemId, stderr);
+            _logger.LogWarning("Failed to get 1Password item {ItemId}: {Error}", itemId, RedactOpReferences(stderr ?? ""));
             return null;
         }
 
@@ -305,6 +305,7 @@ public sealed partial class OnePasswordService : IOnePasswordService
         var argList = arguments as IReadOnlyList<string> ?? arguments.ToList();
         _logger.LogDebug("Running: op {Arguments}", RedactOpReferences(string.Join(" ", argList)));
 
+        using var process = new Process();
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -333,7 +334,7 @@ public sealed partial class OnePasswordService : IOnePasswordService
                 psi.ArgumentList.Add(arg);
             }
 
-            using var process = new Process { StartInfo = psi };
+            process.StartInfo = psi;
             process.Start();
 
             // Read output and error concurrently.
@@ -351,6 +352,11 @@ public sealed partial class OnePasswordService : IOnePasswordService
         }
         catch (OperationCanceledException)
         {
+            // Kill the op process to prevent orphaned processes accumulating.
+            // Process.Dispose() does not terminate the child process.
+            try { process.Kill(entireProcessTree: true); }
+            catch { /* best-effort cleanup */ }
+
             _logger.LogWarning("1Password CLI command timed out after {Timeout}s: op {Arguments}",
                 timeout.TotalSeconds, RedactOpReferences(string.Join(" ", argList)));
             return (-1, "", "Operation timed out");

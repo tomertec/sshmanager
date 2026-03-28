@@ -281,7 +281,7 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
         TerminalConnectionInfo connectionInfo,
         KeyboardInteractiveCallback? kbInteractiveCallback)
     {
-        _logger.LogDebug("Loading private key from {KeyPath}", connectionInfo.PrivateKeyPath);
+        _logger.LogDebug("Loading private key from {KeyFile}", Path.GetFileName(connectionInfo.PrivateKeyPath));
 
         try
         {
@@ -321,7 +321,7 @@ public sealed class SshAuthenticationFactory : ISshAuthenticationFactory
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to load private key from {KeyPath}", connectionInfo.PrivateKeyPath);
+            _logger.LogError(ex, "Failed to load private key from {KeyFile}", Path.GetFileName(connectionInfo.PrivateKeyPath));
             throw;
         }
     }

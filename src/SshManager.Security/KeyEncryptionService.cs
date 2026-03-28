@@ -1,5 +1,6 @@
 using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -364,8 +365,8 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
             }
             catch
             {
-                // If we can't determine, assume not encrypted (safer default)
-                return false;
+                // If we can't even create the MemoryStream, assume encrypted (consistent with inner fallback)
+                return true;
             }
         }
 
@@ -627,7 +628,36 @@ public sealed class KeyEncryptionService : IKeyEncryptionService
         var tempPath = path + ".tmp";
         try
         {
-            File.WriteAllText(tempPath, content);
+            // Create the temp file with restrictive ACLs (current-user-only) so
+            // unencrypted key material is never exposed with inherited permissions.
+            var currentUser = WindowsIdentity.GetCurrent().User;
+            if (currentUser != null)
+            {
+                var security = new FileSecurity();
+                security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                security.AddAccessRule(new FileSystemAccessRule(
+                    currentUser,
+                    FileSystemRights.FullControl,
+                    AccessControlType.Allow));
+
+                using var fs = FileSystemAclExtensions.Create(
+                    new FileInfo(tempPath),
+                    FileMode.Create,
+                    FileSystemRights.Write,
+                    FileShare.None,
+                    bufferSize: 4096,
+                    FileOptions.None,
+                    security);
+
+                using var writer = new StreamWriter(fs, Encoding.UTF8, leaveOpen: false);
+                writer.Write(content);
+            }
+            else
+            {
+                // Fallback: if we can't determine the user SID, write normally
+                File.WriteAllText(tempPath, content);
+            }
+
             File.Move(tempPath, path, overwrite: true);
         }
         catch

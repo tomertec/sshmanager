@@ -22,7 +22,7 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
 
     public ObservableCollection<TerminalSession> Sessions { get; } = [];
 
-    private TerminalSession? _currentSession;
+    private volatile TerminalSession? _currentSession;
     public TerminalSession? CurrentSession
     {
         get => _currentSession;
@@ -95,9 +95,24 @@ public sealed class TerminalSessionManager : ITerminalSessionManager
         var session = new TerminalSession(sessionLogger) { Title = title };
         session.SessionClosed += OnSessionClosed;
 
-        lock (_sessionsLock)
+        // ObservableCollection must be modified on the UI thread (same as OnSessionClosed).
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
         {
-            Sessions.Add(session);
+            dispatcher.Invoke(() =>
+            {
+                lock (_sessionsLock)
+                {
+                    Sessions.Add(session);
+                }
+            });
+        }
+        else
+        {
+            lock (_sessionsLock)
+            {
+                Sessions.Add(session);
+            }
         }
 
         CurrentSession = session;
