@@ -235,29 +235,42 @@ public sealed class SshConnectionService : ISshConnectionService
             throw WrapSshException(ex, connectionInfo.Hostname, connectionInfo.Port);
         }
 
-        // Create shell stream with terminal settings
-        var shellStream = client.CreateShellStream(
-            terminalName: DefaultTerminalName,
-            columns: columns,
-            rows: rows,
-            width: 0,
-            height: 0,
-            bufferSize: DefaultBufferSize);
-
-        _logger.LogDebug("Shell stream created with {Columns}x{Rows} terminal", columns, rows);
-
-        // Apply environment variables after shell is ready (only for POSIX-compatible shells)
-        ApplyEnvironmentVariables(shellStream, connectionInfo.EnvironmentVariables, connectionInfo.ShellType);
-
-        var connection = new SshConnection(client, shellStream, _logger, _resizeService);
-
-        // Transfer ownership of disposable resources to the connection
-        foreach (var disposable in authResult.Disposables)
+        // Create shell stream with terminal settings.
+        // Wrap in try-catch so that if anything fails after Connect() succeeds,
+        // we still dispose the client and auth resources to prevent leaks.
+        try
         {
-            connection.TrackDisposable(disposable);
-        }
+            var shellStream = client.CreateShellStream(
+                terminalName: DefaultTerminalName,
+                columns: columns,
+                rows: rows,
+                width: 0,
+                height: 0,
+                bufferSize: DefaultBufferSize);
 
-        return connection;
+            _logger.LogDebug("Shell stream created with {Columns}x{Rows} terminal", columns, rows);
+
+            // Apply environment variables after shell is ready (only for POSIX-compatible shells)
+            ApplyEnvironmentVariables(shellStream, connectionInfo.EnvironmentVariables, connectionInfo.ShellType);
+
+            var connection = new SshConnection(client, shellStream, _logger, _resizeService);
+
+            // Transfer ownership of disposable resources to the connection
+            foreach (var disposable in authResult.Disposables)
+            {
+                connection.TrackDisposable(disposable);
+            }
+
+            return connection;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create shell stream after successful connection to {Host}:{Port}",
+                connectionInfo.Hostname, connectionInfo.Port);
+            client.Dispose();
+            DisposeAuthResources(authResult);
+            throw;
+        }
     }
 
     /// <inheritdoc />

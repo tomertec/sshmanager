@@ -73,7 +73,9 @@ public sealed class ConnectionHistoryRepository : IConnectionHistoryRepository
     public async Task UpdateAsync(ConnectionHistory entry, CancellationToken ct = default)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        db.ConnectionHistory.Update(entry);
+        var existing = await db.ConnectionHistory.FindAsync([entry.Id], ct);
+        if (existing is null) return;
+        db.Entry(existing).CurrentValues.SetValues(entry);
         await db.SaveChangesAsync(ct);
     }
 

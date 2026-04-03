@@ -110,9 +110,18 @@ public sealed class HostCacheService : IHostCacheService, IDisposable
     {
         if (_disposed) return;
 
-        // Simple invalidation without blocking - just mark cache as invalid
-        // This is safe because cache reads check the expiry time under lock
-        _cacheExpiry = DateTimeOffset.MinValue;
+        // DateTimeOffset is 16 bytes (not atomic on x64), so take the lock briefly
+        // to prevent torn reads from concurrent GetAllHostsAsync/GetGroupCountsAsync calls.
+        _lock.Wait();
+        try
+        {
+            _cacheExpiry = DateTimeOffset.MinValue;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+
         _logger.LogDebug("Host cache invalidated");
     }
 

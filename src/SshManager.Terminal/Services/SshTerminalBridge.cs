@@ -22,6 +22,7 @@ public sealed class SshTerminalBridge : IAsyncDisposable, IDisposable
     private Task? _readTask;
     private Task? _healthCheckTask;
     private int _disposed = 0;
+    private int _readingStarted = 0;
 
     /// <summary>
     /// Default interval for connection health checks (10 seconds).
@@ -90,7 +91,7 @@ public sealed class SshTerminalBridge : IAsyncDisposable, IDisposable
     /// </summary>
     public void StartReading()
     {
-        if (_readTask != null)
+        if (Interlocked.CompareExchange(ref _readingStarted, 1, 0) != 0)
         {
             _logger.LogWarning("StartReading called but read task already running");
             return;

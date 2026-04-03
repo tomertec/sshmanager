@@ -14,7 +14,7 @@ public sealed class TagConfiguration : IEntityTypeConfiguration<Tag>
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Name).HasMaxLength(50).IsRequired();
         builder.Property(x => x.Color).HasMaxLength(7);
-        builder.HasIndex(x => x.Name);
+        builder.HasIndex(x => x.Name).IsUnique();
         builder.HasMany(x => x.Hosts)
             .WithMany(h => h.Tags);
     }

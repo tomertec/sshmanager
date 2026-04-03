@@ -127,7 +127,8 @@ public sealed class TerminalConnectionInfo
         HostEntry host,
         string? decryptedPassword = null,
         TimeSpan? timeout = null,
-        TimeSpan? keepAliveInterval = null)
+        TimeSpan? keepAliveInterval = null,
+        string? resolvedKeyPath = null)
     {
         // Extract enabled environment variables, sorted by SortOrder
         // Use validated factory method to ensure proper sanitization
@@ -149,7 +150,7 @@ public sealed class TerminalConnectionInfo
             Username = host.Username,
             AuthType = host.AuthType,
             Password = decryptedPassword,
-            PrivateKeyPath = host.PrivateKeyPath,
+            PrivateKeyPath = resolvedKeyPath ?? host.PrivateKeyPath,
             KerberosServicePrincipal = host.KerberosServicePrincipal,
             KerberosDelegateCredentials = host.KerberosDelegateCredentials,
             OnePasswordReference = host.OnePasswordReference,

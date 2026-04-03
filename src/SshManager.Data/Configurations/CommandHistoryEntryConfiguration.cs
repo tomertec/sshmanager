@@ -13,6 +13,9 @@ public sealed class CommandHistoryEntryConfiguration : IEntityTypeConfiguration<
     {
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Command).HasMaxLength(4000).IsRequired();
+        builder.HasOne<HostEntry>().WithMany()
+            .HasForeignKey(x => x.HostId)
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(x => x.HostId);
         builder.HasIndex(x => new { x.HostId, x.Command }).IsUnique();
         builder.HasIndex(x => x.ExecutedAt);

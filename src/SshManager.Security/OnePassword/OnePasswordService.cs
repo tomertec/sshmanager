@@ -132,7 +132,7 @@ public sealed partial class OnePasswordService : IOnePasswordService
         var reference = secretReference;
         if (!reference.Contains("ssh-format=", StringComparison.OrdinalIgnoreCase))
         {
-            reference += reference.Contains('?') ? "&ssh-format=openssh" : "?ssh-format=openssh";
+            reference += "?ssh-format=openssh";
         }
 
         var (exitCode, stdout, stderr) = await RunOpAsync(["read", reference], DataTimeout, ct);

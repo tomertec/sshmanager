@@ -89,6 +89,7 @@ public static class DbMigrator
         if (currentVersion < 1)
         {
         await using var transaction1 = (await connection.BeginTransactionAsync()) as System.Data.Common.DbTransaction;
+        if (transaction1 != null) await db.Database.UseTransactionAsync(transaction1);
         // First, create missing tables
         await CreateMissingTablesAsync(db, connection, logger);
 
@@ -234,6 +235,7 @@ public static class DbMigrator
         if (currentVersion < 2)
         {
             await using var transaction2 = (await connection.BeginTransactionAsync()) as System.Data.Common.DbTransaction;
+            if (transaction2 != null) await db.Database.UseTransactionAsync(transaction2);
             // 1Password integration columns on Hosts table
             var hostsColumns2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             await using (var cmd = connection.CreateCommand())

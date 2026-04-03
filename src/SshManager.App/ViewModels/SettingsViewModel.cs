@@ -557,7 +557,9 @@ public partial class SettingsViewModel : ObservableObject
 
         if (System.IO.Directory.Exists(path))
         {
-            System.Diagnostics.Process.Start("explorer.exe", path);
+            var psi = new System.Diagnostics.ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+            psi.ArgumentList.Add(path);
+            System.Diagnostics.Process.Start(psi);
         }
         else
         {
@@ -686,7 +688,9 @@ public partial class SettingsViewModel : ObservableObject
 
         if (System.IO.Directory.Exists(path))
         {
-            System.Diagnostics.Process.Start("explorer.exe", path);
+            var psi = new System.Diagnostics.ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+            psi.ArgumentList.Add(path);
+            System.Diagnostics.Process.Start(psi);
         }
         else
         {

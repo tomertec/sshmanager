@@ -296,7 +296,9 @@ public partial class SshKeyManagerViewModel : ObservableObject
             var sshDir = _keyManager.GetDefaultSshDirectory();
             if (Directory.Exists(sshDir))
             {
-                System.Diagnostics.Process.Start("explorer.exe", sshDir);
+                var psi = new System.Diagnostics.ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+                psi.ArgumentList.Add(sshDir);
+                System.Diagnostics.Process.Start(psi);
             }
             else
             {

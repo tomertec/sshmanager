@@ -372,7 +372,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
     /// <summary>
     /// Creates connection info from a host entry and optional password.
     /// </summary>
-    public async Task<TerminalConnectionInfo> CreateConnectionInfoAsync(HostEntry host, string? password)
+    public async Task<TerminalConnectionInfo> CreateConnectionInfoAsync(HostEntry host, string? password, string? resolvedKeyPath = null)
     {
         var settings = await _settingsRepo.GetAsync();
 
@@ -387,7 +387,7 @@ public partial class SessionViewModel : ObservableObject, IDisposable
             keepAlive = TimeSpan.FromSeconds(settings.KeepAliveIntervalSeconds);
         }
 
-        return TerminalConnectionInfo.FromHostEntry(host, password, timeout, keepAlive);
+        return TerminalConnectionInfo.FromHostEntry(host, password, timeout, keepAlive, resolvedKeyPath);
     }
 
     /// <summary>
@@ -597,7 +597,6 @@ public partial class SessionViewModel : ObservableObject, IDisposable
                     // FileSystemAclExtensions.Create so the ACL is applied atomically —
                     // inherited (world-readable) permissions are never visible on the file.
                     var tempKeyPath = await CreateSecureTempKeyFileAsync(keyContent);
-                    host.PrivateKeyPath = tempKeyPath;
 
                     _logger.LogInformation("SSH key fetched from 1Password for host {DisplayName}", host.DisplayName);
 

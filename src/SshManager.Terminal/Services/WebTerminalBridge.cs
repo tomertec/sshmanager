@@ -77,6 +77,13 @@ public sealed class WebTerminalBridge : IDisposable
     // We buffer it here and flush when the "ready" message arrives.
     private readonly object _bufferLock = new();
     private readonly List<string> _pendingData = new();
+    private long _pendingDataBytes;
+
+    /// <summary>
+    /// Maximum total size of pre-ready buffered data (10 MB).
+    /// If exceeded, oldest entries are dropped to make room.
+    /// </summary>
+    private const long MaxPendingDataBytes = 10 * 1024 * 1024;
 
     private WebView2? _webView;
     private int _disposed;
@@ -284,9 +291,20 @@ public sealed class WebTerminalBridge : IDisposable
         {
             if (!_isReady)
             {
+                var dataSize = (long)data.Length * sizeof(char);
+
+                // Enforce max buffer size by dropping oldest entries
+                while (_pendingDataBytes + dataSize > MaxPendingDataBytes && _pendingData.Count > 0)
+                {
+                    var removed = _pendingData[0];
+                    _pendingDataBytes -= (long)removed.Length * sizeof(char);
+                    _pendingData.RemoveAt(0);
+                }
+
                 _pendingData.Add(data);
-                _logger.LogDebug("Buffered {Length} chars while waiting for terminal ready (total pending: {Count})",
-                    data.Length, _pendingData.Count);
+                _pendingDataBytes += dataSize;
+                _logger.LogDebug("Buffered {Length} chars while waiting for terminal ready (total pending: {Count}, ~{Bytes} bytes)",
+                    data.Length, _pendingData.Count, _pendingDataBytes);
                 return;
             }
         }
@@ -478,6 +496,7 @@ public sealed class WebTerminalBridge : IDisposable
 
             dataToFlush = new List<string>(_pendingData);
             _pendingData.Clear();
+            _pendingDataBytes = 0;
         }
 
         _logger.LogDebug("Flushing {Count} pending data chunks to terminal", dataToFlush.Count);
@@ -878,6 +897,7 @@ public sealed class WebTerminalBridge : IDisposable
         lock (_bufferLock)
         {
             _pendingData.Clear();
+            _pendingDataBytes = 0;
         }
 
         // Clear output preview buffer

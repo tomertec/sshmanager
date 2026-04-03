@@ -16,6 +16,7 @@ public partial class TerminalPaneContainer : UserControl
     private readonly ILogger<TerminalPaneContainer> _logger;
     private IPaneLayoutManager? _layoutManager;
     private IServiceProvider? _serviceProvider;
+    private static readonly BooleanToHiddenVisibilityConverter HiddenVisibilityConverter = new();
     private readonly Dictionary<Guid, TerminalPane> _paneControls = new();
 
     /// <summary>
@@ -177,7 +178,7 @@ public partial class TerminalPaneContainer : UserControl
                     pane.SetBinding(UIElement.VisibilityProperty, new System.Windows.Data.Binding("IsVisible")
                     {
                         Source = leaf,
-                        Converter = new BooleanToHiddenVisibilityConverter()
+                        Converter = HiddenVisibilityConverter
                     });
                     _tabbedPanesGrid.Children.Add(pane);
                 }

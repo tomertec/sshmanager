@@ -80,20 +80,19 @@ public sealed class SerialConnectionService : ISerialConnectionService
         try
         {
             port = new SerialPortStream(info.PortName);
+
+            // Configure settings before opening, matching the System.IO.Ports primary path
+            TrySetProperty(() => port.BaudRate = info.BaudRate, "BaudRate", info.PortName);
+            TrySetProperty(() => port.DataBits = info.DataBits, "DataBits", info.PortName);
+            TrySetProperty(() => port.Parity = info.Parity, "Parity", info.PortName);
+            TrySetProperty(() => port.StopBits = info.StopBits, "StopBits", info.PortName);
+            TrySetProperty(() => port.Handshake = info.Handshake, "Handshake", info.PortName);
+            TrySetProperty(() => port.ReadTimeout = info.ReadTimeout, "ReadTimeout", info.PortName);
+            TrySetProperty(() => port.WriteTimeout = info.WriteTimeout, "WriteTimeout", info.PortName);
+
             await Task.Run(() => port.Open(), ct);
 
-            // Configure settings after opening
-            await Task.Run(() =>
-            {
-                TrySetProperty(() => port.BaudRate = info.BaudRate, "BaudRate", info.PortName);
-                TrySetProperty(() => port.DataBits = info.DataBits, "DataBits", info.PortName);
-                TrySetProperty(() => port.Parity = info.Parity, "Parity", info.PortName);
-                TrySetProperty(() => port.StopBits = info.StopBits, "StopBits", info.PortName);
-                TrySetProperty(() => port.Handshake = info.Handshake, "Handshake", info.PortName);
-                TrySetProperty(() => port.ReadTimeout = info.ReadTimeout, "ReadTimeout", info.PortName);
-                TrySetProperty(() => port.WriteTimeout = info.WriteTimeout, "WriteTimeout", info.PortName);
-            }, ct);
-
+            // Set DTR/RTS after opening (these control hardware signals)
             TrySetProperty(() => port.DtrEnable = info.DtrEnable, "DtrEnable", info.PortName);
             if (info.Handshake != Handshake.Rts && info.Handshake != Handshake.RtsXOn)
             {

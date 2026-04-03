@@ -296,7 +296,8 @@ public sealed class SessionConnectionService : ISessionConnectionService
 
         var connectionInfo = await CreateConnectionInfoAsync(
             host,
-            session.DecryptedPassword?.ToUnsecureString());
+            session.DecryptedPassword?.ToUnsecureString(),
+            session.TempKeyPath);
 
         await paneTarget.ConnectAsync(
             _sshService,
@@ -381,7 +382,8 @@ public sealed class SessionConnectionService : ISessionConnectionService
     /// </summary>
     private async Task<TerminalConnectionInfo> CreateConnectionInfoAsync(
         HostEntry host,
-        string? password)
+        string? password,
+        string? resolvedKeyPath = null)
     {
         var settings = await _settingsRepository.GetAsync();
 
@@ -423,7 +425,7 @@ public sealed class SessionConnectionService : ISessionConnectionService
             }
         }
 
-        return TerminalConnectionInfo.FromHostEntry(host, password, timeout, keepAlive);
+        return TerminalConnectionInfo.FromHostEntry(host, password, timeout, keepAlive, resolvedKeyPath);
     }
 
     /// <summary>

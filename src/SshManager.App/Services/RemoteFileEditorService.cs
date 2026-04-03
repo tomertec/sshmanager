@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using SshManager.Terminal.Services;
@@ -67,8 +69,35 @@ public sealed class RemoteFileEditorService : IRemoteFileEditorService, IDisposa
         var tempFileName = $"{sessionId:N}_{safeFileName}";
         var localTempPath = Path.Combine(_tempDirectory, tempFileName);
 
-        // Write content to temp file
-        await File.WriteAllBytesAsync(localTempPath, content, ct);
+        // Write content to temp file with restrictive ACLs (remote files may contain
+        // sensitive server configs). Uses FileSystemAclExtensions.Create so the ACL is
+        // applied atomically — inherited (world-readable) permissions are never visible.
+        var currentUser = WindowsIdentity.GetCurrent().User;
+        if (currentUser != null)
+        {
+            var security = new FileSecurity();
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            security.AddAccessRule(new FileSystemAccessRule(
+                currentUser,
+                FileSystemRights.FullControl,
+                AccessControlType.Allow));
+
+            await using var fileStream = FileSystemAclExtensions.Create(
+                new FileInfo(localTempPath),
+                FileMode.CreateNew,
+                FileSystemRights.Write,
+                FileShare.None,
+                bufferSize: 4096,
+                FileOptions.None,
+                security);
+            await fileStream.WriteAsync(content, ct);
+        }
+        else
+        {
+            // Fallback: write without restrictive ACLs if user SID is unavailable
+            _logger.LogWarning("Cannot determine current user SID; writing temp file without restrictive ACLs");
+            await File.WriteAllBytesAsync(localTempPath, content, ct);
+        }
         _logger.LogDebug("Created temp file: {TempPath}", localTempPath);
 
         // Create the session

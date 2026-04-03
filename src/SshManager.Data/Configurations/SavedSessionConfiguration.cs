@@ -13,6 +13,9 @@ public sealed class SavedSessionConfiguration : IEntityTypeConfiguration<SavedSe
     {
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Title).HasMaxLength(200).IsRequired();
+        builder.HasOne<HostEntry>().WithMany()
+            .HasForeignKey(x => x.HostEntryId)
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(x => x.HostEntryId);
         builder.HasIndex(x => x.WasGracefulShutdown);
     }

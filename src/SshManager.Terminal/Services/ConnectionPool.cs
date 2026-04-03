@@ -106,29 +106,13 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
 
         var entry = _pools.GetOrAdd(key, _ => new PoolEntry(_maxPerHost));
 
-        // Try to get an idle connection
+        // Try to get an idle connection (TryAcquire now iterates all idle entries,
+        // disposing stale ones along the way, so we don't need extra stale handling here)
         if (entry.TryAcquire(out var existingClient))
         {
-            if (existingClient.IsConnected)
-            {
-                _logger.LogDebug("Reusing pooled connection to {Host}:{Port} (user: {Username}, auth: {AuthType})",
-                    key.Hostname, key.Port, key.Username, key.AuthType);
-                return new PooledConnection(key, existingClient, this, isPooled: true);
-            }
-            else
-            {
-                // Connection is stale, dispose it
-                _logger.LogDebug("Disposing stale pooled connection to {Host}:{Port}",
-                    key.Hostname, key.Port);
-                try
-                {
-                    existingClient.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Error disposing stale connection");
-                }
-            }
+            _logger.LogDebug("Reusing pooled connection to {Host}:{Port} (user: {Username}, auth: {AuthType})",
+                key.Hostname, key.Port, key.Username, key.AuthType);
+            return new PooledConnection(key, existingClient, this, isPooled: true);
         }
 
         // Create new connection
@@ -151,6 +135,23 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "Error disposing non-pooled connection");
+            }
+            return;
+        }
+
+        // Shell streams consume an SSH channel that cannot be safely reused.
+        // Dispose instead of returning to pool.
+        if (pooled.ShellStreamUsed)
+        {
+            _logger.LogDebug("Disposing connection to {Host}:{Port} that used a shell stream (not reusable)",
+                connection.Key.Hostname, connection.Key.Port);
+            try
+            {
+                connection.Client.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error disposing shell-stream connection");
             }
             return;
         }
@@ -376,18 +377,54 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
 
         /// <summary>
         /// Tries to acquire an idle connection from the pool.
+        /// Iterates over all idle entries so that a single stale connection
+        /// doesn't prevent reuse of a healthy one behind it.
         /// </summary>
         public bool TryAcquire(out SshClient client)
         {
             lock (_entryLock)
             {
-                var idle = _clients.FirstOrDefault(c => !c.InUse);
-                if (idle != null)
+                // Collect stale entries to remove after iteration
+                List<PooledClient>? staleEntries = null;
+
+                foreach (var entry in _clients)
                 {
-                    idle.InUse = true;
-                    idle.LastUsed = DateTime.UtcNow;
-                    client = idle.Client;
-                    return true;
+                    if (entry.InUse) continue;
+
+                    if (entry.Client.IsConnected)
+                    {
+                        entry.InUse = true;
+                        entry.LastUsed = DateTime.UtcNow;
+                        client = entry.Client;
+
+                        // Clean up any stale entries we found before this one
+                        if (staleEntries != null)
+                        {
+                            foreach (var stale in staleEntries)
+                            {
+                                _clients.Remove(stale);
+                                try { stale.Client.Dispose(); }
+                                catch { /* best effort */ }
+                            }
+                        }
+
+                        return true;
+                    }
+
+                    // Connection is stale, mark for removal
+                    staleEntries ??= new List<PooledClient>();
+                    staleEntries.Add(entry);
+                }
+
+                // Remove all stale entries even if we found no healthy one
+                if (staleEntries != null)
+                {
+                    foreach (var stale in staleEntries)
+                    {
+                        _clients.Remove(stale);
+                        try { stale.Client.Dispose(); }
+                        catch { /* best effort */ }
+                    }
                 }
             }
 
@@ -575,6 +612,12 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
         public bool IsPooled { get; }
         public bool IsConnected => Volatile.Read(ref _disposed) == 0 && Client.IsConnected;
 
+        /// <summary>
+        /// Gets whether a shell stream was created on this connection.
+        /// When true, the connection consumes an SSH channel and should not be returned to the pool.
+        /// </summary>
+        public bool ShellStreamUsed { get; private set; }
+
         public ShellStream CreateShellStream(string terminalName, uint columns, uint rows, uint width, uint height, int bufferSize)
         {
             if (Volatile.Read(ref _disposed) != 0)
@@ -582,6 +625,7 @@ public sealed class ConnectionPool : IConnectionPool, IDisposable, IAsyncDisposa
                 throw new ObjectDisposedException(nameof(PooledConnection));
             }
 
+            ShellStreamUsed = true;
             return Client.CreateShellStream(terminalName, columns, rows, width, height, bufferSize);
         }
 

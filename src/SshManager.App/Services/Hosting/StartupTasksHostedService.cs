@@ -24,6 +24,13 @@ public class StartupTasksHostedService : IHostedService
     private static readonly string TempKeyDirectory =
         Path.Combine(Path.GetTempPath(), "SshManager", "TempKeys");
 
+    /// <summary>
+    /// Directory used by <c>FileTerminalOutputSegment</c> for file-backed terminal buffer segments.
+    /// Must stay in sync with the path used in <c>FileTerminalOutputSegment.CreateAsync</c>.
+    /// </summary>
+    private static readonly string TerminalBufferDirectory =
+        Path.Combine(Path.GetTempPath(), "SshManager", "TerminalBuffer");
+
     public StartupTasksHostedService(
         IConnectionHistoryCleanupService cleanupService,
         ILogger<StartupTasksHostedService> logger)
@@ -40,10 +47,13 @@ public class StartupTasksHostedService : IHostedService
         _logger.LogInformation("Running startup tasks...");
 
         // Cleanup old connection history entries
-        await CleanupConnectionHistoryAsync();
+        await CleanupConnectionHistoryAsync(cancellationToken);
 
         // Sweep any 1Password SSH key temp files left over from a previous crash
-        await SweepStaleTempKeyFilesAsync();
+        await SweepStaleTempKeyFilesAsync(cancellationToken);
+
+        // Sweep any stale terminal buffer temp files left from a previous crash
+        await SweepStaleTerminalBufferFilesAsync(cancellationToken);
 
         _logger.LogInformation("Startup tasks completed successfully");
     }
@@ -59,11 +69,11 @@ public class StartupTasksHostedService : IHostedService
     /// <summary>
     /// Cleans up old connection history entries based on the configured retention policy.
     /// </summary>
-    private async Task CleanupConnectionHistoryAsync()
+    private async Task CleanupConnectionHistoryAsync(CancellationToken ct)
     {
         try
         {
-            var deletedCount = await _cleanupService.CleanupOldEntriesAsync();
+            var deletedCount = await _cleanupService.CleanupOldEntriesAsync(ct);
 
             if (deletedCount > 0)
             {
@@ -81,7 +91,7 @@ public class StartupTasksHostedService : IHostedService
     /// previous application run that crashed before session cleanup could delete them.
     /// Each file is overwritten with random bytes before deletion to prevent key material recovery.
     /// </summary>
-    private async Task SweepStaleTempKeyFilesAsync()
+    private async Task SweepStaleTempKeyFilesAsync(CancellationToken ct)
     {
         if (!Directory.Exists(TempKeyDirectory))
             return;
@@ -128,6 +138,68 @@ public class StartupTasksHostedService : IHostedService
         {
             _logger.LogWarning(ex, "Failed to sweep stale temp key files from {Directory} — continuing with startup", TempKeyDirectory);
         }
+    }
+
+    /// <summary>
+    /// Sweeps stale terminal buffer temp files left in <c>%TEMP%\SshManager\TerminalBuffer\</c> by a
+    /// previous application run that crashed before the segments could be disposed.
+    /// These files contain terminal output (not secrets), so a simple delete is sufficient.
+    /// </summary>
+    private Task SweepStaleTerminalBufferFilesAsync(CancellationToken ct)
+    {
+        if (!Directory.Exists(TerminalBufferDirectory))
+            return Task.CompletedTask;
+
+        try
+        {
+            var staleFiles = Directory.GetFiles(TerminalBufferDirectory, "segment_*.gz");
+
+            if (staleFiles.Length == 0)
+                return Task.CompletedTask;
+
+            _logger.LogInformation(
+                "Found {Count} stale terminal buffer file(s) from a previous session — deleting",
+                staleFiles.Length);
+
+            var deletedCount = 0;
+            var failedCount = 0;
+
+            foreach (var filePath in staleFiles)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                try
+                {
+                    File.Delete(filePath);
+                    deletedCount++;
+                }
+                catch (Exception ex)
+                {
+                    failedCount++;
+                    _logger.LogWarning(ex, "Failed to delete stale terminal buffer file: {Path}", filePath);
+                }
+            }
+
+            if (deletedCount > 0)
+            {
+                _logger.LogInformation("Deleted {Count} stale terminal buffer file(s)", deletedCount);
+            }
+
+            if (failedCount > 0)
+            {
+                _logger.LogWarning("{Count} stale terminal buffer file(s) could not be deleted — they will be retried on next startup", failedCount);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to sweep stale terminal buffer files from {Directory} — continuing with startup", TerminalBufferDirectory);
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>

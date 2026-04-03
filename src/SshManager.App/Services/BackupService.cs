@@ -50,7 +50,9 @@ public class BackupService : IBackupService
     {
         var dir = await GetBackupDirectoryAsync(ct).ConfigureAwait(false);
         Directory.CreateDirectory(dir);
-        Process.Start("explorer.exe", dir);
+        var psi = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+        psi.ArgumentList.Add(dir);
+        Process.Start(psi);
     }
 
     public async Task<BackupInfo> CreateBackupAsync(CancellationToken ct = default)

@@ -18,5 +18,6 @@ public sealed class ConnectionHistoryConfiguration : IEntityTypeConfiguration<Co
             .OnDelete(DeleteBehavior.Cascade);
         builder.Property(x => x.ErrorMessage).HasMaxLength(1000);
         builder.HasIndex(x => x.ConnectedAt);
+        builder.HasIndex(x => x.HostId);
     }
 }

@@ -45,17 +45,30 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
     /// </summary>
     public long TotalBytesSent => Interlocked.Read(ref _totalBytesSent);
 
+    private int _localEcho;
+    private volatile string _lineEnding;
+
     /// <summary>
     /// Gets or sets whether local echo is enabled.
     /// When enabled, sent data is echoed back to the DataReceived event.
+    /// Thread-safe via Interlocked operations.
     /// </summary>
-    public bool LocalEcho { get; set; }
+    public bool LocalEcho
+    {
+        get => Volatile.Read(ref _localEcho) != 0;
+        set => Interlocked.Exchange(ref _localEcho, value ? 1 : 0);
+    }
 
     /// <summary>
     /// Gets or sets the line ending to append when sending commands.
     /// Common values are "\r\n" (CRLF), "\r" (CR), or "\n" (LF).
+    /// Thread-safe via volatile field.
     /// </summary>
-    public string LineEnding { get; set; }
+    public string LineEnding
+    {
+        get => _lineEnding;
+        set => _lineEnding = value;
+    }
 
     /// <summary>
     /// Creates a new SerialTerminalBridge instance.
@@ -72,8 +85,8 @@ public sealed class SerialTerminalBridge : IAsyncDisposable, IDisposable
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         _logger = logger ?? NullLogger<SerialTerminalBridge>.Instance;
-        LocalEcho = localEcho;
-        LineEnding = lineEnding;
+        _localEcho = localEcho ? 1 : 0;
+        _lineEnding = lineEnding;
     }
 
     /// <summary>

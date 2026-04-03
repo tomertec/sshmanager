@@ -376,19 +376,27 @@ public sealed class TerminalSession : IAsyncDisposable, IDisposable
     /// </summary>
     private static async Task SecureDeleteTempKeyFileAsync(string filePath)
     {
-        if (!File.Exists(filePath))
-            return;
-
-        var fileInfo = new FileInfo(filePath);
-        var length = fileInfo.Length;
-
-        if (length > 0)
+        try
         {
-            var randomData = new byte[length];
-            RandomNumberGenerator.Fill(randomData);
-            await File.WriteAllBytesAsync(filePath, randomData).ConfigureAwait(false);
-        }
+            var fileInfo = new FileInfo(filePath);
+            var length = fileInfo.Length;
 
-        File.Delete(filePath);
+            if (length > 0)
+            {
+                var randomData = new byte[length];
+                RandomNumberGenerator.Fill(randomData);
+                await File.WriteAllBytesAsync(filePath, randomData).ConfigureAwait(false);
+            }
+
+            File.Delete(filePath);
+        }
+        catch (FileNotFoundException)
+        {
+            // File already deleted - nothing to do
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // Parent directory gone - nothing to do
+        }
     }
 }
