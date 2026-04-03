@@ -1,3 +1,4 @@
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -66,8 +67,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// Gets host statuses for UI binding.
+    /// Returns a new dictionary snapshot each time so WPF detects the reference change
+    /// and re-evaluates MultiBinding converters for all visible host items.
     /// </summary>
-    public IReadOnlyDictionary<Guid, HostStatus> HostStatuses => _hostStatusService.GetAllStatuses();
+    [ObservableProperty]
+    private IReadOnlyDictionary<Guid, HostStatus> _hostStatuses = new Dictionary<Guid, HostStatus>();
 
     /// <summary>
     /// Event raised when a new session is created (for pane management).
@@ -157,14 +161,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void OnHostStatusChanged(object? sender, EventArgs e)
     {
-        // Notify that HostStatuses has changed (UI will re-query)
-        OnPropertyChanged(nameof(HostStatuses));
-        
-        // Also update QuickConnectOverlay's HostStatuses if it's open
-        if (QuickConnectOverlay.IsOpen)
+        // Create a new dictionary snapshot so WPF detects the reference change
+        // and re-evaluates MultiBinding converters (same reference = skipped update).
+        // Marshal to UI thread since StatusChanged fires from background threads.
+        Application.Current?.Dispatcher.InvokeAsync(() =>
         {
-            QuickConnectOverlay.HostStatuses = HostStatuses;
-        }
+            HostStatuses = new Dictionary<Guid, HostStatus>(_hostStatusService.GetAllStatuses());
+
+            if (QuickConnectOverlay.IsOpen)
+            {
+                QuickConnectOverlay.HostStatuses = HostStatuses;
+            }
+        });
     }
 
     /// <summary>
