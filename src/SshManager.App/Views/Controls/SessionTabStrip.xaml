@@ -12,12 +12,15 @@
         <!-- Local BindingProxy for context menu bindings -->
         <converters:BindingProxy x:Key="ParentDataContextProxy" Data="{Binding}" />
 
+        <!-- Connection type icon converter (SSH→Desktop24, Serial→PlugConnected24) -->
+        <converters:ConnectionTypeIconConverter x:Key="ConnectionTypeIconConverter" />
+
         <!-- Scroll button style -->
         <Style x:Key="TabScrollButton" TargetType="RepeatButton">
             <Setter Property="Width" Value="24" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Focusable" Value="False" />
             <Setter Property="VerticalAlignment" Value="Stretch" />
@@ -36,19 +39,31 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="RootBorder" Property="Background"
-                                        Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                        Value="{DynamicResource SurfaceSubtleHoverBrush}" />
                                 <Setter Property="Foreground"
-                                        Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                        Value="{DynamicResource TextPrimaryBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="RootBorder" Property="Background"
-                                        Value="{DynamicResource ControlFillColorTertiaryBrush}" />
+                                        Value="{DynamicResource SurfaceSubtlePressedBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Close button that fades in on hover/active -->
+        <Style x:Key="TabCloseButton" TargetType="ui:Button">
+            <Setter Property="Padding" Value="3" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
     </UserControl.Resources>
 
     <Grid>
@@ -89,7 +104,7 @@
             <ListBox.ItemContainerStyle>
                 <Style TargetType="ListBoxItem">
                     <Setter Property="Padding" Value="0" />
-                    <Setter Property="Margin" Value="0,0,2,0" />
+                    <Setter Property="Margin" Value="0,0,4,0" />
                     <Setter Property="Background" Value="Transparent" />
                     <Setter Property="BorderThickness" Value="0" />
                     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -104,13 +119,19 @@
             </ListBox.ItemContainerStyle>
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <Border CornerRadius="10,10,0,0"
-                           Padding="12,8">
-                        <Border.ToolTip>
+                    <!-- Outer pill container — wraps the tab content and accent bar -->
+                    <Grid>
+                        <Grid.ToolTip>
                             <ToolTip MaxWidth="400">
                                 <StackPanel>
-                                    <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" FontSize="13"/>
-                                    <TextBlock Opacity="0.6" FontSize="11" Margin="0,2,0,0">
+                                    <TextBlock Text="{Binding DisplayTitle}"
+                                               FontFamily="{StaticResource AppFontFamily}"
+                                               FontWeight="SemiBold"
+                                               FontSize="{StaticResource TypeBody}" />
+                                    <TextBlock Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontFamily="{StaticResource AppFontFamily}"
+                                               FontSize="{StaticResource TypeCaption}"
+                                               Margin="0,2,0,0">
                                         <TextBlock.Text>
                                             <MultiBinding StringFormat="{}{0}@{1}">
                                                 <Binding Path="Host.Username" />
@@ -118,72 +139,217 @@
                                             </MultiBinding>
                                         </TextBlock.Text>
                                     </TextBlock>
-                                    <Border Background="#1A1A1A" CornerRadius="4" Margin="0,8,0,0" Padding="8"
+                                    <Border Background="{DynamicResource SurfaceBaseBrush}"
+                                            BorderBrush="{DynamicResource StrokeSurfaceBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="4"
+                                            Margin="0,8,0,0"
+                                            Padding="8"
                                             Visibility="{Binding LastOutputPreview, Converter={StaticResource NullToBoolConverter}, FallbackValue=Collapsed}">
                                         <TextBlock Text="{Binding LastOutputPreview, FallbackValue='Terminal output preview...'}"
-                                                   FontFamily="Cascadia Code, Consolas, monospace"
-                                                   FontSize="10"
-                                                   Foreground="#AAAAAA"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="{StaticResource TypeCaption}"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                                    TextWrapping="Wrap"
                                                    MaxHeight="80"
-                                                   TextTrimming="CharacterEllipsis"/>
+                                                   TextTrimming="CharacterEllipsis" />
                                     </Border>
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Opacity="0.5">
-                                        <TextBlock Text="Connected: " FontSize="10"/>
-                                        <TextBlock Text="{Binding Stats.Uptime, StringFormat='{}{0:hh\\:mm\\:ss}', FallbackValue='00:00:00'}" FontSize="10"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <TextBlock Text="Connected: "
+                                                   FontFamily="{StaticResource AppFontFamily}"
+                                                   FontSize="{StaticResource TypeCaption}"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                                        <TextBlock Text="{Binding Stats.Uptime, StringFormat='{}{0:hh\\:mm\\:ss}', FallbackValue='00:00:00'}"
+                                                   FontFamily="{StaticResource MonoFontFamily}"
+                                                   FontSize="{StaticResource TypeCaption}"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}" />
                                     </StackPanel>
                                 </StackPanel>
                             </ToolTip>
-                        </Border.ToolTip>
-                        <Border.BorderBrush>
-                            <MultiBinding Converter="{StaticResource SessionTabBorderConverter}">
-                                <Binding Path="IsSelected" RelativeSource="{RelativeSource AncestorType=ListBoxItem}" />
-                                <Binding Path="Host.Group.Color" />
-                                <Binding Path="IsSelectedForBroadcast" />
-                                <Binding Path="Host.ConnectionType" />
-                            </MultiBinding>
-                        </Border.BorderBrush>
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Setter Property="Background" Value="{ui:ThemeResource ControlFillColorDefaultBrush}" />
-                                <Setter Property="BorderThickness" Value="0,3,0,0" />
-                                <Style.Triggers>
-                                    <!-- Expand border when tab is selected (active) -->
-                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                                        <Setter Property="BorderThickness" Value="2,3,2,2" />
-                                    </DataTrigger>
-                                    <!-- Highlight when selected for broadcast -->
-                                    <DataTrigger Binding="{Binding IsSelectedForBroadcast}" Value="True">
-                                        <Setter Property="Background" Value="#40FF5500" />
-                                        <Setter Property="BorderThickness" Value="2" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <StackPanel Orientation="Horizontal">
-                            <!-- Group color vertical bar indicator -->
-                            <Border Width="3"
-                                   Margin="-12,-8,8,-8"
-                                   CornerRadius="10,0,0,0"
-                                   Visibility="{Binding Host.Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
-                                <Border.Background>
-                                    <Binding Path="Host.Group.Color" Converter="{StaticResource GroupColorConverter}" />
-                                </Border.Background>
-                            </Border>
-                            <!-- Broadcast selection checkbox (visible when broadcast mode is on) -->
-                            <CheckBox IsChecked="{Binding IsSelectedForBroadcast, Mode=TwoWay}"
-                                     Visibility="{Binding DataContext.BroadcastInput.IsBroadcastMode, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibilityConverter}}"
-                                     VerticalAlignment="Center"
-                                     Margin="0,0,6,0"
-                                     ToolTip="Include in broadcast" />
-                            <TextBlock Text="{Binding Title}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <ui:Button Icon="{ui:SymbolIcon Dismiss12}"
-                                      Padding="2"
-                                      Background="Transparent"
-                                      Command="{Binding DataContext.Session.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                      CommandParameter="{Binding}" />
-                        </StackPanel>
-                    </Border>
+                        </Grid.ToolTip>
+
+                        <!-- Pill-shaped tab background -->
+                        <Border x:Name="TabBackground"
+                                CornerRadius="{StaticResource CardCornerRadius}"
+                                Padding="10,6"
+                                Background="Transparent">
+                            <Border.BorderBrush>
+                                <MultiBinding Converter="{StaticResource SessionTabBorderConverter}">
+                                    <Binding Path="IsSelected" RelativeSource="{RelativeSource AncestorType=ListBoxItem}" />
+                                    <Binding Path="Host.Group.Color" />
+                                    <Binding Path="IsSelectedForBroadcast" />
+                                    <Binding Path="Host.ConnectionType" />
+                                </MultiBinding>
+                            </Border.BorderBrush>
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="BorderThickness" Value="0" />
+                                    <Style.Triggers>
+                                        <!-- Active tab gets card surface background -->
+                                        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}" />
+                                            <Setter Property="BorderThickness" Value="1" />
+                                        </DataTrigger>
+                                        <!-- Broadcast highlight -->
+                                        <DataTrigger Binding="{Binding IsSelectedForBroadcast}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource StatusWarningSubtleBrush}" />
+                                            <Setter Property="BorderThickness" Value="1" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+
+                            <StackPanel Orientation="Horizontal">
+                                <!-- Group color vertical bar indicator -->
+                                <Border Width="3"
+                                        Margin="-10,-6,8,-6"
+                                        CornerRadius="8,0,0,8"
+                                        Visibility="{Binding Host.Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                    <Border.Background>
+                                        <Binding Path="Host.Group.Color" Converter="{StaticResource GroupColorConverter}" />
+                                    </Border.Background>
+                                </Border>
+
+                                <!-- Connection type icon (SSH or Serial) -->
+                                <ui:SymbolIcon x:Name="ConnectionTypeIcon"
+                                               Symbol="{Binding Host.ConnectionType, Converter={StaticResource ConnectionTypeIconConverter}}"
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,5,0">
+                                    <ui:SymbolIcon.Style>
+                                        <Style TargetType="ui:SymbolIcon">
+                                            <Setter Property="Foreground" Value="{DynamicResource AccentPrimaryBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="False">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:SymbolIcon.Style>
+                                </ui:SymbolIcon>
+
+                                <!-- Broadcast selection checkbox (visible when broadcast mode is on) -->
+                                <CheckBox IsChecked="{Binding IsSelectedForBroadcast, Mode=TwoWay}"
+                                          Visibility="{Binding DataContext.BroadcastInput.IsBroadcastMode, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibilityConverter}}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,6,0"
+                                          ToolTip="Include in broadcast" />
+
+                                <!-- Tab title -->
+                                <TextBlock Text="{Binding Title}"
+                                           FontFamily="{StaticResource AppFontFamily}"
+                                           FontSize="{StaticResource TypeBody}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,6,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <!-- Close button — fades in on active tab or hover -->
+                                <ui:Button x:Name="CloseButton"
+                                           Icon="{ui:SymbolIcon Dismiss12}"
+                                           Command="{Binding DataContext.Session.CloseSessionCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                           CommandParameter="{Binding}">
+                                    <ui:Button.Style>
+                                        <Style TargetType="ui:Button" BasedOn="{StaticResource TabCloseButton}">
+                                            <Setter Property="Opacity" Value="0" />
+                                            <Style.Triggers>
+                                                <!-- Always visible on selected tab -->
+                                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                    <Setter Property="Opacity" Value="1" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:Button.Style>
+                                </ui:Button>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Hover overlay — separate layer for smooth opacity animation -->
+                        <Border x:Name="HoverOverlay"
+                                CornerRadius="{StaticResource CardCornerRadius}"
+                                Background="{DynamicResource SurfaceSubtleHoverBrush}"
+                                IsHitTestVisible="False"
+                                Opacity="0">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Opacity" Value="0" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                            <!-- Active tab: no hover overlay (background already set) -->
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
+
+                        <!-- Active accent bar — 3px bottom indicator for the selected tab -->
+                        <Border x:Name="AccentBar"
+                                Height="3"
+                                Width="24"
+                                CornerRadius="2"
+                                Background="{DynamicResource AccentPrimaryBrush}"
+                                VerticalAlignment="Bottom"
+                                HorizontalAlignment="Center"
+                                Margin="0,0,0,1"
+                                Visibility="Collapsed">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
+                    </Grid>
+
+                    <!-- Hover animation trigger on the outer Grid -->
+                    <DataTemplate.Triggers>
+                        <!-- Fade in hover overlay on mouse over (inactive tabs only) -->
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True" />
+                                <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="False" />
+                            </MultiDataTrigger.Conditions>
+                            <MultiDataTrigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="HoverOverlay"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="1" Duration="0:0:0.12" />
+                                        <DoubleAnimation Storyboard.TargetName="CloseButton"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="0.7" Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </MultiDataTrigger.EnterActions>
+                            <MultiDataTrigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="HoverOverlay"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="0" Duration="0:0:0.12" />
+                                        <DoubleAnimation Storyboard.TargetName="CloseButton"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="0" Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </MultiDataTrigger.ExitActions>
+                        </MultiDataTrigger>
+                    </DataTemplate.Triggers>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>

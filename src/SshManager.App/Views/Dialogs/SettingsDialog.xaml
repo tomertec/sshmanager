@@ -25,25 +25,44 @@
 
         <!-- Style for navigation items -->
         <Style x:Key="SettingsNavItemStyle" TargetType="ListBoxItem">
-            <Setter Property="Padding" Value="12,10" />
-            <Setter Property="Margin" Value="4,2" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Margin" Value="4,1" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+            <Setter Property="FontSize" Value="{StaticResource TypeBody}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Border"
+                        <Border x:Name="ItemBorder"
                                 Background="Transparent"
                                 CornerRadius="6"
                                 Padding="{TemplateBinding Padding}"
                                 Margin="{TemplateBinding Margin}">
-                            <ContentPresenter />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="5" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <!-- Accent indicator bar — visible only when selected -->
+                                <Border x:Name="AccentIndicator"
+                                        Grid.Column="0"
+                                        Width="3"
+                                        Height="16"
+                                        CornerRadius="2"
+                                        Background="{DynamicResource AccentPrimaryBrush}"
+                                        VerticalAlignment="Center"
+                                        Visibility="Collapsed" />
+                                <ContentPresenter Grid.Column="1"
+                                                  VerticalAlignment="Center" />
+                            </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="{ui:ThemeResource ControlFillColorSecondaryBrush}" />
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SurfaceSubtleHoverBrush}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="{ui:ThemeResource ControlFillColorDefaultBrush}" />
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource ControlDefaultBrush}" />
+                                <Setter TargetName="AccentIndicator" Property="Visibility" Value="Visible" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -74,8 +93,8 @@
 
             <!-- Sidebar Navigation -->
             <Border Grid.Column="0"
-                    Background="{ui:ThemeResource ControlFillColorDefaultBrush}"
-                    BorderBrush="{ui:ThemeResource ControlStrokeColorDefaultBrush}"
+                    Background="{DynamicResource ControlDefaultBrush}"
+                    BorderBrush="{DynamicResource StrokeDefaultBrush}"
                     BorderThickness="0,0,1,0">
                 <StackPanel>
                     <ui:CardControl Margin="6,12,6,6">
@@ -191,8 +210,7 @@
                         </StackPanel.Style>
 
                         <TextBlock Text="Terminal"
-                                   FontSize="20"
-                                   FontWeight="SemiBold"
+                                   Style="{StaticResource TitleText}"
                                    Margin="0,0,0,16" />
 
                         <!-- Terminal Mode -->
@@ -532,8 +550,7 @@
                         </StackPanel.Style>
 
                         <TextBlock Text="Connection"
-                                   FontSize="20"
-                                   FontWeight="SemiBold"
+                                   Style="{StaticResource TitleText}"
                                    Margin="0,0,0,16" />
 
                         <!-- Connection Defaults -->
@@ -733,8 +750,7 @@
                         </StackPanel.Style>
 
                         <TextBlock Text="Security"
-                                   FontSize="20"
-                                   FontWeight="SemiBold"
+                                   Style="{StaticResource TitleText}"
                                    Margin="0,0,0,16" />
 
                         <!-- Authentication -->
@@ -773,10 +789,9 @@
                         </ui:CardControl>
 
                         <!-- Credential Caching -->
-                        <TextBlock Text="Credential Caching"
-                                   FontSize="16"
-                                   FontWeight="SemiBold"
-                                   Margin="0,16,0,12" />
+                        <Border Style="{StaticResource SectionHeader}">
+                            <TextBlock Text="Credential Caching" Style="{StaticResource SubtitleText}" />
+                        </Border>
 
                         <ui:CardControl Margin="0,0,0,8">
                             <ui:CardControl.Header>
@@ -857,10 +872,9 @@
                         </ui:CardControl>
 
                         <!-- 1Password Integration -->
-                        <TextBlock Text="1Password Integration"
-                                   FontSize="16"
-                                   FontWeight="SemiBold"
-                                   Margin="0,16,0,12" />
+                        <Border Style="{StaticResource SectionHeader}">
+                            <TextBlock Text="1Password Integration" Style="{StaticResource SubtitleText}" />
+                        </Border>
 
                         <ui:CardExpander IsExpanded="True" Margin="0,0,0,8">
                             <ui:CardExpander.Header>
@@ -945,8 +959,7 @@
                         </StackPanel.Style>
 
                         <TextBlock Text="Appearance"
-                                   FontSize="20"
-                                   FontWeight="SemiBold"
+                                   Style="{StaticResource TitleText}"
                                    Margin="0,0,0,16" />
 
                         <!-- Theme -->
@@ -978,8 +991,7 @@
                         </StackPanel.Style>
 
                         <TextBlock Text="Behavior"
-                                   FontSize="20"
-                                   FontWeight="SemiBold"
+                                   Style="{StaticResource TitleText}"
                                    Margin="0,0,0,16" />
 
                         <ui:CardControl Margin="0,0,0,8">
@@ -1041,8 +1053,7 @@
                         </StackPanel.Style>
 
                         <TextBlock Text="Data"
-                                   FontSize="20"
-                                   FontWeight="SemiBold"
+                                   Style="{StaticResource TitleText}"
                                    Margin="0,0,0,16" />
 
                         <!-- History Settings -->
@@ -1112,10 +1123,9 @@
                         </ui:CardControl>
 
                         <!-- Session Logging -->
-                        <TextBlock Text="Session Logging"
-                                   FontSize="16"
-                                   FontWeight="SemiBold"
-                                   Margin="0,16,0,12" />
+                        <Border Style="{StaticResource SectionHeader}">
+                            <TextBlock Text="Session Logging" Style="{StaticResource SubtitleText}" />
+                        </Border>
 
                         <ui:CardControl Margin="0,0,0,8">
                             <ui:CardControl.Header>
@@ -1204,15 +1214,13 @@
                         </StackPanel.Style>
 
                         <TextBlock Text="Backup &amp; Sync"
-                                   FontSize="20"
-                                   FontWeight="SemiBold"
+                                   Style="{StaticResource TitleText}"
                                    Margin="0,0,0,16" />
 
                         <!-- Import/Export -->
-                        <TextBlock Text="Import / Export"
-                                   FontSize="16"
-                                   FontWeight="SemiBold"
-                                   Margin="0,0,0,12" />
+                        <Border Style="{StaticResource SectionHeader}">
+                            <TextBlock Text="Import / Export" Style="{StaticResource SubtitleText}" />
+                        </Border>
 
                         <ui:CardControl Margin="0,0,0,8">
                             <ui:CardControl.Header>
@@ -1267,10 +1275,9 @@
                         </ui:CardControl>
 
                         <!-- Backup -->
-                        <TextBlock Text="Backup"
-                                   FontSize="16"
-                                   FontWeight="SemiBold"
-                                   Margin="0,16,0,12" />
+                        <Border Style="{StaticResource SectionHeader}">
+                            <TextBlock Text="Backup" Style="{StaticResource SubtitleText}" />
+                        </Border>
 
                         <ui:CardControl Margin="0,0,0,8">
                             <ui:CardControl.Header>
@@ -1367,10 +1374,9 @@
                         </ui:CardExpander>
 
                         <!-- Cloud Sync -->
-                        <TextBlock Text="Cloud Sync"
-                                   FontSize="16"
-                                   FontWeight="SemiBold"
-                                   Margin="0,16,0,12" />
+                        <Border Style="{StaticResource SectionHeader}">
+                            <TextBlock Text="Cloud Sync" Style="{StaticResource SubtitleText}" />
+                        </Border>
 
                         <ui:CardControl Margin="0,0,0,8">
                             <ui:CardControl.Header>

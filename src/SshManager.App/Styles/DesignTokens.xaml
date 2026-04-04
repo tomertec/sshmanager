@@ -1,0 +1,251 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+
+    <!--
+    Design Token System for SshManager
+    Semantic color tokens that adapt to WPF-UI's theme system.
+    Use these instead of hardcoded hex values throughout the app.
+    -->
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SURFACE TOKENS — backgrounds and layering
+         ═══════════════════════════════════════════════════════════════ -->
+    <SolidColorBrush x:Key="SurfaceBaseBrush" Color="{DynamicResource SolidBackgroundFillColorBase}" />
+    <SolidColorBrush x:Key="SurfaceLayerBrush" Color="{DynamicResource LayerFillColorDefault}" />
+    <SolidColorBrush x:Key="SurfaceCardBrush" Color="{DynamicResource CardBackgroundFillColorDefault}" />
+    <SolidColorBrush x:Key="SurfaceCardHoverBrush" Color="{DynamicResource CardBackgroundFillColorSecondary}" />
+    <SolidColorBrush x:Key="SurfaceSmokeBrush" Color="{DynamicResource SmokeFillColorDefault}" />
+    <SolidColorBrush x:Key="SurfaceSubtleBrush" Color="{DynamicResource SubtleFillColorTransparent}" />
+    <SolidColorBrush x:Key="SurfaceSubtleHoverBrush" Color="{DynamicResource SubtleFillColorSecondary}" />
+    <SolidColorBrush x:Key="SurfaceSubtlePressedBrush" Color="{DynamicResource SubtleFillColorTertiary}" />
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         CONTROL TOKENS — interactive elements
+         ═══════════════════════════════════════════════════════════════ -->
+    <SolidColorBrush x:Key="ControlDefaultBrush" Color="{DynamicResource ControlFillColorDefault}" />
+    <SolidColorBrush x:Key="ControlSecondaryBrush" Color="{DynamicResource ControlFillColorSecondary}" />
+    <SolidColorBrush x:Key="ControlTertiaryBrush" Color="{DynamicResource ControlFillColorTertiary}" />
+    <SolidColorBrush x:Key="ControlDisabledBrush" Color="{DynamicResource ControlFillColorDisabled}" />
+    <SolidColorBrush x:Key="ControlInputActiveBrush" Color="{DynamicResource ControlFillColorInputActive}" />
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         TEXT TOKENS — foreground colors
+         ═══════════════════════════════════════════════════════════════ -->
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{DynamicResource TextFillColorPrimary}" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{DynamicResource TextFillColorSecondary}" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="{DynamicResource TextFillColorTertiary}" />
+    <SolidColorBrush x:Key="TextDisabledBrush" Color="{DynamicResource TextFillColorDisabled}" />
+    <SolidColorBrush x:Key="TextOnAccentBrush" Color="{DynamicResource TextOnAccentFillColorPrimary}" />
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         STROKE TOKENS — borders and dividers
+         ═══════════════════════════════════════════════════════════════ -->
+    <SolidColorBrush x:Key="StrokeDefaultBrush" Color="{DynamicResource ControlStrokeColorDefault}" />
+    <SolidColorBrush x:Key="StrokeSecondaryBrush" Color="{DynamicResource ControlStrokeColorSecondary}" />
+    <SolidColorBrush x:Key="StrokeDividerBrush" Color="{DynamicResource DividerStrokeColorDefault}" />
+    <SolidColorBrush x:Key="StrokeSurfaceBrush" Color="{DynamicResource CardStrokeColorDefault}" />
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ACCENT TOKENS — brand and interactive accent colors
+         ═══════════════════════════════════════════════════════════════ -->
+    <SolidColorBrush x:Key="AccentPrimaryBrush" Color="{DynamicResource SystemAccentColorPrimary}" />
+    <SolidColorBrush x:Key="AccentSecondaryBrush" Color="{DynamicResource SystemAccentColorSecondary}" />
+    <SolidColorBrush x:Key="AccentTertiaryBrush" Color="{DynamicResource SystemAccentColorTertiary}" />
+    <!-- Fallback accent for environments where system accent isn't available -->
+    <Color x:Key="AccentBlue">#0078D4</Color>
+    <Color x:Key="AccentBlueDark">#106EBE</Color>
+    <Color x:Key="AccentBlueLight">#60CDFF</Color>
+    <SolidColorBrush x:Key="AccentBlueBrush" Color="{StaticResource AccentBlue}" />
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SEMANTIC STATUS TOKENS — contextual status colors
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- Success / Connected -->
+    <Color x:Key="StatusSuccessColor">#4CAF50</Color>
+    <Color x:Key="StatusSuccessSubtleColor">#204CAF50</Color>
+    <SolidColorBrush x:Key="StatusSuccessBrush" Color="{StaticResource StatusSuccessColor}" />
+    <SolidColorBrush x:Key="StatusSuccessSubtleBrush" Color="{StaticResource StatusSuccessSubtleColor}" />
+
+    <!-- Warning -->
+    <Color x:Key="StatusWarningColor">#FF9800</Color>
+    <Color x:Key="StatusWarningSubtleColor">#20FF9800</Color>
+    <SolidColorBrush x:Key="StatusWarningBrush" Color="{StaticResource StatusWarningColor}" />
+    <SolidColorBrush x:Key="StatusWarningSubtleBrush" Color="{StaticResource StatusWarningSubtleColor}" />
+
+    <!-- Error / Danger -->
+    <Color x:Key="StatusErrorColor">#E81123</Color>
+    <Color x:Key="StatusErrorSubtleColor">#20E81123</Color>
+    <SolidColorBrush x:Key="StatusErrorBrush" Color="{StaticResource StatusErrorColor}" />
+    <SolidColorBrush x:Key="StatusErrorSubtleBrush" Color="{StaticResource StatusErrorSubtleColor}" />
+
+    <!-- Info -->
+    <Color x:Key="StatusInfoColor">#2196F3</Color>
+    <Color x:Key="StatusInfoSubtleColor">#202196F3</Color>
+    <SolidColorBrush x:Key="StatusInfoBrush" Color="{StaticResource StatusInfoColor}" />
+    <SolidColorBrush x:Key="StatusInfoSubtleBrush" Color="{StaticResource StatusInfoSubtleColor}" />
+
+    <!-- Neutral / Disconnected -->
+    <Color x:Key="StatusNeutralColor">#999999</Color>
+    <SolidColorBrush x:Key="StatusNeutralBrush" Color="{StaticResource StatusNeutralColor}" />
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         ELEVATION TOKENS — card shadows and depth
+         ═══════════════════════════════════════════════════════════════ -->
+    <DropShadowEffect x:Key="ElevationNone" BlurRadius="0" ShadowDepth="0" Opacity="0" />
+    <DropShadowEffect x:Key="ElevationLow" BlurRadius="8" ShadowDepth="2" Opacity="0.16" Color="#000000" />
+    <DropShadowEffect x:Key="ElevationMedium" BlurRadius="16" ShadowDepth="4" Opacity="0.22" Color="#000000" />
+    <DropShadowEffect x:Key="ElevationHigh" BlurRadius="24" ShadowDepth="8" Opacity="0.30" Color="#000000" />
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         SPACING TOKENS — consistent spacing scale
+         ═══════════════════════════════════════════════════════════════ -->
+    <Thickness x:Key="SpacingXxs">2</Thickness>
+    <Thickness x:Key="SpacingXs">4</Thickness>
+    <Thickness x:Key="SpacingSm">8</Thickness>
+    <Thickness x:Key="SpacingMd">12</Thickness>
+    <Thickness x:Key="SpacingLg">16</Thickness>
+    <Thickness x:Key="SpacingXl">24</Thickness>
+    <Thickness x:Key="SpacingXxl">32</Thickness>
+
+    <!-- Card spacing patterns -->
+    <Thickness x:Key="CardPadding">12</Thickness>
+    <Thickness x:Key="CardMargin">4,2</Thickness>
+    <CornerRadius x:Key="CardCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="CardCornerRadiusLg">12</CornerRadius>
+    <CornerRadius x:Key="PillCornerRadius">20</CornerRadius>
+    <CornerRadius x:Key="RoundCornerRadius">6</CornerRadius>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         TYPOGRAPHY TOKENS — font family, sizes, weights
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- Primary font: Segoe UI Variable (Win11), fallback to Segoe UI -->
+    <FontFamily x:Key="AppFontFamily">Segoe UI Variable, Segoe UI, sans-serif</FontFamily>
+    <FontFamily x:Key="MonoFontFamily">Cascadia Code, Cascadia Mono, Consolas, monospace</FontFamily>
+
+    <!-- Type scale -->
+    <system:Double x:Key="TypeCaption" xmlns:system="clr-namespace:System;assembly=mscorlib">11</system:Double>
+    <system:Double x:Key="TypeBody" xmlns:system="clr-namespace:System;assembly=mscorlib">13</system:Double>
+    <system:Double x:Key="TypeBodyLarge" xmlns:system="clr-namespace:System;assembly=mscorlib">14</system:Double>
+    <system:Double x:Key="TypeSubtitle" xmlns:system="clr-namespace:System;assembly=mscorlib">16</system:Double>
+    <system:Double x:Key="TypeTitle" xmlns:system="clr-namespace:System;assembly=mscorlib">20</system:Double>
+    <system:Double x:Key="TypeTitleLarge" xmlns:system="clr-namespace:System;assembly=mscorlib">24</system:Double>
+    <system:Double x:Key="TypeDisplay" xmlns:system="clr-namespace:System;assembly=mscorlib">28</system:Double>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         TYPOGRAPHY STYLES — reusable text styles
+         ═══════════════════════════════════════════════════════════════ -->
+    <Style x:Key="CaptionText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource TypeCaption}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="BodyText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource TypeBody}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="BodyStrongText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource TypeBody}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="SubtitleText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource TypeSubtitle}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="TitleText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource TypeTitle}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="DisplayText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource TypeDisplay}" />
+        <Setter Property="FontWeight" Value="Light" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="MonoText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource MonoFontFamily}" />
+        <Setter Property="FontSize" Value="{StaticResource TypeCaption}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    </Style>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         COMMON ELEMENT STYLES — reusable UI patterns
+         ═══════════════════════════════════════════════════════════════ -->
+
+    <!-- Section header with accent left border (Windows 11 Settings style) -->
+    <Style x:Key="SectionHeader" TargetType="Border">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentPrimaryBrush}" />
+        <Setter Property="BorderThickness" Value="3,0,0,0" />
+        <Setter Property="Padding" Value="12,4,0,4" />
+        <Setter Property="Margin" Value="0,16,0,8" />
+    </Style>
+
+    <!-- Subtle card container -->
+    <Style x:Key="SubtleCard" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource StrokeSurfaceBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
+        <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+    </Style>
+
+    <!-- Interactive card with hover effect -->
+    <Style x:Key="InteractiveCard" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource StrokeSurfaceBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
+        <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource SurfaceCardHoverBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource StrokeDefaultBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Badge/chip base style -->
+    <Style x:Key="ChipBadge" TargetType="Border">
+        <Setter Property="CornerRadius" Value="{StaticResource PillCornerRadius}" />
+        <Setter Property="Padding" Value="8,3" />
+        <Setter Property="Background" Value="{DynamicResource SurfaceSubtleBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource StrokeSecondaryBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <!-- Keyboard shortcut hint badge -->
+    <Style x:Key="KeyboardHint" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource ControlSecondaryBrush}" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="BorderBrush" Value="{DynamicResource StrokeSecondaryBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <!-- Navigation item indicator (active state left bar) -->
+    <Style x:Key="NavIndicator" TargetType="Border">
+        <Setter Property="Width" Value="3" />
+        <Setter Property="Height" Value="16" />
+        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="Background" Value="{DynamicResource AccentPrimaryBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Visibility" Value="Collapsed" />
+    </Style>
+
+</ResourceDictionary>

@@ -424,7 +424,7 @@
                 <ListBox.ItemContainerStyle>
                 <Style TargetType="ListBoxItem">
                     <Setter Property="Padding" Value="0" />
-                    <Setter Property="Margin" Value="0,0,12,8" />
+                    <Setter Property="Margin" Value="0" />
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                     <Setter Property="Background" Value="Transparent" />
                     <Setter Property="Template">
@@ -438,10 +438,12 @@
             </ListBox.ItemContainerStyle>
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <!-- Outer border for active session indicator -->
-                    <Border CornerRadius="8"
-                           BorderThickness="2"
-                           Padding="0">
+                    <!-- Outer wrapper: carries context menu and active-session accent border -->
+                    <Border x:Name="OuterBorder"
+                            CornerRadius="{StaticResource CardCornerRadius}"
+                            BorderThickness="2"
+                            Margin="{StaticResource CardMargin}"
+                            Padding="0">
                         <Border.ContextMenu>
                             <ContextMenu>
                                 <ui:MenuItem Header="Connect"
@@ -494,280 +496,345 @@
                                             CommandParameter="{Binding}" />
                             </ContextMenu>
                         </Border.ContextMenu>
+                        <!-- Active session accent border color -->
                         <Border.BorderBrush>
                             <MultiBinding Converter="{StaticResource HostActiveSessionBorderConverter}">
                                 <Binding Path="Id" />
                                 <Binding Path="DataContext.Session.Sessions" RelativeSource="{RelativeSource AncestorType=ListBox}" />
                             </MultiBinding>
                         </Border.BorderBrush>
-                    <Grid>
-                        <!-- Colored left stripe for group color -->
-                        <Border Width="4"
-                               HorizontalAlignment="Left"
-                               CornerRadius="6,0,0,6"
-                               Visibility="{Binding Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
-                            <Border.Background>
-                                <Binding Path="Group.Color" Converter="{StaticResource GroupColorConverter}" />
-                            </Border.Background>
-                        </Border>
-                    <Border x:Name="CardBorder"
-                           CornerRadius="6"
-                           Background="#1FFFFFFF"
-                           BorderBrush="#2FFFFFFF"
-                           BorderThickness="1"
-                           Padding="8,6"
-                           RenderTransformOrigin="0.5,0.5">
-                        <Border.RenderTransform>
-                            <TransformGroup>
-                                <ScaleTransform ScaleX="1" ScaleY="1" />
-                                <TranslateTransform X="0" Y="0" />
-                            </TransformGroup>
-                        </Border.RenderTransform>
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Style.Triggers>
-                                    <EventTrigger RoutedEvent="Loaded">
-                                        <BeginStoryboard>
-                                            <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                                From="0" To="1"
-                                                                Duration="0:0:0.3">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <CubicEase EasingMode="EaseOut" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
-                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.Y)"
-                                                                From="20" To="0"
-                                                                Duration="0:0:0.3">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <CubicEase EasingMode="EaseOut" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </EventTrigger>
-                                    <EventTrigger RoutedEvent="MouseEnter">
-                                        <BeginStoryboard>
-                                            <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
-                                                                To="1.02" Duration="0:0:0.15">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <QuadraticEase EasingMode="EaseOut" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
-                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
-                                                                To="1.02" Duration="0:0:0.15">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <QuadraticEase EasingMode="EaseOut" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
-                                                <ColorAnimation Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                                               To="#2AFFFFFF" Duration="0:0:0.15" />
-                                                <ColorAnimation Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
-                                                               To="#3FFFFFFF" Duration="0:0:0.15" />
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </EventTrigger>
-                                    <EventTrigger RoutedEvent="MouseLeave">
-                                        <BeginStoryboard>
-                                            <Storyboard>
-                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
-                                                                To="1" Duration="0:0:0.2">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <QuadraticEase EasingMode="EaseOut" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
-                                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
-                                                                To="1" Duration="0:0:0.2">
-                                                    <DoubleAnimation.EasingFunction>
-                                                        <QuadraticEase EasingMode="EaseOut" />
-                                                    </DoubleAnimation.EasingFunction>
-                                                </DoubleAnimation>
-                                                <ColorAnimation Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                                               To="#1FFFFFFF" Duration="0:0:0.2" />
-                                                <ColorAnimation Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
-                                                               To="#2FFFFFFF" Duration="0:0:0.2" />
-                                            </Storyboard>
-                                        </BeginStoryboard>
-                                    </EventTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
 
-                            <!-- Status Indicator Dot -->
-                            <Ellipse Grid.Row="0" Grid.RowSpan="2"
-                                    Grid.Column="0"
-                                    Width="10" Height="10"
-                                    Margin="0,0,10,0"
-                                    VerticalAlignment="Center"
-                                    Style="{StaticResource PulsingStatusDot}">
-                                <Ellipse.ToolTip>
-                                    <MultiBinding Converter="{StaticResource HostStatusToTooltipConverter}">
-                                        <Binding Path="Id" />
-                                        <Binding Path="DataContext.HostStatuses" RelativeSource="{RelativeSource AncestorType=ListBox}" />
-                                    </MultiBinding>
-                                </Ellipse.ToolTip>
-                                <Ellipse.Fill>
-                                    <MultiBinding Converter="{StaticResource HostStatusToColorConverter}">
-                                        <Binding Path="Id" />
-                                        <Binding Path="DataContext.HostStatuses" RelativeSource="{RelativeSource AncestorType=ListBox}" />
-                                    </MultiBinding>
-                                </Ellipse.Fill>
-                            </Ellipse>
+                        <!-- Clip grid to outer rounded corner so the color stripe respects the radius -->
+                        <Grid ClipToBounds="True">
+                            <!-- Group color accent bar (left edge, 4px wide, rounded on the visible side) -->
+                            <Border x:Name="GroupAccentBar"
+                                    Width="4"
+                                    HorizontalAlignment="Left"
+                                    CornerRadius="2,0,0,2"
+                                    Visibility="{Binding Group.Color, Converter={StaticResource GroupColorToVisibilityConverter}}">
+                                <Border.Background>
+                                    <Binding Path="Group.Color" Converter="{StaticResource GroupColorConverter}" />
+                                </Border.Background>
+                            </Border>
 
-                            <!-- Row 1: Name and Action Buttons -->
-                            <TextBlock Grid.Row="0" Grid.Column="1"
-                                      Text="{Binding DisplayName}"
-                                      FontWeight="SemiBold"
-                                      FontSize="13"
-                                      VerticalAlignment="Center"
-                                      TextTrimming="CharacterEllipsis" />
+                            <!-- Card surface with hover animation -->
+                            <Border x:Name="CardBorder"
+                                    CornerRadius="{StaticResource CardCornerRadius}"
+                                    Background="{DynamicResource SurfaceCardBrush}"
+                                    BorderBrush="{DynamicResource StrokeSurfaceBrush}"
+                                    BorderThickness="1"
+                                    Padding="10,8"
+                                    Margin="0"
+                                    Cursor="Hand"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <TransformGroup>
+                                        <ScaleTransform ScaleX="1" ScaleY="1" />
+                                        <TranslateTransform X="0" Y="0" />
+                                    </TransformGroup>
+                                </Border.RenderTransform>
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <!-- Fade-slide in on load -->
+                                            <EventTrigger RoutedEvent="Loaded">
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                        From="0" To="1" Duration="0:0:0.25">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut" />
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[1].(TranslateTransform.Y)"
+                                                                        From="12" To="0" Duration="0:0:0.25">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <CubicEase EasingMode="EaseOut" />
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </EventTrigger>
+                                            <!-- Hover: subtle scale + surface color lift -->
+                                            <EventTrigger RoutedEvent="MouseEnter">
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
+                                                                        To="1.015" Duration="0:0:0.12">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <QuadraticEase EasingMode="EaseOut" />
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
+                                                                        To="1.015" Duration="0:0:0.12">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <QuadraticEase EasingMode="EaseOut" />
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </EventTrigger>
+                                            <EventTrigger RoutedEvent="MouseLeave">
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleX)"
+                                                                        To="1" Duration="0:0:0.18">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <QuadraticEase EasingMode="EaseOut" />
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TransformGroup.Children)[0].(ScaleTransform.ScaleY)"
+                                                                        To="1" Duration="0:0:0.18">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <QuadraticEase EasingMode="EaseOut" />
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </EventTrigger>
+                                            <!-- Hover background via DataTrigger on IsMouseOver -->
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource SurfaceCardHoverBrush}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource StrokeDefaultBrush}" />
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
 
-                            <StackPanel Grid.Row="0" Grid.Column="2"
-                                       Orientation="Horizontal"
-                                       VerticalAlignment="Center"
-                                       Margin="4,0,0,0">
-                                <!-- Favorite toggle button -->
-                                <ui:Button Command="{Binding DataContext.HostManagement.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                          CommandParameter="{Binding}"
-                                          Width="24" Height="24"
-                                          Padding="0"
-                                          CornerRadius="4"
-                                          Margin="0,0,2,0">
-                                    <ui:Button.Style>
-                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                                            <Setter Property="Background" Value="Transparent" />
-                                            <Setter Property="BorderThickness" Value="0" />
-                                            <Setter Property="ToolTip" Value="Add to Favorites" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsFavorite}" Value="True">
-                                                    <Setter Property="ToolTip" Value="Remove from Favorites" />
-                                                </DataTrigger>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="#1FFFFFFF" />
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ui:Button.Style>
-                                    <ui:SymbolIcon FontSize="14">
-                                        <ui:SymbolIcon.Style>
-                                            <Style TargetType="ui:SymbolIcon">
-                                                <Setter Property="Symbol" Value="StarOff16" />
-                                                <Setter Property="Foreground" Value="#80FFFFFF" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsFavorite}" Value="True">
-                                                        <Setter Property="Symbol" Value="Star16" />
-                                                        <Setter Property="Foreground" Value="#FFD700" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </ui:SymbolIcon.Style>
-                                    </ui:SymbolIcon>
-                                </ui:Button>
-                                <ui:Button Width="24" Height="24"
-                                          Padding="0"
-                                          CornerRadius="4"
-                                          Command="{Binding DataContext.SftpLauncher.OpenSftpBrowserForHostCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                          CommandParameter="{Binding}"
-                                          ToolTip="SFTP Browser"
-                                          Margin="0,0,2,0">
-                                    <ui:Button.Style>
-                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                                            <Setter Property="Background" Value="#0078D4" />
-                                            <Style.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="#1084D8" />
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ui:Button.Style>
-                                    <ui:SymbolIcon Symbol="FolderOpen16" FontSize="12" Foreground="White" />
-                                </ui:Button>
-                                <ui:Button Icon="{ui:SymbolIcon Edit16}"
-                                          Command="{Binding DataContext.HostManagement.EditHostCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                          CommandParameter="{Binding}"
-                                          ToolTip="Edit (Ctrl+E)"
-                                          Width="24" Height="24"
-                                          Padding="0"
-                                          Margin="0,0,2,0" />
-                                <ui:Button Command="{Binding DataContext.Session.ConnectCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                          CommandParameter="{Binding}"
-                                          ToolTip="Connect (Enter)"
-                                          Width="24" Height="24"
-                                          Padding="0"
-                                          CornerRadius="4"
-                                          IsEnabled="{Binding DataContext.Session.IsConnecting, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource InverseBoolConverter}}">
-                                    <ui:Button.Style>
-                                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                                            <Setter Property="Background" Value="#0078D4" />
-                                            <Style.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="#1084D8" />
-                                                </Trigger>
-                                                <Trigger Property="IsPressed" Value="True">
-                                                    <Setter Property="Background" Value="#005A9E" />
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </ui:Button.Style>
-                                    <ui:SymbolIcon Symbol="Play16" FontSize="12" Foreground="White" />
-                                </ui:Button>
-                            </StackPanel>
+                                <!-- Card content grid: 3 rows -->
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
 
-                            <!-- Row 2: Connection type, Group and Hostname -->
-                            <Grid Grid.Row="1" Grid.Column="1"
-                                  Margin="0,2,0,0"
-                                  ClipToBounds="True">
-                                <StackPanel Orientation="Horizontal">
-                                    <!-- Connection type icon (SSH or Serial) -->
-                                    <ui:SymbolIcon Symbol="{Binding ConnectionType, Converter={StaticResource ConnectionTypeIconConverter}}"
-                                                  FontSize="11"
-                                                  Opacity="0.5"
-                                                  Margin="0,0,4,0"
-                                                  VerticalAlignment="Center">
-                                        <ui:SymbolIcon.ToolTip>
-                                            <TextBlock>
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="SSH Connection" />
+                                    <!-- ROW 0: Status dot + Display name + right-side icons -->
+                                    <Grid Grid.Row="0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Status indicator dot (12x12) with glow -->
+                                        <Grid Grid.Column="0" Width="12" Height="12"
+                                              Margin="0,0,9,0"
+                                              VerticalAlignment="Center">
+                                            <!-- Glow halo: same color, blurred, larger -->
+                                            <Ellipse x:Name="StatusGlow"
+                                                     Width="12" Height="12"
+                                                     Opacity="0.35">
+                                                <Ellipse.Effect>
+                                                    <BlurEffect Radius="5" />
+                                                </Ellipse.Effect>
+                                                <Ellipse.Fill>
+                                                    <MultiBinding Converter="{StaticResource HostStatusToColorConverter}">
+                                                        <Binding Path="Id" />
+                                                        <Binding Path="DataContext.HostStatuses" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                                    </MultiBinding>
+                                                </Ellipse.Fill>
+                                            </Ellipse>
+                                            <!-- Solid dot -->
+                                            <Ellipse Width="8" Height="8"
+                                                     Style="{StaticResource PulsingStatusDot}">
+                                                <Ellipse.ToolTip>
+                                                    <MultiBinding Converter="{StaticResource HostStatusToTooltipConverter}">
+                                                        <Binding Path="Id" />
+                                                        <Binding Path="DataContext.HostStatuses" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                                    </MultiBinding>
+                                                </Ellipse.ToolTip>
+                                                <Ellipse.Fill>
+                                                    <MultiBinding Converter="{StaticResource HostStatusToColorConverter}">
+                                                        <Binding Path="Id" />
+                                                        <Binding Path="DataContext.HostStatuses" RelativeSource="{RelativeSource AncestorType=ListBox}" />
+                                                    </MultiBinding>
+                                                </Ellipse.Fill>
+                                            </Ellipse>
+                                        </Grid>
+
+                                        <!-- Display name (Line 1, primary) -->
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding DisplayName}"
+                                                   FontWeight="SemiBold"
+                                                   FontSize="13"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+
+                                        <!-- Right-side icons: connection type, favorite, action buttons -->
+                                        <StackPanel Grid.Column="2"
+                                                    Orientation="Horizontal"
+                                                    VerticalAlignment="Center"
+                                                    Margin="6,0,0,0">
+
+                                            <!-- Connection type icon -->
+                                            <ui:SymbolIcon Symbol="{Binding ConnectionType, Converter={StaticResource ConnectionTypeIconConverter}}"
+                                                           FontSize="12"
+                                                           Margin="0,0,4,0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}">
+                                                <ui:SymbolIcon.ToolTip>
+                                                    <TextBlock>
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="SSH Connection" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding ConnectionType}" Value="Serial">
+                                                                        <Setter Property="Text" Value="Serial Connection" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </ui:SymbolIcon.ToolTip>
+                                            </ui:SymbolIcon>
+
+                                            <!-- Favorite star -->
+                                            <ui:Button Command="{Binding DataContext.HostManagement.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                       CommandParameter="{Binding}"
+                                                       Width="22" Height="22"
+                                                       Padding="0"
+                                                       CornerRadius="4"
+                                                       Margin="0,0,2,0">
+                                                <ui:Button.Style>
+                                                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderThickness" Value="0" />
+                                                        <Setter Property="ToolTip" Value="Add to Favorites" />
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ConnectionType}" Value="Serial">
-                                                                <Setter Property="Text" Value="Serial Connection" />
+                                                            <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                                                <Setter Property="ToolTip" Value="Remove from Favorites" />
                                                             </DataTrigger>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource SurfaceSubtleHoverBrush}" />
+                                                            </Trigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                        </ui:SymbolIcon.ToolTip>
-                                    </ui:SymbolIcon>
-                                    <TextBlock Text="{Binding Group.Name, FallbackValue='Ungrouped'}"
-                                              Opacity="0.5"
-                                              FontSize="11"
-                                              FontStyle="Italic"
-                                              TextTrimming="CharacterEllipsis"
-                                              MaxWidth="100" />
-                                    <TextBlock Text=" · "
-                                              Opacity="0.4"
-                                              FontSize="11" />
-                                    <TextBlock Text="{Binding Hostname}"
-                                              Opacity="0.7"
-                                              FontSize="11"
-                                              TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
-                            </Grid>
+                                                </ui:Button.Style>
+                                                <ui:SymbolIcon FontSize="13">
+                                                    <ui:SymbolIcon.Style>
+                                                        <Style TargetType="ui:SymbolIcon">
+                                                            <Setter Property="Symbol" Value="StarOff16" />
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                                                    <Setter Property="Symbol" Value="Star16" />
+                                                                    <Setter Property="Foreground" Value="#FFD700" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </ui:SymbolIcon.Style>
+                                                </ui:SymbolIcon>
+                                            </ui:Button>
+
+                                            <!-- SFTP button -->
+                                            <ui:Button Width="22" Height="22"
+                                                       Padding="0"
+                                                       CornerRadius="4"
+                                                       Command="{Binding DataContext.SftpLauncher.OpenSftpBrowserForHostCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                       CommandParameter="{Binding}"
+                                                       ToolTip="SFTP Browser"
+                                                       Margin="0,0,2,0">
+                                                <ui:Button.Style>
+                                                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                                        <Setter Property="Background" Value="{DynamicResource AccentPrimaryBrush}" />
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource AccentSecondaryBrush}" />
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ui:Button.Style>
+                                                <ui:SymbolIcon Symbol="FolderOpen16" FontSize="11" Foreground="{DynamicResource TextOnAccentBrush}" />
+                                            </ui:Button>
+
+                                            <!-- Edit button -->
+                                            <ui:Button Icon="{ui:SymbolIcon Edit16}"
+                                                       Command="{Binding DataContext.HostManagement.EditHostCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                       CommandParameter="{Binding}"
+                                                       ToolTip="Edit (Ctrl+E)"
+                                                       Width="22" Height="22"
+                                                       Padding="0"
+                                                       Margin="0,0,2,0" />
+
+                                            <!-- Connect button -->
+                                            <ui:Button Command="{Binding DataContext.Session.ConnectCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                       CommandParameter="{Binding}"
+                                                       ToolTip="Connect (Enter)"
+                                                       Width="22" Height="22"
+                                                       Padding="0"
+                                                       CornerRadius="4"
+                                                       IsEnabled="{Binding DataContext.Session.IsConnecting, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource InverseBoolConverter}}">
+                                                <ui:Button.Style>
+                                                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                                        <Setter Property="Background" Value="{DynamicResource AccentPrimaryBrush}" />
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource AccentSecondaryBrush}" />
+                                                            </Trigger>
+                                                            <Trigger Property="IsPressed" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource AccentTertiaryBrush}" />
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ui:Button.Style>
+                                                <ui:SymbolIcon Symbol="Play16" FontSize="11" Foreground="{DynamicResource TextOnAccentBrush}" />
+                                            </ui:Button>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- ROW 1: username@hostname secondary line -->
+                                    <Grid Grid.Row="1" Margin="21,3,0,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <!-- Username prefix (only shown when non-empty) -->
+                                            <TextBlock Text="{Binding Username}"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Visibility="{Binding Username, Converter={StaticResource StringToVisibilityConverter}}" />
+                                            <!-- @ separator (only shown when username is set) -->
+                                            <TextBlock Text="@"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       Visibility="{Binding Username, Converter={StaticResource StringToVisibilityConverter}}" />
+                                            <!-- Hostname -->
+                                            <TextBlock Text="{Binding Hostname}"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- ROW 2: Tag chips (only when the host has tags) -->
+                                    <ItemsControl Grid.Row="2"
+                                                  ItemsSource="{Binding Tags}"
+                                                  Margin="21,5,0,0"
+                                                  Visibility="{Binding Tags.Count, Converter={StaticResource CountToVisibilityConverter}, FallbackValue=Collapsed}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border CornerRadius="{StaticResource PillCornerRadius}"
+                                                        Padding="6,2"
+                                                        Margin="0,0,4,2"
+                                                        Background="{DynamicResource SurfaceSubtleBrush}"
+                                                        BorderBrush="{DynamicResource StrokeSecondaryBrush}"
+                                                        BorderThickness="1">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               FontSize="10"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               VerticalAlignment="Center" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                            </Border>
                         </Grid>
-                    </Border>
-                    </Grid>
                     </Border>
                 </DataTemplate>
             </ListBox.ItemTemplate>

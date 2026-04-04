@@ -8,6 +8,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ui:ThemesDictionary Theme="Dark" />
                 <ui:ControlsDictionary />
+                <ResourceDictionary Source="Styles/DesignTokens.xaml" />
                 <ResourceDictionary Source="Styles/Animations.xaml" />
                 <ResourceDictionary Source="Styles/Converters.xaml" />
                 <ResourceDictionary Source="Styles/TerminalTheme.xaml" />
