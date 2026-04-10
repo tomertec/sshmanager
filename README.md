@@ -1,3 +1,11 @@
+> [!IMPORTANT]
+> ## This project has moved to [HyperShell](https://github.com/tomertec/HyperShell)
+> SshManager has been rewritten from scratch as **HyperShell** — a cross-platform (Windows + macOS) SSH and serial terminal with integrated SFTP, built on Electron + React + xterm.js. All new development happens there.
+>
+> **[Download the latest release](https://github.com/tomertec/HyperShell/releases/latest)**
+
+---
+
 # SshManager
 
 [![Build](https://github.com/tomertec/sshmanager/actions/workflows/build.yml/badge.svg)](https://github.com/tomertec/sshmanager/actions/workflows/build.yml)
